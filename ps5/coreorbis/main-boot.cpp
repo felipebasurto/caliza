@@ -2014,6 +2014,15 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
     OrbisNfs::SetShares(std::string());
     return dirs;
   }
+#ifdef ORBIS_PS4
+  // The NFS client itself builds on PS4, but the C library file-call wrappers that expose /nfs paths to the
+  // scanner/emulator do not (CEMUPS4 owns parts of the libc file surface). Mounting shares anyway would cost boot
+  // time and network traffic while making no games visible. Keep the configuration harmless and say why.
+  printf("[boot] %s: NFS shares configured but unsupported on PS4 in this build; not mounting\n", when);
+  fflush(stdout);
+  OrbisNfs::SetShares(std::string());
+  return dirs;
+#endif
   std::vector<std::string> problems;
   OrbisNfs::SetShares(list, &problems);
   for (const std::string& p : problems)
