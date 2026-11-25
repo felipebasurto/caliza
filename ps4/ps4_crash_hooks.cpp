@@ -89,5 +89,9 @@ void ps4_recompiler_status(int fd)
 void ps4_crash_guest_info() {}
 void ps4_crash_note() {}
 void ps4_crash_restart() {}
-void ps4_hang_guest_threads(int) {}
+void ps4_hang_guest_threads(int fd)
+{
+	// The sampler invokes this in the same lock-free diagnostic context; at minimum identify where the guest CPUs are.
+	ps4_crash_guest_regs(fd);
+}
 }
