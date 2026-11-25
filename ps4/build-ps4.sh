@@ -99,11 +99,26 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     cp "$PCSX2/COPYING.GPLv3" "$stage/COPYING.GPLv3"
     cp "$PCSX2/ps5/frontend/assets/SOURCES.txt" "$stage/ASSET-SOURCES.txt"
     cp "$PCSX2/ps5/frontend/assets/fonts/FontAwesome-LICENSE.txt" "$stage/FontAwesome-LICENSE.txt"
-    cat > "$stage/SOURCE.txt" <<'EOF'
-PS4SX2 is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2.
-Corresponding source: https://github.com/felipebasurto/PS4SX2
-Upstream PCSX2 source: https://github.com/PCSX2/pcsx2
-EOF
+    cp "$PCSX2/bin/docs/ThirdPartyLicenses.html" "$stage/ThirdPartyLicenses.html"
+    cp "$PCSX2/ps4/PORT-THIRD-PARTY.txt" "$stage/PORT-THIRD-PARTY.txt"
+    mkdir -p "$stage/licenses"
+    cp "$PCSX2/ps5/third_party/zlib/LICENSE" "$stage/licenses/zlib-LICENSE.txt"
+    cp "$PCSX2/ps5/third_party/zstd/LICENSE" "$stage/licenses/zstd-LICENSE.txt"
+    cp "$PCSX2/ps5/third_party/lz4/LICENSE" "$stage/licenses/lz4-LICENSE.txt"
+    cp "$PCSX2/ps5/third_party/libarchive/COPYING" "$stage/licenses/libarchive-COPYING.txt"
+    cp "$PCSX2/ps5/third_party/mbedtls/LICENSE" "$stage/licenses/mbedtls-LICENSE.txt"
+    cp "$PCSX2/ps5/third_party/libnfs/LICENCE-LGPL-2.1.txt" "$stage/licenses/libnfs-LGPL-2.1.txt"
+    cp "$PCSX2/ps5/third_party/libnfs/LICENCE-BSD.txt" "$stage/licenses/libnfs-BSD.txt"
+    build_commit="$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+    if [ -n "$(git -C "$PCSX2" status --porcelain 2>/dev/null)" ]; then
+        build_commit="$build_commit + uncommitted changes"
+    fi
+    {
+        echo "PS4SX2 is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
+        echo "Corresponding source: https://github.com/felipebasurto/PS4SX2"
+        echo "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2"
+        echo "Build commit: $build_commit"
+    } > "$stage/SOURCE.txt"
     # BIOS files are never bundled by default. Setting PCSX2_PS4_BIOS_DIR is an explicit personal-build
     # opt-in; the implicit ~/pcsx2ps4-build/bios fallback was too easy to include accidentally.
     bios="${PCSX2_PS4_BIOS_DIR:-}"
