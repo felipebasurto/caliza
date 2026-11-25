@@ -45,6 +45,7 @@
 // eerec-282: no libpng/libzip on Orbis: states are flat files without a screenshot (see below).
 #include <cstdio>
 extern "C" zip_file_t* orbis_zip_mem_fopen(const void* data, zip_uint64_t size);
+extern "C" zip_file_t* orbis_zip_file_fopen(std::FILE* fp, zip_uint64_t size);
 
 using namespace R5900;
 
@@ -1095,45 +1096,65 @@ bool SaveState_ReadScreenshot(const std::string& filename, u32* out_width, u32* 
 
 bool SaveState_UnzipFromDisk(const std::string& filename, Error* error)
 {
-	std::vector<u8> file;
-	if (std::FILE* fp = std::fopen(filename.c_str(), "rb"))
-	{
-		std::fseek(fp, 0, SEEK_END);
-		const long len = std::ftell(fp);
-		std::fseek(fp, 0, SEEK_SET);
-		if (len > 0)
-		{
-			file.resize(static_cast<size_t>(len));
-			if (std::fread(file.data(), 1, file.size(), fp) != file.size())
-				file.clear();
-		}
-		std::fclose(fp);
-	}
-	else
+	// Orbis: stream the flat state file. Buffering the whole ~40 MiB state in flexible memory made
+	// savestate loading a borderline allocation on the console; entry contents are read on demand.
+	std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(filename.c_str(), "rb"), &std::fclose);
+	if (!fp)
 	{
 		Error::SetString(error, "Savestate file does not exist.");
+		return false;
+	}
+	if (std::fseek(fp.get(), 0, SEEK_END) != 0)
+	{
+		Error::SetString(error, "Save state is truncated.");
+		return false;
+	}
+	const long len = std::ftell(fp.get());
+	if (len <= 0 || static_cast<unsigned long long>(len) > (256ull << 20))
+	{
+		Error::SetString(error, "Not an Orbis save state, or the file is truncated.");
+		return false;
+	}
+	const u64 file_size = static_cast<u64>(len);
+	if (std::fseek(fp.get(), 0, SEEK_SET) != 0)
+	{
+		Error::SetString(error, "Save state is truncated.");
 		return false;
 	}
 
 	struct OrbisStateEntry
 	{
 		std::string name;
-		const u8* data;
+		u64 offset;
 		u64 size;
 	};
 	std::vector<OrbisStateEntry> entries;
-	size_t pos = 0;
-	const auto get = [&file, &pos](void* dst, size_t n) {
-		if (pos + n > file.size())
-			return false;
-		std::memcpy(dst, file.data() + pos, n);
-		pos += n;
-		return true;
+	const auto find = [&entries](const char* name) -> const OrbisStateEntry* {
+		for (const OrbisStateEntry& e : entries)
+		{
+			if (e.name == name)
+				return &e;
+		}
+		return nullptr;
 	};
+	const auto wanted = [](const std::string& name) {
+		if (name == EntryFilename_InternalStructures)
+			return true;
+		for (const auto& entry : SavestateEntries)
+		{
+			if (name == entry->GetFilename())
+				return true;
+		}
+		return false;
+	};
+	const auto read_exact = [&fp](void* dst, size_t n) {
+		return std::fread(dst, 1, n, fp.get()) == n;
+	};
+
 	char magic[sizeof(ORBIS_STATE_MAGIC)];
 	u32 version = 0, count = 0;
-	if (!get(magic, sizeof(magic)) || std::memcmp(magic, ORBIS_STATE_MAGIC, sizeof(magic)) != 0 || !get(&version, sizeof(version)) ||
-		!get(&count, sizeof(count)))
+	if (!read_exact(magic, sizeof(magic)) || std::memcmp(magic, ORBIS_STATE_MAGIC, sizeof(magic)) != 0 ||
+		!read_exact(&version, sizeof(version)) || !read_exact(&count, sizeof(count)) || count > 1024)
 	{
 		Error::SetString(error, "Not an Orbis save state, or the file is truncated.");
 		return false;
@@ -1147,29 +1168,37 @@ bool SaveState_UnzipFromDisk(const std::string& filename, Error* error)
 	{
 		u32 name_len = 0;
 		u64 size = 0;
-		if (!get(&name_len, sizeof(name_len)) || pos + name_len > file.size())
+		if (!read_exact(&name_len, sizeof(name_len)) || name_len > 1024)
 		{
 			Error::SetString(error, "Save state is truncated.");
 			return false;
 		}
-		std::string name(reinterpret_cast<const char*>(file.data() + pos), name_len);
-		pos += name_len;
-		if (!get(&size, sizeof(size)) || size > file.size() - pos)
+		std::string name(name_len, '\0');
+		if (!read_exact(name.data(), name_len) || !read_exact(&size, sizeof(size)))
 		{
 			Error::SetString(error, "Save state is truncated.");
 			return false;
 		}
-		entries.push_back({std::move(name), file.data() + pos, size});
-		pos += static_cast<size_t>(size);
+		const long data_pos_long = std::ftell(fp.get());
+		if (data_pos_long < 0)
+		{
+			Error::SetString(error, "Save state is truncated.");
+			return false;
+		}
+		const u64 data_pos = static_cast<u64>(data_pos_long);
+		if (size > file_size - data_pos)
+		{
+			Error::SetString(error, "Save state is truncated.");
+			return false;
+		}
+		if (wanted(name) && !find(name.c_str()))
+			entries.push_back({std::move(name), data_pos, size});
+		if (std::fseek(fp.get(), static_cast<long>(size), SEEK_CUR) != 0)
+		{
+			Error::SetString(error, "Save state is truncated.");
+			return false;
+		}
 	}
-	const auto find = [&entries](const char* name) -> const OrbisStateEntry* {
-		for (const OrbisStateEntry& e : entries)
-		{
-			if (e.name == name)
-				return &e;
-		}
-		return nullptr;
-	};
 
 	const OrbisStateEntry* internal = find(EntryFilename_InternalStructures);
 	const OrbisStateEntry* found[std::size(SavestateEntries)];
@@ -1192,7 +1221,20 @@ bool SaveState_UnzipFromDisk(const std::string& filename, Error* error)
 	PreLoadPrep();
 
 	{
-		const std::vector<u8> buffer(internal->data, internal->data + internal->size);
+		if (internal->size > (16ull << 20))
+		{
+			Error::SetString(error, "Save state corruption in internal structures.");
+			VMManager::Reset();
+			return false;
+		}
+		std::vector<u8> buffer(static_cast<size_t>(internal->size));
+		if (std::fseek(fp.get(), static_cast<long>(internal->offset), SEEK_SET) != 0 ||
+			(!buffer.empty() && !read_exact(buffer.data(), buffer.size())))
+		{
+			Error::SetString(error, "Save state corruption in internal structures.");
+			VMManager::Reset();
+			return false;
+		}
 		memLoadingState state(buffer);
 		if (!state.FreezeBios() || !state.FreezeInternals(error))
 		{
@@ -1211,7 +1253,13 @@ bool SaveState_UnzipFromDisk(const std::string& filename, Error* error)
 			continue;
 		}
 
-		zip_file_t* zf = orbis_zip_mem_fopen(found[i]->data, found[i]->size);
+		if (std::fseek(fp.get(), static_cast<long>(found[i]->offset), SEEK_SET) != 0)
+		{
+			Error::SetString(error, fmt::format("Save state corruption in {}.", SavestateEntries[i]->GetFilename()));
+			VMManager::Reset();
+			return false;
+		}
+		zip_file_t* zf = orbis_zip_file_fopen(fp.get(), found[i]->size);
 		const bool ok = zf && SavestateEntries[i]->FreezeIn(zf);
 		if (zf)
 			zip_fclose(zf);

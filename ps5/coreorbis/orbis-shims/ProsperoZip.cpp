@@ -2,6 +2,7 @@
 // fail gracefully; raw .iso/.bin and unpacked content work normally.
 #include "zip.h"
 #include <cstring>
+#include <cstdio>
 
 // eerec-282: an in-memory "file" so SaveState.cpp's FreezeIn code (zip_fread) can read state entries.
 struct zip_file
@@ -9,11 +10,17 @@ struct zip_file
   const unsigned char* data;
   uint64_t size;
   uint64_t pos;
+  FILE* fp; // shared, not owned: SaveState.cpp streams one entry at a time without buffering the state file
 };
 
 extern "C" zip_file_t* orbis_zip_mem_fopen(const void* data, uint64_t size)
 {
-  return new zip_file{static_cast<const unsigned char*>(data), size, 0};
+  return new zip_file{static_cast<const unsigned char*>(data), size, 0, nullptr};
+}
+
+extern "C" zip_file_t* orbis_zip_file_fopen(FILE* fp, uint64_t size)
+{
+  return new zip_file{nullptr, size, 0, fp};
 }
 
 extern "C" zip_source_t* zip_source_file_create(const char* fname, uint64_t start, int64_t len, zip_error_t* error)
@@ -82,6 +89,12 @@ extern "C" int64_t zip_fread(zip_file_t* file, void* buf, uint64_t nbytes)
     return -1;
   const uint64_t left = file->size - file->pos;
   const uint64_t n = nbytes < left ? nbytes : left;
+  if (file->fp)
+  {
+    const size_t got = n ? std::fread(buf, 1, static_cast<size_t>(n), file->fp) : 0;
+    file->pos += got;
+    return static_cast<int64_t>(got);
+  }
   if (n)
     std::memcpy(buf, file->data + file->pos, static_cast<size_t>(n));
   file->pos += n;
