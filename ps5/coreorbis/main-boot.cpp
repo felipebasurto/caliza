@@ -813,12 +813,14 @@ static void *orbis_pad_thread(void *)
     // vk-285-113: the PS5's USB keyboard and mouse as the PS2 controller (orbis-shims/ProsperoKbdMouse.cpp): the keys held,
     // the mouse's buttons and its aim are added to what the DualSense reports (a button held on either is held; a stick the
     // keyboard or mouse moves is theirs while they move it). With no DualSense data at all they stand alone.
+    bool kbm_input_active = false;
     {
       static bool s_kbm_was_active = false;
       OrbisKbdMousePad kp;
       const bool kbm = OrbisKbdMousePadState(kp);
       const bool active = kbm && (kp.buttons != 0 || kp.l2 != 0 || kp.r2 != 0 || kp.lx != 128 || kp.ly != 128 ||
                                   kp.rx != 128 || kp.ry != 128);
+      kbm_input_active = active;
       if (rc != 0 && (active || s_kbm_was_active))
       {
         memset(&d, 0, sizeof(d));
@@ -843,7 +845,8 @@ static void *orbis_pad_thread(void *)
         fflush(stdout);
       }
     }
-    if (rc == 0)
+    const bool pad1_on = rc == 0 && (orbis_pad_connected(d) || kbm_input_active);
+    if (pad1_on)
     {
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
       // held together for PS5SX2/StateHold; orbis-shims/OrbisPadMap.h ComboWatch). By default L3+R3 + D-pad up saves and
@@ -978,6 +981,15 @@ static void *orbis_pad_thread(void *)
           s_holding = false;
       }
       orbis_pad_apply(port1, d);
+    }
+    else
+    {
+      // Released buttons, centred sticks while player 1's controller is off, as the extra ports already did:
+      // otherwise the last read before a disconnect can stay held forever. Needs proper testing on the console.
+      OrbisPadData idle;
+      memset(&idle, 0, sizeof(idle));
+      idle.lx = idle.ly = idle.rx = idle.ry = 128;
+      orbis_pad_apply(port1, idle);
     }
     {
       static OrbisRumbleOut s_rumble1, s_rumble_extra[3];
@@ -1162,6 +1174,7 @@ static void orbis_output_default()
     ps5vk_output_restore_default();
 }
 
+#ifndef ORBIS_PS4
 // etaHEN non-whitelist jailbreak: send JAILBREAK_CMD to the legacy CMD server
 // (127.0.0.1:9028). Grants the process full ucred/caps (JIT, direct memory...).
 static void orbis_try_jailbreak()
@@ -1231,6 +1244,7 @@ static void orbis_try_jailbreak()
     printf("[jailbreak] all ports failed\n");
     fflush(stdout);
 }
+#endif // !ORBIS_PS4
 
 extern "C" void orbis_stage(const char* stage)
 {
@@ -2725,6 +2739,16 @@ static bool orbis_no_usb_kbm()
 #endif
 }
 
+#ifdef ORBIS_PS4
+struct Ps4WsiPresentStats
+{
+  unsigned long long presents, present_failures, flip_fallbacks, acquire_timeouts, acquire_not_ready,
+    videoout_register_failures, videoout_register_retries, videoout_unregister_retries,
+    videoout_unregister_retry_failures, videoout_unregister_retry_successes, videoout_slot_exhausted;
+};
+extern "C" void ps4_wsi_present_stats(Ps4WsiPresentStats* out);
+#endif
+
 int main()
 {
 #ifdef ORBIS_PS4
@@ -2863,10 +2887,11 @@ int main()
 #endif
   ORBIS_PS4_STEP("cover prefetch done");
 
+  extern bool orbis_probe_jit();
+#ifndef ORBIS_PS4
   // Primary: etaHEN/OnionHEN download0 file-broker jailbreak (needs PPSA99203
   // in the HEN app_jailbreak allowlist). Falls back to the legacy CMD ports.
   extern bool orbis_hen_jailbreak();
-  extern bool orbis_probe_jit();
   extern void orbis_log_hen_config();
   orbis_log_hen_config();
   ORBIS_PS4_STEP("HEN config logged");
@@ -2875,6 +2900,11 @@ int main()
   else
     orbis_try_jailbreak();
   ORBIS_PS4_STEP("jailbreak step done");
+#else
+  // PS4 port (AI-assisted): GoldHEN/the loader already provides the process privileges this port needs;
+  // the etaHEN broker and legacy CMD ports are PS5-specific. Avoid their imports and the boot delay here.
+  ORBIS_PS4_STEP("PS5 jailbreak probe skipped");
+#endif
 #ifdef ORBIS_VULKAN
   orbis_log_flag_access("after the jailbreak");
 #endif
@@ -3872,6 +3902,34 @@ int main()
           printf("[shaders] pipelines=%llu %.1fms (max %.1fms) | glsl=%llu %.1fms (max %.1fms)\n",
                  calls[7], ms[7], max_ms[7], calls[8], ms[8], max_ms[8]);
       }
+#ifdef ORBIS_PS4
+      {
+        // PS4 port (AI-assisted): the WSI shim's health counters, only when something noteworthy happened.
+        // Presents are context; flip fallbacks mean the CPU-serializing path ran, and register/unregister
+        // retries or slot exhaustion explain swapchain recreation problems. Needs proper testing.
+        static Ps4WsiPresentStats prev = {};
+        Ps4WsiPresentStats cur = {};
+        ps4_wsi_present_stats(&cur);
+        const unsigned long long presents = cur.presents - prev.presents;
+        const unsigned long long present_failures = cur.present_failures - prev.present_failures;
+        const unsigned long long flip_fallbacks = cur.flip_fallbacks - prev.flip_fallbacks;
+        const unsigned long long acquire_timeouts = cur.acquire_timeouts - prev.acquire_timeouts;
+        const unsigned long long acquire_not_ready = cur.acquire_not_ready - prev.acquire_not_ready;
+        const unsigned long long register_failures = cur.videoout_register_failures - prev.videoout_register_failures;
+        const unsigned long long register_retries = cur.videoout_register_retries - prev.videoout_register_retries;
+        const unsigned long long unregister_retries = cur.videoout_unregister_retries - prev.videoout_unregister_retries;
+        const unsigned long long unregister_failures = cur.videoout_unregister_retry_failures - prev.videoout_unregister_retry_failures;
+        const unsigned long long unregister_successes = cur.videoout_unregister_retry_successes - prev.videoout_unregister_retry_successes;
+        const unsigned long long slot_exhausted = cur.videoout_slot_exhausted - prev.videoout_slot_exhausted;
+        if (present_failures || flip_fallbacks || acquire_timeouts || acquire_not_ready || register_failures ||
+            register_retries || unregister_retries || unregister_failures || unregister_successes || slot_exhausted)
+          printf("[ps4wsi] presents=%llu failures=%llu flip_fallbacks=%llu acquire_timeouts=%llu acquire_not_ready=%llu "
+                 "register_failures=%llu register_retries=%llu unregister_retries=%llu(fail=%llu ok=%llu) slot_exhausted=%llu\n",
+                 presents, present_failures, flip_fallbacks, acquire_timeouts, acquire_not_ready, register_failures,
+                 register_retries, unregister_retries, unregister_failures, unregister_successes, slot_exhausted);
+        prev = cur;
+      }
+#endif
       {
         // vk-285-39: GSDeviceVK::CopyRect's copies this second (VKOrbisTiming.h), only when there
         // were any: the ones made as convert draws, then the image copies left, which the driver

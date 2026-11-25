@@ -35,8 +35,10 @@ int sceKernelAvailableDirectMemorySize(long long searchStart, long long searchEn
 long long sceKernelGetDirectMemorySize(void);
 int sceKernelConfiguredFlexibleMemorySize(unsigned long long* size);
 int sceKernelAvailableFlexibleMemorySize(unsigned long long* size);
+#ifndef ORBIS_PS4
 int sceKernelJitCreateSharedMemory(int flags, unsigned long long size, int protection, int* destinationHandle);
 int sceKernelJitMapSharedMemory(int handle, int protection, void** destination);
+#endif
 }
 
 namespace
@@ -144,6 +146,9 @@ void test_budgets()
 // (there is no release for it here), so the probe costs 16 MiB of whichever pool.
 void test_jit_accounting()
 {
+#ifdef ORBIS_PS4
+	std::printf("[memprobe] jit shm skipped on PS4 (libkernel import unsafe)\n");
+#else
 	const unsigned long long before = flexible_free();
 	int handle = -1;
 	const int rc = sceKernelJitCreateSharedMemory(0, 16ull << 20, 7, &handle);
@@ -155,6 +160,7 @@ void test_jit_accounting()
 	std::printf("[memprobe] jit shm 16 MiB: create rc=%d map rc=%d at %p; flexible free %llu -> %llu KiB "
 				"(%lld KiB)\n",
 		rc, rm, view, before >> 10, after >> 10, static_cast<long long>(before >> 10) - static_cast<long long>(after >> 10));
+#endif
 }
 
 // Whether direct memory can hold the recompilers' code: mapped RWX at once, or RW

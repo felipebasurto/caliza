@@ -13,6 +13,7 @@
 
 extern "C" int sceKernelUsleep(unsigned microseconds);
 
+#ifndef ORBIS_PS4
 namespace hen_jailbreak {
 namespace {
 bool append(std::array<char, 32>& target, std::size_t& at, char value) noexcept {
@@ -152,14 +153,24 @@ std::string_view Broker::summary() const noexcept {
     }
 }
 } // namespace hen_jailbreak
+#endif // !ORBIS_PS4
 
 // Privilege probe: root is the only thing that makes JIT shared memory work
 // on this firmware (unprivileged create fails). One page, left mapped.
+#ifndef ORBIS_PS4
 extern "C" int sceKernelJitCreateSharedMemory(int flags, unsigned long long size, int protection, int* destinationHandle);
 extern "C" int sceKernelJitMapSharedMemory(int handle, int protection, void** destination);
+#endif
 
 bool orbis_probe_jit()
 {
+#ifdef ORBIS_PS4
+    // PS4 port (AI-assisted): the port's code memory uses executable direct memory. The PS5 JIT
+    // shared-memory imports are not safe to resolve from retail PS4 libkernel. Needs proper testing.
+    printf("[jitprobe] skipped on PS4 (direct memory runtime)\n");
+    fflush(stdout);
+    return false;
+#else
     int handle = -1;
     const int rc = sceKernelJitCreateSharedMemory(0, 0x4000, 7, &handle);
     printf("[jitprobe] create rc=%d handle=%d\n", rc, handle);
@@ -171,8 +182,10 @@ bool orbis_probe_jit()
     printf("[jitprobe] map rc=%d addr=%p\n", rm, addr);
     fflush(stdout);
     return rm == 0 && addr != nullptr;
+#endif
 }
 
+#ifndef ORBIS_PS4
 // Best-effort self-check: can this process even see the HEN config, and does
 // it list our TitleID? Sandbox may deny the open; every outcome is logged.
 void orbis_log_hen_config()
@@ -247,3 +260,4 @@ bool orbis_hen_jailbreak()
     fflush(stdout);
     return broker.state == hen_jailbreak::State::ready && broker.uid_after == 0;
 }
+#endif // !ORBIS_PS4

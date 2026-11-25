@@ -48,8 +48,8 @@ rm -f "$eboot" # a failed link must not leave the last eboot to be packaged
 make -C "$link" -j"${JOBS:-20}" > "$PSB/link.log" 2>&1 || true
 grep -E "error|Failed|missing" "$PSB/link.log" | grep -v "no version information" | head -20 || true
 
-if [ "$mode" = imports ] || [ ! -f "$eboot" ]; then
-    [ -f "$elf" ] || { echo "[build-ps4] no ELF: the link failed (log: $PSB/link.log)" >&2; exit 1; }
+[ -f "$elf" ] || { echo "[build-ps4] no ELF: the link failed (log: $PSB/link.log)" >&2; exit 1; }
+{
     # Every name the system libraries export, then the ELF's undefined names that none of them has.
     index="$PSB/ps4-exports.txt"
     if [ ! -s "$index" ]; then
@@ -57,12 +57,25 @@ if [ "$mode" = imports ] || [ ! -f "$eboot" ]; then
             llvm-nm-21 -D --defined-only "$so" 2>/dev/null | awk -v lib="$(basename "$so" .so)" '{print $NF" "lib}'
         done | sort -u -k1,1 > "$index"
     fi
-    llvm-nm-21 -u "$elf" | awk '{print $NF}' | sort -u > "$PSB/undefined.txt"
+    # Audit dynamic imports only. `llvm-nm -u` also reports weak/static Vulkan/Mesa names that are not
+    # runtime imports at all (thousands of false positives). readelf's UND dynamic symbols are the names
+    # the console's module loader must resolve.
+    llvm-readelf-21 --dyn-syms "$elf" 2>/dev/null | awk '$7=="UND" {print $8}' | sed 's/@.*//' | sort -u > "$PSB/undefined.txt"
     join -a1 "$PSB/undefined.txt" "$index" | awk 'NF==1' | grep -v "^annotate_" > "$PSB/unresolved.txt" || true
-    echo "[build-ps4] $(wc -l < "$PSB/undefined.txt") imports, $(wc -l < "$PSB/unresolved.txt") with no PS4 library (list: $PSB/unresolved.txt)"
+    echo "[build-ps4] $(wc -l < "$PSB/undefined.txt") dynamic imports, $(wc -l < "$PSB/unresolved.txt") with no PS4 library (list: $PSB/unresolved.txt)"
     head -80 "$PSB/unresolved.txt"
+    # OpenOrbis stub libraries export some PS5-only names, so the export-index check above cannot catch
+    # them. Keep an explicit denylist for imports proven unsafe on retail PS4 firmware.
+    grep -E '^sceKernelJit(CreateSharedMemory|MapSharedMemory|CreateAliasOfSharedMemory)$|^sceKernelGetProsperoSystemSwVersion$|^sceHttp2|^sceVideoOut(SetBufferAttribute2|RegisterBuffers2)$' \
+        "$PSB/undefined.txt" > "$PSB/ps5-only-imports.txt" || true
+    if [ -s "$PSB/ps5-only-imports.txt" ]; then
+        echo "[build-ps4] WARNING: PS5-only dynamic imports remain (list: $PSB/ps5-only-imports.txt):"
+        cat "$PSB/ps5-only-imports.txt"
+    else
+        echo "[build-ps4] no known PS5-only dynamic imports"
+    fi
     [ -f "$eboot" ] || exit 1
-fi
+}
 echo "[build-ps4] eboot: $eboot ($(du -h "$eboot" | cut -f1))"
 
 if [ "$mode" = package ] || [ "$mode" = upload ]; then
@@ -72,13 +85,28 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     cp "$eboot" "$stage/"
     cp "$PCSX2/ps4/sce_sys/icon0.png" "$stage/sce_sys/" # PS4SX2 icon, 512x512 RGB, as the PS4 wants
     cp -r "$PCSX2/bin/resources" "$stage/resources"    # /app0/resources (main-boot.cpp, ORBIS_PS4)
-    # Your own BIOS dumps, built into the package (/app0/bios; main-boot.cpp copies them to /data/PCSX2/bios). They come
-    # from outside the repository and must never be committed or shared: a package built with them is for your console.
-    bios="${PCSX2_PS4_BIOS_DIR:-$PSB/bios}"
-    if [ -d "$bios" ] && [ -n "$(ls -A "$bios")" ]; then
+    # GPL conveyance and bundled-asset notices travel in the package itself.
+    cp "$PCSX2/COPYING.GPLv3" "$stage/COPYING.GPLv3"
+    cp "$PCSX2/ps5/frontend/assets/SOURCES.txt" "$stage/ASSET-SOURCES.txt"
+    cp "$PCSX2/ps5/frontend/assets/fonts/FontAwesome-LICENSE.txt" "$stage/FontAwesome-LICENSE.txt"
+    cat > "$stage/SOURCE.txt" <<'EOF'
+PS4SX2 is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2.
+Corresponding source: https://github.com/felipebasurto/PS4SX2
+Upstream PCSX2 source: https://github.com/PCSX2/pcsx2
+EOF
+    # BIOS files are never bundled by default. Setting PCSX2_PS4_BIOS_DIR is an explicit personal-build
+    # opt-in; the implicit ~/pcsx2ps4-build/bios fallback was too easy to include accidentally.
+    bios="${PCSX2_PS4_BIOS_DIR:-}"
+    if [ -n "$bios" ] && [ -d "$bios" ] && [ -n "$(ls -A "$bios")" ]; then
         mkdir -p "$stage/bios"
         cp "$bios"/* "$stage/bios/"
+        cat > "$stage/PERSONAL-BUILD.txt" <<'EOF'
+This package contains console BIOS files explicitly added by its builder for personal use.
+Do not redistribute it. Public PS4SX2 packages never include BIOS files.
+EOF
         echo "[build-ps4] BIOS files in the package: $(ls "$stage/bios" | wc -l) from $bios (personal build: don't share it)"
+    else
+        echo "[build-ps4] BIOS files in the package: none (redistributable build)"
     fi
     # Plain homebrew launch values (CEMUPS4's), plus PS4 Pro mode and the seventh CPU core. No Sony modules: no Piglet.
     out="$PSB/out"

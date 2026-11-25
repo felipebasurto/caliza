@@ -9,10 +9,13 @@ extern "C" {
 int sceKernelMemoryPoolReserve(void* addr_in, unsigned long long len, unsigned long long alignment, int flags, void** addr_out);
 int sceKernelMemoryPoolCommit(void* addr, unsigned long long len, int type, int prot, int flags);
 
-// JIT shared memory (executable-capable, separate region)
+// JIT shared memory (executable-capable, separate region). PS5-only here: on the PS4 these imports
+// can resolve against OpenOrbis stubs that retail libkernel does not provide.
+#ifndef ORBIS_PS4
 int sceKernelJitCreateSharedMemory(int flags, unsigned long long size, int protection, int* destinationHandle);
 int sceKernelJitMapSharedMemory(int handle, int protection, void** destination);
 int sceKernelJitCreateAliasOfSharedMemory(int handle, int protection, int* destinationHandle);
+#endif
 
 // misc
 int sceKernelAvailableFlexibleMemorySize(unsigned long long*);
@@ -44,6 +47,11 @@ extern "C" void* orbis_alloc_pool(unsigned long long len)
 // Allocate `len` bytes of RWX JIT shared memory. Returns nullptr on failure.
 extern "C" void* orbis_alloc_jit(unsigned long long len)
 {
+#ifdef ORBIS_PS4
+    printf("[orbismem] jit shared memory unsupported on PS4 (len=%llu); direct memory is the code-memory path\n",
+        (unsigned long long)len);
+    return nullptr;
+#else
     printf("[orbismem] jit create begin len=%llu\n", (unsigned long long)len);
     fflush(stdout);
     int fd = 0;
@@ -65,4 +73,5 @@ extern "C" void* orbis_alloc_jit(unsigned long long len)
         return nullptr;
     }
     return out;
+#endif
 }

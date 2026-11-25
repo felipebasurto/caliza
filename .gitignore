@@ -126,3 +126,6 @@ CMakeSettings.json
 /out/
 /.cache/
 ps4/objects.txt
+
+# Raw autonomous-session audit logs (kept locally, not committed wholesale)
+ps4/logs/
