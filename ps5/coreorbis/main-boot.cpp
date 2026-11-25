@@ -2744,6 +2744,7 @@ static bool orbis_no_usb_kbm()
 
 #ifdef ORBIS_PS4
 extern "C" void ps4_wsi_present_stats(Ps4WsiPresentStats* out);
+extern "C" void orbis_audio_stats(uint64_t*, uint64_t*, uint64_t*, int*);
 #endif
 
 int main()
@@ -3929,6 +3930,26 @@ int main()
                  presents, present_failures, flip_fallbacks, acquire_timeouts, acquire_not_ready, register_failures,
                  register_retries, unregister_retries, unregister_failures, unregister_successes, slot_exhausted);
         prev = cur;
+      }
+#endif
+#ifdef ORBIS_PS4
+      {
+        // Audio starvation/output failures. A clean stream stays silent; underruns mean PCSX2 had
+        // fewer than one hardware grain buffered when the output thread needed it. Needs proper testing.
+        static uint64_t prev_grains = 0, prev_underruns = 0, prev_errors = 0;
+        uint64_t grains = 0, underruns = 0, errors = 0;
+        int last_error = 0;
+        orbis_audio_stats(&grains, &underruns, &errors, &last_error);
+        const uint64_t d_grains = grains - prev_grains;
+        const uint64_t d_underruns = underruns - prev_underruns;
+        const uint64_t d_errors = errors - prev_errors;
+        if (d_underruns || d_errors)
+          printf("[audio] grains=%llu underruns=%llu errors=%llu last=%#x\n",
+            (unsigned long long)d_grains, (unsigned long long)d_underruns, (unsigned long long)d_errors,
+            (unsigned)last_error);
+        prev_grains = grains;
+        prev_underruns = underruns;
+        prev_errors = errors;
       }
 #endif
       {

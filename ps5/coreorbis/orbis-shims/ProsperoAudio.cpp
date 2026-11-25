@@ -2,6 +2,7 @@
 #include <cstring>
 #include <atomic>
 #include <thread>
+#include <cstdint>
 // Orbis audio shims: cubeb/SDL drivers don't exist here (libSceAudioOut later).
 #include "Host/AudioStream.h"
 #include "common/Error.h"
@@ -31,6 +32,11 @@ int sceAudioOutClose(int handle);
 
 namespace
 {
+std::atomic<uint64_t> s_audio_grains{0};
+std::atomic<uint64_t> s_audio_underrun_grains{0};
+std::atomic<uint64_t> s_audio_output_errors{0};
+std::atomic<int> s_audio_last_output_error{0};
+
 class OrbisAudioStream final : public AudioStream
 {
 public:
@@ -79,10 +85,30 @@ private:
     while (!m_quit.load(std::memory_order_relaxed))
     {
       if (m_paused)
+      {
         std::memset(buf, 0, sizeof(buf));
+      }
       else
+      {
+        // PCSX2 inserts silence and refills after an underrun. Count those grains so the once-per-second
+        // telemetry can distinguish emulation starvation from AudioOut failures. Needs proper testing.
+        if (GetBufferedFramesRelaxed() < GRAIN)
+          s_audio_underrun_grains.fetch_add(1, std::memory_order_relaxed);
         ReadFrames(buf, GRAIN);
-      sceAudioOutOutput(m_handle, buf); // blocks until the previous grain has been consumed
+      }
+      s_audio_grains.fetch_add(1, std::memory_order_relaxed);
+      const int out_rc = sceAudioOutOutput(m_handle, buf); // blocks until the previous grain has been consumed
+      if (out_rc < 0)
+      {
+        const uint64_t errors = s_audio_output_errors.fetch_add(1, std::memory_order_relaxed) + 1;
+        s_audio_last_output_error.store(out_rc, std::memory_order_relaxed);
+        if (errors <= 3 || (errors % 4096) == 0)
+        {
+          std::printf("[audio] sceAudioOutOutput error %#x (%llu times)\n", static_cast<unsigned>(out_rc),
+            static_cast<unsigned long long>(errors));
+          std::fflush(stdout);
+        }
+      }
     }
   }
   int m_handle = -1;
@@ -90,6 +116,18 @@ private:
   std::thread m_thread;
 };
 } // namespace
+
+extern "C" void orbis_audio_stats(uint64_t* grains, uint64_t* underrun_grains, uint64_t* output_errors, int* last_output_error)
+{
+  if (grains)
+    *grains = s_audio_grains.load(std::memory_order_relaxed);
+  if (underrun_grains)
+    *underrun_grains = s_audio_underrun_grains.load(std::memory_order_relaxed);
+  if (output_errors)
+    *output_errors = s_audio_output_errors.load(std::memory_order_relaxed);
+  if (last_output_error)
+    *last_output_error = s_audio_last_output_error.load(std::memory_order_relaxed);
+}
 
 std::unique_ptr<AudioStream> AudioStream::CreateCubebAudioStream(u32 sample_rate, const AudioStreamParameters& parameters,
   const char* driver_name, const char* device_name, bool stretch_enabled, Error* error)
