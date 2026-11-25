@@ -42,6 +42,7 @@ BIOS
 #include <setjmp.h>
 #include <signal.h>
 #include <cstring>
+#include <pthread.h>
 #endif
 
 #ifdef ENABLECACHE
@@ -129,10 +130,38 @@ extern "C" int sceKernelMunmap(void* addr, unsigned long long len);
 namespace
 {
 sigjmp_buf s_orbis_exec_probe_jump;
+pthread_mutex_t s_orbis_exec_probe_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_t s_orbis_exec_probe_thread;
+volatile sig_atomic_t s_orbis_exec_probe_active = 0;
+struct sigaction s_orbis_exec_probe_old_segv;
+struct sigaction s_orbis_exec_probe_old_bus;
 
-void orbis_exec_probe_fault(int, siginfo_t*, void*)
+void orbis_exec_probe_chain(int sig, siginfo_t* info, void* context)
 {
-	siglongjmp(s_orbis_exec_probe_jump, 1);
+	struct sigaction* old = sig == SIGBUS ? &s_orbis_exec_probe_old_bus : &s_orbis_exec_probe_old_segv;
+	if ((old->sa_flags & SA_SIGINFO) && old->sa_sigaction)
+	{
+		old->sa_sigaction(sig, info, context);
+		return;
+	}
+	if (old->sa_handler == SIG_IGN)
+		return;
+	if (old->sa_handler && old->sa_handler != SIG_DFL)
+	{
+		old->sa_handler(sig);
+		return;
+	}
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+void orbis_exec_probe_fault(int sig, siginfo_t* info, void* context)
+{
+	// The probe runs while the frontend and other emulator threads already exist. A fault in another
+	// thread must still reach the process's real crash handler; only the probing thread may longjmp.
+	if (s_orbis_exec_probe_active && pthread_equal(pthread_self(), s_orbis_exec_probe_thread))
+		siglongjmp(s_orbis_exec_probe_jump, 1);
+	orbis_exec_probe_chain(sig, info, context);
 }
 
 // Prove that a mapping executes before committing the recompilers to it. OpenOrbis can create
@@ -141,12 +170,15 @@ void orbis_exec_probe_fault(int, siginfo_t*, void*)
 bool orbis_probe_executable_memory(void* mem)
 {
 	static const unsigned char ret_instruction[] = {0xC3};
-	struct sigaction action{}, old_segv{}, old_bus{};
+	pthread_mutex_lock(&s_orbis_exec_probe_mutex);
+	s_orbis_exec_probe_thread = pthread_self();
+	s_orbis_exec_probe_active = 1;
+	struct sigaction action{};
 	action.sa_sigaction = orbis_exec_probe_fault;
 	action.sa_flags = SA_SIGINFO;
 	sigemptyset(&action.sa_mask);
-	sigaction(SIGSEGV, &action, &old_segv);
-	sigaction(SIGBUS, &action, &old_bus);
+	sigaction(SIGSEGV, &action, &s_orbis_exec_probe_old_segv);
+	sigaction(SIGBUS, &action, &s_orbis_exec_probe_old_bus);
 	bool ok = false;
 	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
 	{
@@ -155,8 +187,10 @@ bool orbis_probe_executable_memory(void* mem)
 		reinterpret_cast<void (*)()>(mem)();
 		ok = true;
 	}
-	sigaction(SIGSEGV, &old_segv, nullptr);
-	sigaction(SIGBUS, &old_bus, nullptr);
+	sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
+	sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
+	s_orbis_exec_probe_active = 0;
+	pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
 	return ok;
 }
 } // namespace
