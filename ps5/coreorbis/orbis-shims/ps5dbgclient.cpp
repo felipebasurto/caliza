@@ -101,7 +101,8 @@ extern "C" unsigned long long orbis_self_alloc(unsigned long long len)
     if (!orbis_dbg_disable_arena(fd))
         printf("[dbgalloc] arena disable failed (continuing)\n");
 
-    // request: magic + cmd + datalen(16) + { pid u32, pad u32, hint u64, len u32 }
+    // request: magic + cmd + datalen(16) + packed { pid u32, hint u64, len u32 }.
+    // ps5debug-NG's public PROTOCOL.md has no pad field; the old layout wrote len past the buffer.
     int pid = (int)getpid();
     const unsigned long long hint = 0x200000000ULL; // 8GB - within the app's legal user area
     unsigned char req[12 + 16];
@@ -110,11 +111,9 @@ extern "C" unsigned long long orbis_self_alloc(unsigned long long len)
     const unsigned int datalen = 16;
     std::memcpy(req + 8, &datalen, 4);
     std::memcpy(req + 12, &pid, 4);
-    const unsigned int pad = 0;
-    std::memcpy(req + 16, &pad, 4);
-    std::memcpy(req + 20, &hint, 8);
+    std::memcpy(req + 16, &hint, 8);
     const unsigned int len32 = (unsigned int)len;
-    std::memcpy(req + 28, &len32, 4);
+    std::memcpy(req + 24, &len32, 4);
 
     const int total = (int)sizeof(req);
     int off = 0;
