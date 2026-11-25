@@ -177,8 +177,20 @@ bool orbis_probe_executable_memory(void* mem)
 	action.sa_sigaction = orbis_exec_probe_fault;
 	action.sa_flags = SA_SIGINFO;
 	sigemptyset(&action.sa_mask);
-	sigaction(SIGSEGV, &action, &s_orbis_exec_probe_old_segv);
-	sigaction(SIGBUS, &action, &s_orbis_exec_probe_old_bus);
+	const int segv_installed = sigaction(SIGSEGV, &action, &s_orbis_exec_probe_old_segv);
+	const int bus_installed = sigaction(SIGBUS, &action, &s_orbis_exec_probe_old_bus);
+	if (segv_installed != 0 || bus_installed != 0)
+	{
+		if (segv_installed == 0)
+			sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
+		if (bus_installed == 0)
+			sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
+		s_orbis_exec_probe_active = 0;
+		pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
+		printf("[dbg] memmap: executable probe handlers refused; assuming the mapping executes\n");
+		fflush(stdout);
+		return true;
+	}
 	bool ok = false;
 	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
 	{
@@ -225,6 +237,8 @@ bool SysMemory::AllocateMemoryMap()
 			rc2 = sceKernelMapDirectMemory((void**)&data, main_size, 0x33, 0, phys, align);
 		printf("[dbg] memmap: map direct rc=%d addr=%p\n", rc2, data);
 		fflush(stdout);
+		if (rc == 0 && rc2 != 0)
+			sceKernelReleaseDirectMemory(phys, main_size);
 
 		if (rc == 0 && rc2 == 0)
 		{

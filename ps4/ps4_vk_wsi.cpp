@@ -851,6 +851,30 @@ VKAPI_ATTR void VKAPI_CALL DestroySemaphore(VkDevice device, VkSemaphore semapho
 VkCommandBuffer s_empty_cb = VK_NULL_HANDLE;
 VkDevice s_empty_cb_device = VK_NULL_HANDLE;
 
+// Device destruction implicitly destroys every semaphore without calling vkDestroySemaphore. Clear the
+// window-system ownership sets here too, or a semaphore handle reused by the next device can lose a real
+// wait/signal after GS device recreation. Needs proper testing with return-to-menu/device recreation.
+VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* alloc)
+{
+	{
+		std::lock_guard<std::mutex> guard(s_semaphore_lock);
+		s_acquire_semaphores.clear();
+		s_present_semaphores.clear();
+	}
+	if (device == s_empty_cb_device)
+	{
+		s_empty_cb = VK_NULL_HANDLE;
+		s_empty_cb_device = VK_NULL_HANDLE;
+	}
+	if (device == s_device)
+	{
+		s_device = VK_NULL_HANDLE;
+		s_queue = VK_NULL_HANDLE;
+	}
+	Device<PFN_vkDestroyDevice>(device, "vkDestroyDevice")(device, alloc);
+}
+
+
 VkCommandBuffer EmptyCommandBuffer()
 {
 	std::lock_guard<std::mutex> guard(s_lock);
@@ -1216,6 +1240,7 @@ PFN_vkVoidFunction Lookup(const char* name)
 		OURS(QueueSubmit),
 		OURS(QueueSubmit2),
 		OURS(DestroySemaphore),
+		OURS(DestroyDevice),
 	};
 #undef OURS
 	for (const auto& entry : kTable)

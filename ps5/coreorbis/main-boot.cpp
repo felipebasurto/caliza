@@ -653,6 +653,22 @@ static bool orbis_pad_connected(const OrbisPadData &d)
   return d.rest[76 - 12] != 0;
 }
 
+// The connected byte's offset is PS5-derived and not yet proven against PS4's ScePadData. On PS4 fail
+// open until the byte has been seen nonzero once; after that a zero byte can mean disconnect without
+// making an always-zero wrong offset kill player 1's input. Needs proper testing on the console.
+static bool orbis_pad_connected_safe(const OrbisPadData &d, bool &byte_seen)
+{
+#ifdef ORBIS_PS4
+  const bool connected_byte = orbis_pad_connected(d);
+  if (connected_byte)
+    byte_seen = true;
+  return byte_seen ? connected_byte : true;
+#else
+  (void)byte_seen;
+  return orbis_pad_connected(d);
+#endif
+}
+
 // vk-285-116 (AI-assisted): the buttons go through the remapping (orbis-shims/OrbisPadMap.h); with nothing set it is
 // what vk-285-109..115 did: each button on its own, the touchpad's click and the keyboard's Backspace on Select, the
 // triggers analog, the sticks as they are. Each PS2 input is set when its value changes (the pressure modifier and the
@@ -809,6 +825,9 @@ static void *orbis_pad_thread(void *)
     orbis_pad_rumble_mode(extra[i].handle, who); // vk-285-117
   }
   unsigned reads = 0;
+  bool port1_connected_seen = false;
+  bool extra_connected_seen[3] = {};
+  bool port1_layout_logged = false;
   for (;;)
   {
     if (handle < 0 && user >= 0 && rc_pi == 0 && (reads % 250u) == 0u)
@@ -825,6 +844,31 @@ static void *orbis_pad_thread(void *)
     OrbisPadData d;
     memset(&d, 0, sizeof(d));
     int rc = handle >= 0 ? p_read(handle, &d) : -1;
+    bool port1_connected = false;
+    if (rc == 0)
+    {
+      if (!port1_layout_logged)
+      {
+        port1_layout_logged = true;
+        printf("[pad] player 1 data[56..84]:");
+        for (int i = 56 - 12; i <= 84 - 12 && i < (int)sizeof(d.rest); i++)
+          printf(" %02x", d.rest[i]);
+        printf("\n");
+        fflush(stdout);
+      }
+      const bool was_seen = port1_connected_seen;
+      port1_connected = orbis_pad_connected_safe(d, port1_connected_seen);
+      if (!was_seen && port1_connected_seen)
+      {
+        printf("[pad] player 1 connected byte observed nonzero\n");
+        fflush(stdout);
+      }
+      if (!port1_connected)
+      {
+        memset(&d, 0, sizeof(d));
+        d.lx = d.ly = d.rx = d.ry = 128;
+      }
+    }
     // vk-285-113: the PS5's USB keyboard and mouse as the PS2 controller (orbis-shims/ProsperoKbdMouse.cpp): the keys held,
     // the mouse's buttons and its aim are added to what the DualSense reports (a button held on either is held; a stick the
     // keyboard or mouse moves is theirs while they move it). With no DualSense data at all they stand alone.
@@ -860,7 +904,7 @@ static void *orbis_pad_thread(void *)
         fflush(stdout);
       }
     }
-    const bool pad1_on = rc == 0 && (orbis_pad_connected(d) || kbm_input_active);
+    const bool pad1_on = rc == 0 && (port1_connected || kbm_input_active);
     if (pad1_on)
     {
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
@@ -1022,7 +1066,7 @@ static void *orbis_pad_thread(void *)
       OrbisPadData d2;
       memset(&d2, 0, sizeof(d2));
       const int rc2 = p_read(px.handle, &d2);
-      const bool on = rc2 == 0 && orbis_pad_connected(d2);
+      const bool on = rc2 == 0 && orbis_pad_connected_safe(d2, extra_connected_seen[i]);
       if (on)
         orbis_pad_apply(px, d2);
       else
@@ -3944,7 +3988,7 @@ int main()
         const unsigned long long unregister_failures = cur.videoout_unregister_retry_failures - prev.videoout_unregister_retry_failures;
         const unsigned long long unregister_successes = cur.videoout_unregister_retry_successes - prev.videoout_unregister_retry_successes;
         const unsigned long long slot_exhausted = cur.videoout_slot_exhausted - prev.videoout_slot_exhausted;
-        if (present_failures || flip_fallbacks || acquire_timeouts || acquire_not_ready || register_failures ||
+        if (present_failures || flip_fallbacks || acquire_timeouts || register_failures ||
             register_retries || unregister_retries || unregister_failures || unregister_successes || slot_exhausted)
           printf("[ps4wsi] presents=%llu failures=%llu flip_fallbacks=%llu acquire_timeouts=%llu acquire_not_ready=%llu "
                  "register_failures=%llu register_retries=%llu unregister_retries=%llu(fail=%llu ok=%llu) slot_exhausted=%llu\n",

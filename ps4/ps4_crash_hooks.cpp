@@ -53,7 +53,7 @@ extern "C" {
 // mid-update if another thread crashed, but they do not require any lock to read.
 void ps4_crash_guest_regs(int fd)
 {
-	write_format(fd, "guest: eepc=%08x eecy=%llu eecode=%08x ioppc=%08x iopcy=%llu iopcode=%08x\n",
+	write_format(fd, "guest: eepc=%08x eecy=%llu eeinsn=%08x ioppc=%08x iopcy=%llu iopinsn=%08x\n",
 		cpuRegs.pc, static_cast<unsigned long long>(cpuRegs.cycle), cpuRegs.code, psxRegs.pc,
 		static_cast<unsigned long long>(psxRegs.cycle), psxRegs.code);
 }
