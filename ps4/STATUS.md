@@ -2,7 +2,7 @@
 
 Living board for the overnight PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 00:16 UTC by orchestrator.
+Last updated: 2026-11-26 00:22 UTC by orchestrator.
 
 ## Current repository baseline
 
@@ -30,7 +30,7 @@ Last updated: 2026-11-26 00:16 UTC by orchestrator.
 | ID | Task | State | Blocker/next step |
 |---|---|---|---|
 | P1-CONSOLE | Real PS4 boot/render/input/audio validation | not started | No confirmed console access (`PS4_HOST` unknown/unverified) |
-| P1-MEMPROBE | Runtime executable-memory probe/fallback matrix | designed, not implemented | Next high-priority platform robustness task |
+| P1-MEMPROBE | Runtime executable-memory probe/fallback matrix | implemented, console-unverified | Probe both RW-then-mprotect and initial-RWX direct mappings; validate on console firmware matrix |
 | P1-FW | Firmware/loader matrix | empty | Requires console evidence per firmware/loader |
 | P1-NFS | NFS support on PS4 | documented as effectively dead | Port wrap layer or hide/report unsupported |
 | P1-COVERS | Cover downloads | documented unsupported | `sceHttp2*` stubs fail; needs PS4 HTTP implementation |

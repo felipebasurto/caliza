@@ -38,6 +38,11 @@ BIOS
 #include "common/AlignedMalloc.h"
 #include "common/Error.h"
 #include <sys/mman.h>
+#ifdef __ORBIS__
+#include <setjmp.h>
+#include <signal.h>
+#include <cstring>
+#endif
 
 #ifdef ENABLECACHE
 #include "Cache.h"
@@ -120,6 +125,43 @@ extern "C" int g_orbis_code_direct = 0;
 extern "C" int sceKernelMprotect(const void* addr, unsigned long long len, int prot);
 extern "C" int sceKernelMunmap(void* addr, unsigned long long len);
 
+#ifdef __ORBIS__
+namespace
+{
+sigjmp_buf s_orbis_exec_probe_jump;
+
+void orbis_exec_probe_fault(int, siginfo_t*, void*)
+{
+	siglongjmp(s_orbis_exec_probe_jump, 1);
+}
+
+// Prove that a mapping executes before committing the recompilers to it. OpenOrbis can create
+// mappings whose permissions look executable but still fault on use on some firmware/loader combinations.
+// Needs proper testing on the console matrix.
+bool orbis_probe_executable_memory(void* mem)
+{
+	static const unsigned char ret_instruction[] = {0xC3};
+	struct sigaction action{}, old_segv{}, old_bus{};
+	action.sa_sigaction = orbis_exec_probe_fault;
+	action.sa_flags = SA_SIGINFO;
+	sigemptyset(&action.sa_mask);
+	sigaction(SIGSEGV, &action, &old_segv);
+	sigaction(SIGBUS, &action, &old_bus);
+	bool ok = false;
+	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
+	{
+		std::memcpy(mem, ret_instruction, sizeof(ret_instruction));
+		__builtin___clear_cache(static_cast<char*>(mem), static_cast<char*>(mem) + sizeof(ret_instruction));
+		reinterpret_cast<void (*)()>(mem)();
+		ok = true;
+	}
+	sigaction(SIGSEGV, &old_segv, nullptr);
+	sigaction(SIGBUS, &old_bus, nullptr);
+	return ok;
+}
+} // namespace
+#endif
+
 bool SysMemory::AllocateMemoryMap()
 {
 	Console.WriteLn("[dbg] memmap: MainSize=%u CodeSize=%u", HostMemoryMap::MainSize, HostMemoryMap::CodeSize);
@@ -169,10 +211,17 @@ bool SysMemory::AllocateMemoryMap()
 				printf("[dbg] memmap: code direct %llu MiB: alloc rc=%d phys=%lld map rc=0x%x addr=%p mprotect rc=0x%x\n",
 					code_bytes >> 20, ra, code_phys, (unsigned)rm, want, (unsigned)rp);
 				fflush(stdout);
-				if (rp == 0)
+				if (rp == 0 && orbis_probe_executable_memory(want))
 				{
 					code = want;
 					rcc = rcc2 = 0;
+				}
+				else if (rp == 0)
+				{
+					printf("[dbg] memmap: code direct RWX mapping did not execute; rejecting it\n");
+					fflush(stdout);
+					sceKernelMunmap(want, code_bytes);
+					sceKernelReleaseDirectMemory(code_phys, code_bytes);
 				}
 				else
 				{
@@ -200,8 +249,23 @@ bool SysMemory::AllocateMemoryMap()
 				printf("[dbg] memmap: alloc code direct rc=%d phys=%lld\n", rcc, phys2);
 				fflush(stdout);
 				rcc2 = -1;
+#ifdef ORBIS_PS4
+				// PS4: never accept a non-executable fallback. Try the other direct-memory permission
+				// transition (initial RWX rather than RW-then-mprotect) and prove execution before use.
+				if (rcc == 0)
+					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x07, 0, phys2, align);
+				if (rcc2 == 0 && !orbis_probe_executable_memory(code))
+				{
+					printf("[dbg] memmap: initial-RWX code direct mapping did not execute; rejecting it\n");
+					sceKernelMunmap(code, code_size);
+					sceKernelReleaseDirectMemory(phys2, code_size);
+					rcc = rcc2 = -1;
+					code = nullptr;
+				}
+#else
 				if (rcc == 0)
 					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x33, 0, phys2, align);
+#endif
 				printf("[dbg] memmap: map code direct rc=%d addr=%p\n", rcc2, code);
 				fflush(stdout);
 			}

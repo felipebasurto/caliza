@@ -12,6 +12,7 @@
 8. Wired existing PS4 WSI health counters into the once-per-second telemetry ticker.
 9. Ran host tests: frame pacing 911/911, keyboard map, pad map, texture roots all pass.
 10. Rebuilt candidate package; dynamic import audit: 261 imports, 0 unresolved, no known PS5-only imports.
+11. Added executable-memory runtime probes before accepting direct recompiler memory; unexecutable mappings are rejected instead of crashing later.
 
 ## Diff classification of inherited `main..ps4-perf`
 
