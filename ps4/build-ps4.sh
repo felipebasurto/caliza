@@ -60,7 +60,7 @@ grep -E "error|Failed|missing" "$PSB/link.log" | grep -v "no version information
     # Audit dynamic imports only. `llvm-nm -u` also reports weak/static Vulkan/Mesa names that are not
     # runtime imports at all (thousands of false positives). readelf's UND dynamic symbols are the names
     # the console's module loader must resolve.
-    llvm-readelf-21 --dyn-syms "$elf" 2>/dev/null | awk '$7=="UND" {print $8}' | sed 's/@.*//' | sort -u > "$PSB/undefined.txt"
+    llvm-readelf-21 --dyn-syms "$elf" 2>/dev/null | awk '$7=="UND" && $8!="" {print $8}' | sed 's/@.*//' | sort -u > "$PSB/undefined.txt"
     join -a1 "$PSB/undefined.txt" "$index" | awk 'NF==1' | grep -v "^annotate_" > "$PSB/unresolved.txt" || true
     echo "[build-ps4] $(wc -l < "$PSB/undefined.txt") dynamic imports, $(wc -l < "$PSB/unresolved.txt") with no PS4 library (list: $PSB/unresolved.txt)"
     head -80 "$PSB/unresolved.txt"
@@ -71,8 +71,18 @@ grep -E "error|Failed|missing" "$PSB/link.log" | grep -v "no version information
     if [ -s "$PSB/ps5-only-imports.txt" ]; then
         echo "[build-ps4] WARNING: PS5-only dynamic imports remain (list: $PSB/ps5-only-imports.txt):"
         cat "$PSB/ps5-only-imports.txt"
+        [ "${PS4_ALLOW_PS5_IMPORTS:-0}" = 1 ] || {
+            echo "[build-ps4] refusing to package known-bad imports (set PS4_ALLOW_PS5_IMPORTS=1 only for analysis builds)" >&2
+            exit 1
+        }
     else
         echo "[build-ps4] no known PS5-only dynamic imports"
+    fi
+    if [ -s "$PSB/unresolved.txt" ]; then
+        [ "${PS4_ALLOW_UNRESOLVED_IMPORTS:-0}" = 1 ] || {
+            echo "[build-ps4] refusing to package unresolved dynamic imports (set PS4_ALLOW_UNRESOLVED_IMPORTS=1 only for analysis builds)" >&2
+            exit 1
+        }
     fi
     [ -f "$eboot" ] || exit 1
 }
