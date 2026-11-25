@@ -2722,8 +2722,8 @@ extern "C" int g_orbis_ps4_dmem_aliasing;        // ps4/ps4_compat.cpp: 1 when t
 #endif
 
 // The PS2's USB keyboard and mouse (orbis-shims/ProsperoKbdMouse.cpp), off with the flag file nousbkbm. PS4 port
-// (AI-assisted): always off for now: libSceKeyboard didn't load on the test console (0x805a1000), and a call into a
-// module that isn't loaded ends the app. Needs proper testing with a USB keyboard and mouse.
+// (AI-assisted): off by default because module resolution was not proven on the test console. The flag file usbkbm
+// opts in for hardware testing; nousbkbm remains the explicit disable on PS5. Needs proper testing.
 // MTVU (VU1 on its own thread): off by default on the PS5, whose cores keep up without it. PS4 port (AI-assisted): on,
 // so VU1 leaves the EE's Jaguar core (GTA San Andreas ran its EE at about 35% speed in v00.08 with both on one core).
 // gs.ini, a game's file and the GameDB's MTVU entries (PS5SX2's list included) still decide. Needs proper testing.
@@ -2736,7 +2736,7 @@ static constexpr bool kOrbisMtvuDefault = false;
 static bool orbis_no_usb_kbm()
 {
 #ifdef ORBIS_PS4
-  return true;
+  return !orbis_flag("usbkbm");
 #else
   return orbis_flag("nousbkbm");
 #endif
@@ -3310,7 +3310,11 @@ int main()
     s_base_si.SetStringValue("USB1", "Type", "hidkbd");
     s_base_si.SetStringValue("USB2", "Type", "hidmouse");
   }
+#ifdef ORBIS_PS4
+  printf("[boot] USB keyboard and mouse %s\n", orbis_no_usb_kbm() ? "off (flag file usbkbm opts in)" : "on ports 1 and 2");
+#else
   printf("[boot] USB keyboard and mouse %s\n", orbis_no_usb_kbm() ? "off (flag nousbkbm)" : "on ports 1 and 2");
+#endif
   // 2026-10-05 (AI-assisted; swordpdf: the network adapter on for every game, after a tester went online in Resident Evil
   // Outbreak with SOCOM II's lines): the PS2's network adapter as SOCOM II's file sets it (claude/socom2-online.md):
   // PCSX2's sockets backend on the console's own connection, its DHCP server giving the game an address, and the DNS the

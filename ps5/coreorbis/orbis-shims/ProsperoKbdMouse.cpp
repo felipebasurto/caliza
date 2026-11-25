@@ -331,14 +331,27 @@ namespace
 
 		LogSdkVersions();
 
-		KeyboardInit keyboard_init = nullptr;
-		KeyboardOpen keyboard_open = nullptr;
-		KeyboardReadState keyboard_read = nullptr;
+		// PS4 port (AI-assisted): ps4_compat.cpp already loads the Keyboard and Mouse sysmodules before
+		// this thread runs. Resolve their exports from the loaded-module list first; the file-path load
+		// remains the fallback for consoles/configurations where they are not loaded yet. Needs proper testing.
+		KeyboardInit keyboard_init = LoadedExport<KeyboardInit>("sceKeyboardInit");
+		KeyboardOpen keyboard_open = LoadedExport<KeyboardOpen>("sceKeyboardOpen");
+		KeyboardReadState keyboard_read = LoadedExport<KeyboardReadState>("sceKeyboardReadState");
 		int keyboard = -1;
-		const int keyboard_module = LoadModule("libSceKeyboard.sprx");
-		if (keyboard_module >= 0 && Symbol(keyboard_module, "sceKeyboardInit", keyboard_init) &&
-			Symbol(keyboard_module, "sceKeyboardOpen", keyboard_open) &&
-			Symbol(keyboard_module, "sceKeyboardReadState", keyboard_read))
+		if (!keyboard_init || !keyboard_open || !keyboard_read)
+		{
+			const int keyboard_module = LoadModule("libSceKeyboard.sprx");
+			if (keyboard_module >= 0)
+			{
+				if (!keyboard_init)
+					Symbol(keyboard_module, "sceKeyboardInit", keyboard_init);
+				if (!keyboard_open)
+					Symbol(keyboard_module, "sceKeyboardOpen", keyboard_open);
+				if (!keyboard_read)
+					Symbol(keyboard_module, "sceKeyboardReadState", keyboard_read);
+			}
+		}
+		if (keyboard_init && keyboard_open && keyboard_read)
 		{
 			const int init = keyboard_init();
 			uint8_t param[16] = {};
@@ -347,13 +360,24 @@ namespace
 				static_cast<unsigned>(keyboard));
 		}
 
-		MouseInit mouse_init = nullptr;
-		MouseOpen mouse_open = nullptr;
-		MouseRead mouse_read = nullptr;
+		MouseInit mouse_init = LoadedExport<MouseInit>("sceMouseInit");
+		MouseOpen mouse_open = LoadedExport<MouseOpen>("sceMouseOpen");
+		MouseRead mouse_read = LoadedExport<MouseRead>("sceMouseRead");
 		int mouse = -1;
-		const int mouse_module = LoadModule("libSceMouse.sprx");
-		if (mouse_module >= 0 && Symbol(mouse_module, "sceMouseInit", mouse_init) &&
-			Symbol(mouse_module, "sceMouseOpen", mouse_open) && Symbol(mouse_module, "sceMouseRead", mouse_read))
+		if (!mouse_init || !mouse_open || !mouse_read)
+		{
+			const int mouse_module = LoadModule("libSceMouse.sprx");
+			if (mouse_module >= 0)
+			{
+				if (!mouse_init)
+					Symbol(mouse_module, "sceMouseInit", mouse_init);
+				if (!mouse_open)
+					Symbol(mouse_module, "sceMouseOpen", mouse_open);
+				if (!mouse_read)
+					Symbol(mouse_module, "sceMouseRead", mouse_read);
+			}
+		}
+		if (mouse_init && mouse_open && mouse_read)
 		{
 			const int init = mouse_init();
 			// behaviorFlag 1: every mouse through this one handle.
