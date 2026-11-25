@@ -10,14 +10,14 @@
 
 ## P1 platform robustness
 
-1. Implement CEMUPS4-inspired executable-memory probe before committing recompiler memory.
+1. Console-validate the executable-memory probe now implemented before recompiler memory use.
 2. Add actionable failure UI/log if no executable memory source exists; consider explicit interpreter fallback.
-3. Retest `libSceKeyboard`/`libSceMouse` module loading; restore USB input if legal/public modules work.
+3. Hardware-test opt-in USB keyboard/mouse using `/data/PCSX2/flags/usbkbm`; enable by default only if the console matrix proves it safe.
 4. Either port the NFS file wrapping layer to PS4 or hide/report NFS as unsupported.
 5. Implement cover download using PS4-supported libSceHttp or another legal network path.
-6. Add audio output return/underrun telemetry and honor latency settings where possible.
+6. Use the new audio underrun/output telemetry on hardware; honor latency settings where possible.
 7. Review savestate allocation peaks and large-state memory behavior.
-8. Harden WSI semaphore lifetime tracking and swapchain recreation assumptions.
+8. Finish WSI lifetime hardening for multi-device aliasing and swapchain recreation assumptions.
 
 ## P2 compatibility
 

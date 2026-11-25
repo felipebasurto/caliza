@@ -2,80 +2,91 @@
 
 Living board for the overnight PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 00:24 UTC by orchestrator.
+Last updated: 2026-11-26 00:34 UTC by orchestrator.
 
-## Current repository baseline
+## Current repository state
 
-- Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf` originally at `d082d64139cad10a3faaec2afaa23f0063208808`.
-- `main`/`origin/main`: `7afa5c43e7827193ac165eecd5b36d34d07761be`.
-- Working tree now contains candidate changes not yet committed at this timestamp.
-- Raw evidence is local under `ps4/logs/`; this directory is intentionally not meant for blind commits.
+- Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
+- Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
+- Current candidate: 10 local commits on top of the baseline, newest `6345b2c` at this documentation update.
+- No push, PR, or issue was created.
+- Raw evidence is local under `ps4/logs/`; logs are intentionally not meant for blind commits.
 
-## Completed tonight
+## Local checkpoint commits
+
+1. `9c7e1ea` — harden boot imports, packaging, input, and audit baseline.
+2. `fb40d34` — probe executable memory before JIT use.
+3. `e90c923` — record overnight checkpoint state.
+4. `3b070bf` — add repeatable validation tooling.
+5. `b90d490` — fix WSI semaphore lifetime tracking.
+6. `4033d6f` — fix debug allocation wire layout.
+7. `797349f` — clean up direct memory on allocation failure.
+8. `a29f8b9` — make USB keyboard/mouse testable without default risk.
+9. `4926d25` — add audio starvation and output telemetry.
+10. `6345b2c` — complete package third-party notices.
+
+## Completed work
 
 | ID | Task | State | Evidence |
 |---|---|---|---|
-| P0-1 | Freeze git/toolchain baseline | done | `ps4/BASELINE.md`, `ps4/logs/git-baseline.txt`, `ps4/logs/toolchain-inventory.txt` |
-| P0-BUILD | Reproduce baseline build/PKG | done | 583 objects, ELF 141M, eboot 40M, PKG 57M; `ps4/logs/baseline-build-metrics.txt` |
-| P0-HOSTTESTS | Run available host tests | done | frame pacing 911/911, kbm, padmap, texture roots all pass; `ps4/logs/host-tests-candidate1.log` |
-| P0-IMPORTS | Correct dynamic import audit | done candidate validated | 261 dynamic imports, 0 unresolved, no known PS5-only imports; `ps4/logs/candidate1-rebuild-validation.log` |
-| P1-JIT | Audit/integrate JIT import fix | implemented, console-unverified | PS5 JIT imports removed under `ORBIS_PS4`; manual adaptation of `fda8e2a` |
-| P0-LEGAL | Harden BIOS/package compliance | implemented, build-validated | BIOS no longer implicitly bundled; GPL/source/asset notices staged |
-| P1-INPUT | Fix player-1 stuck input on disconnect | implemented, console-unverified | neutral state now mirrors extra-player behavior |
-| P1-WSI | Expose WSI health counters | implemented, console-unverified | `[ps4wsi]` once/sec only when failures/retries/fallbacks occur |
-| P2-DOCS | Create required technical docs | initial versions done | `BASELINE.md`, `PORT_AUDIT.md`, `PS4_PLATFORM.md`, `PERFORMANCE.md`, `COMPATIBILITY.md`, `ROADMAP.md`, `KNOWN_ISSUES.md` |
+| P0-1 | Freeze git/toolchain baseline | done | `BASELINE.md`, `ps4/logs/git-baseline.txt`, `toolchain-inventory.txt` |
+| P0-BUILD | Reproduce baseline build/PKG | done | 583 objects, ELF 141M, eboot 40M, PKG 57M; `baseline-build-metrics.txt` |
+| P0-HOSTTESTS | Repeatable host validation | done/pass | frame pacing 911/911, kbm, padmap, texture roots all pass; `host-tests-usbkbm.log` |
+| P0-IMPORTS | Correct dynamic import audit | done/pass | final candidate: 260 dynamic imports, 0 unresolved, no known PS5-only imports |
+| P1-JIT | Remove unsafe PS5-only JIT imports on PS4 | implemented, console-unverified | no `sceKernelJitCreate/MapSharedMemory` dynamic imports remain |
+| P1-MEMPROBE | Runtime executable-memory validation | implemented, console-unverified | RW-then-mprotect and initial-RWX direct-memory paths are probed before use |
+| P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
+| P1-INPUT | Player-1 disconnect stuck-input fix | implemented, console-unverified | neutral pad state applied when disconnected |
+| P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/PCSX2/flags/usbkbm` opts in; loaded-module symbol resolution preferred |
+| P1-WSI | WSI telemetry and semaphore lifetime | implemented, console-unverified | destroy hook removes stale handles; `[ps4wsi]` noteworthy-delta telemetry |
+| P1-AUDIO | Audio starvation/error telemetry | implemented, console-unverified | `[audio]` reports underrun grains/output errors only when nonzero |
+| P1-DEBUG | Debug allocation protocol corruption | fixed | `ps5dbgclient.cpp` allocation body now matches documented wire layout |
+| P2-DOCS | Required technical docs | done, still evolving | all requested docs exist under `ps4/` |
+
+## Final candidate artifact validated locally
+
+Built in the Linux x86_64 OpenOrbis container after the licensing changes:
+
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: 147,760,744 bytes, SHA-256 `94b4c1b2522a5c8979c5ea11936999667737803244ec691e9370f5559b789938`.
+- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: 40,987,712 bytes, SHA-256 `b71d5cb1f115e4df38fd5bd59202d653389911a66ab29f98812be984f5726789`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: 60,686,336 bytes, SHA-256 `b306f94022d14fa52c9bcca30d5bace6ca3c52246f145ad60c3481464fb4e783`.
+- macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`.
+- Import audit: 260 dynamic imports, 0 unresolved, no known PS5-only imports.
+- BIOS files: none; redistributable build.
+- Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
 
 ## Active/unresolved work
 
 | ID | Task | State | Blocker/next step |
 |---|---|---|---|
-| P1-CONSOLE | Real PS4 boot/render/input/audio validation | not started | No confirmed console access (`PS4_HOST` unknown/unverified) |
-| P1-MEMPROBE | Runtime executable-memory probe/fallback matrix | implemented, console-unverified | Probe both RW-then-mprotect and initial-RWX direct mappings; validate on console firmware matrix |
-| P1-FW | Firmware/loader matrix | empty | Requires console evidence per firmware/loader |
-| P1-NFS | NFS support on PS4 | documented as effectively dead | Port wrap layer or hide/report unsupported |
-| P1-COVERS | Cover downloads | documented unsupported | `sceHttp2*` stubs fail; needs PS4 HTTP implementation |
-| P1-AUDIO | Audio latency/underrun telemetry | not implemented | Add counters and honor latency settings |
-| P2-GAMEDB | Per-game override layer and compatibility DB | roadmap only | Implement after platform smoke validation |
-| P2-PERF | Hardware performance measurements | not started | Requires console or user-run measurement protocol |
-
-## Subagent/research integration state
-
-Completed and integrated at least partially:
-
-- legal/licensing audit;
-- GPU/Vulkan/WSI audit;
-- audio/input/filesystem audit (with correction: DualShock 4 does have a clickable touchpad, so the existing L1+R1+touchpad menu combo may be viable);
-- ARMSX2 inspiration review.
-
-Several long-running research subagents had not returned by this checkpoint. Their roles remain useful for follow-up: baseline/diff audit, OpenOrbis/JIT research, Jaguar performance, upstream PCSX2 research, adversarial architecture review, compatibility/regression review.
-
-## Immediate next steps
-
-Local checkpoint commits created:
-
-- `9c7e1ea` — boot imports, packaging, input, baseline/audit docs.
-- `fb40d34` — executable-memory runtime probe and initial-RWX fallback.
-
-Next:
-
-1. If console access exists, install only the candidate PKG through the existing flow and run the smoke protocol in `COMPATIBILITY.md`.
-2. Validate the executable-memory probe across the firmware/loader matrix.
-3. Continue research integration and refine `PORT_AUDIT.md`/`ROADMAP.md`.
-4. Measure before any further optimization; no speedup is claimed yet.
+| P1-CONSOLE | Real PS4 boot/render/input/audio validation | not started | install only this candidate through the user's existing safe flow |
+| P1-FW | Firmware/loader matrix | empty | requires console evidence per firmware/loader |
+| P1-INTERPRETER | Automatic fallback when no executable memory exists | absent | currently rejects memory and fails clearly; implement explicit fallback policy if needed |
+| P1-NFS | NFS support on PS4 | documented as effectively dead | port wrap layer or hide/report unsupported |
+| P1-COVERS | Cover downloads | unsupported | `sceHttp2*` stubs fail; needs PS4 HTTP implementation |
+| P1-SAVESTATE | Savestate memory peak | documented, not fixed | audit large-state allocation behavior before changing format/loading |
+| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol |
 
 ## Validation ledger
 
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Baseline dynamic imports | 263 total; 2 PS5-only JIT imports | `baseline-build-metrics.txt` |
-| Candidate compile/link/package | PASS | `candidate1-build.log`, `candidate1-rebuild-validation.log` |
-| Candidate dynamic import audit | PASS: 261 total, 0 unresolved, no known PS5-only | `candidate1-rebuild-validation.log` |
-| Candidate package BIOS content | PASS: no BIOS files | `candidate1-rebuild-validation.log` |
-| Candidate package license/source notices | PASS: staged | `candidate1-validation.txt` |
-| Host tests | PASS | `host-tests-candidate1.log` |
-| Real console boot | NOT RUN | no console access evidence |
-| Real game compatibility/performance | NOT RUN | no console access evidence |
+| Final candidate compile/link/package | PASS | `ps4/logs/candidate9-license-validation.log` |
+| Final dynamic import audit | PASS: 260 total, 0 unresolved, no known PS5-only | same |
+| Final package BIOS content | PASS: no BIOS files | same |
+| Final package license/source notices | PASS: staged | `license-stage-validation.txt`, `source-stamp-validation.txt` |
+| Host tests | PASS | `host-tests-usbkbm.log` |
+| Real console boot | NOT RUN | no confirmed console access |
+| Real game compatibility/performance | NOT RUN | no confirmed console access |
+
+## Console smoke-test priority
+
+1. Install only `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg` using the already existing safe flow.
+2. Preserve `/data/PCSX2/boot.log`, `emulog.txt`, and `settings.log` after first boot.
+3. Confirm `[dbg] memmap`, `[jitprobe]`/memprobe messages, `[ps4wsi]`, `[audio]`, `[threads]`, `[copies]`, `[readbacks]`.
+4. Test boot to shelf, BIOS detection, one legal user-owned game, controller disconnect/reconnect, memory card, savestate, and one minutes-long gameplay sample.
+5. Optional USB keyboard/mouse test: create empty flag file `/data/PCSX2/flags/usbkbm`, restart, and preserve `[kbm]` lines.
 
 ## Compatibility preservation rules for this session
 

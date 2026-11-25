@@ -11,8 +11,10 @@
 7. Fixed player-1 disconnected-controller input state handling.
 8. Wired existing PS4 WSI health counters into the once-per-second telemetry ticker.
 9. Ran host tests: frame pacing 911/911, keyboard map, pad map, texture roots all pass.
-10. Rebuilt candidate package; dynamic import audit: 261 imports, 0 unresolved, no known PS5-only imports.
+10. Rebuilt candidate package; final dynamic import audit: 260 imports, 0 unresolved, no known PS5-only imports.
 11. Added executable-memory runtime probes before accepting direct recompiler memory; unexecutable mappings are rejected instead of crashing later.
+12. Fixed WSI semaphore lifetime tracking and debug-allocation wire layout; direct-memory failure paths now unmap/release correctly.
+13. Added opt-in USB keyboard/mouse hardware-test path, audio starvation/output telemetry, and complete third-party package notices.
 
 ## Diff classification of inherited `main..ps4-perf`
 
@@ -31,9 +33,9 @@
 
 - Baseline compile/link/package: `ps4/logs/baseline-build-metrics.txt`.
 - Candidate rebuild: `ps4/logs/candidate1-rebuild-validation.log`.
-- Candidate dynamic imports: 261; unresolved: 0; known PS5-only: none.
+- Final candidate dynamic imports: 260; unresolved: 0; known PS5-only: none.
 - Host tests: `ps4/logs/host-tests-candidate1.log`.
-- Candidate package includes `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`; no BIOS files.
+- Final candidate package includes `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, and vendored licenses; no BIOS files.
 
 ## Compatibility risk assessment of tonight's code changes
 
@@ -42,8 +44,8 @@
 | Skip PS5 jailbreak/HEN logic on PS4 | Low on PS4; none on PS5 due `#ifndef ORBIS_PS4` | Compile/link validation; logic is PS5-specific |
 | Remove PS5 JIT imports on PS4 | Low; direct memory was already default | Dynamic imports confirm removal; console boot still required |
 | Player-1 idle input on disconnect | Medium-low: changes behavior only when read fails/disconnected | Mirrors existing extra-player behavior; needs hardware disconnect test |
-| WSI telemetry logging | Very low: read-only counters once/sec | No rendering-path mutation |
-| Packaging/license changes | Low runtime impact; personal BIOS workflow requires explicit env var | Documented in build script and audit |
+| WSI telemetry/semaphore lifetime | Low: semaphore destroy now untracks handles; read-only counters once/sec | Compile/package validation; runtime swapchain recreation still needs console test |
+| Packaging/license changes | Low runtime impact; personal BIOS workflow requires explicit env var | Staged notices verified in package staging |
 | Dynamic import audit | No runtime impact | Build-time only |
 
 ## Not verified

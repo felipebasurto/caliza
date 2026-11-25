@@ -8,7 +8,7 @@
 
 ## Renderer/GPU
 
-1. WSI semaphore handle reuse is not fully tracked; acquire/present semaphore sets are insert-only and no destroy hook exists yet.
+1. WSI semaphore destruction is now tracked for the normal single-device flow, but the tracking sets are not keyed by `VkDevice`; concurrent live devices could theoretically alias handles.
 2. One global VideoOut/device/queue/swapchain state assumes sequential frontend/GS use, not concurrent independent swapchains.
 3. Acquire can wait indefinitely if VideoOut flip status stops reporting valid state.
 4. CPU fallback present path serializes with `vkQueueWaitIdle`; new `[ps4wsi]` telemetry should expose it.
@@ -17,7 +17,7 @@
 ## Input/audio/filesystem
 
 1. Player-1 disconnect previously left inputs stuck; candidate fixes it, needs console verification.
-2. USB keyboard/mouse is disabled on PS4 because module resolution previously failed; worth retesting now that modules are explicitly loaded.
+2. USB keyboard/mouse remains off by default on PS4. `/data/PCSX2/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
 3. Cover downloads are unimplemented on PS4 (`sceHttp2*` stubs fail by design).
 4. NFS game shares are effectively dead on PS4 because the PS5 file-wrap layer is not linked in; either port or explicitly hide/report unsupported.
 5. NVRAM lives beside BIOS; read-only custom BIOS folders can break NVRAM persistence.
@@ -26,7 +26,7 @@
 
 1. Savestate loading can transiently allocate about twice the state file size through normal heap containers.
 2. Compiler warning count is 148 in baseline and not triaged.
-3. No automatic fallback to interpreter if executable memory cannot be validated.
+3. No automatic fallback to interpreter if executable memory cannot be validated; allocation now fails clearly instead of accepting non-executable memory.
 
 ## Documentation/evidence gaps
 

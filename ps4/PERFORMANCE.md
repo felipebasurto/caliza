@@ -31,9 +31,15 @@ Metrics:
 - `[threads]` CPU/thread distribution;
 - `[copies]`, `[readbacks]`, `[shaders]` time;
 - `[ps4wsi]` flip fallbacks/acquire timeouts/register retries;
-- audio underruns if instrumentation is added;
+- `[audio]` underrun grains/output errors;
 - RSS/flexible/direct memory if measurable;
 - boot-to-first-frame time.
+
+## Instrumentation now available
+
+- `[ps4wsi]`: noteworthy present/acquire/VideoOut registration deltas.
+- `[audio]`: output grains with less than one hardware grain buffered, plus `sceAudioOutOutput` failures.
+- Existing `[copies]`, `[readbacks]`, `[shaders]`, `[threads]`, `[vkwait]` lines remain the primary performance evidence.
 
 ## Safe performance hypotheses to test later
 
