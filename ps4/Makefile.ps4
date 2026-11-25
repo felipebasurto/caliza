@@ -462,7 +462,7 @@ USB_SRCS := $(PCSX2)/pcsx2/USB/USB.cpp \
 SRCS := $(SRCS) $(COMMON_SRCS) $(USB_SRCS) $(PCSX2)/tests/ctest/core/StubHost.cpp
 
 # PS4 (AI-assisted): this folder's replacements for the PS5 platform pieces.
-PS4_SRCS := $(PCSX2)/ps4/ps4_vk_wsi.cpp $(PCSX2)/ps4/ps4_compat.cpp
+PS4_SRCS := $(PCSX2)/ps4/ps4_vk_wsi.cpp $(PCSX2)/ps4/ps4_compat.cpp $(PCSX2)/ps4/ps4_crash_hooks.cpp
 SRCS := $(SRCS) $(PS4_SRCS)
 
 # PS4 (AI-assisted): paraLLEl-GS (the PS2 GS in Vulkan compute; LGPL-3.0+, Arntzen-Software/parallel-gs) as a renderer

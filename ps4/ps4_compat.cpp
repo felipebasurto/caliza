@@ -25,16 +25,6 @@ int cpuset_getaffinity(cpulevel_t, cpuwhich_t, id_t, size_t, cpuset_t*)
 	return -1;
 }
 
-// CEMUPS4's runtime asks the emulator for its state in a crash report (port/ps4_crashlog.cpp, ps4_sampler.cpp);
-// create-fself rejects a weak symbol nothing defines. PS5SX2 installs its own crash printer (ProsperoCrash.cpp), so
-// these say nothing for now.
-void ps4_crash_guest_info() {}
-void ps4_crash_guest_regs(int) {}
-void ps4_crash_jit_info(int, unsigned long long, int) {}
-void ps4_crash_note() {}
-void ps4_crash_restart() {}
-void ps4_recompiler_status(int) {}
-void ps4_hang_guest_threads(int) {}
 
 // ---- the system libraries the eboot imports ----
 
