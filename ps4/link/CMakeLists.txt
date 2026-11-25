@@ -98,5 +98,5 @@ target_link_libraries(pcsx2 PRIVATE
                       ${PS4_SYSROOT}/lib/libz.a
                       ${PS4_SYSROOT}/lib/libsmb2.a
                       SceSysmodule SceSystemService SceUserService SceVideoOut SceAudioOut ScePad SceNet SceNetCtl
-                      SceRandom SceSsl SceHttp SceImeDialog SceCommonDialog SceMouse SceKeyboard pthread)
+                      SceRandom SceImeDialog SceCommonDialog SceMouse SceKeyboard pthread)
 ps4_add_eboot(pcsx2)

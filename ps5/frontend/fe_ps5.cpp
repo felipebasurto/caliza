@@ -1,8 +1,8 @@
 // PS5 port frontend: the console side. The shelf runs on its own Vulkan device (the driver linked
 // into the eboot) with a VK_KHR_display swapchain on VideoOut, reads the DualSense, plays its key
-// sounds on an audio port of its own, and downloads missing covers over HTTPS with the console's
-// own libSceHttp2 (before the jailbreak) and HD texture packs with our own (fe_https.h). Everything
-// is torn down again before PCSX2 opens its device, VideoOut and audio.
+// sounds on an audio port of its own, and downloads missing covers and HD texture packs over our own
+// HTTPS client (fe_https.h). Everything is torn down again before PCSX2 opens its device, VideoOut and
+// audio.
 //
 // Copyright (C) 2026 swordpdf
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -91,29 +91,11 @@ int sceImeDialogGetResult(void* result);
 int sceImeDialogTerm(void);
 #endif
 
-// libSceNet, libSceSsl and libSceHttp2 as the payload SDK's http2_get sample declares them. The
-// system loads all three into every app already, so linking them adds nothing at start-up.
+// libSceNet and NetCtl for the frontend's own mbedTLS HTTPS client (fe_https.cpp): raw sockets, DNS
+// and connectivity state. The certificate verification is not the console's libSceSsl.
 int sceNetInit(void);
 int sceNetPoolCreate(const char* name, int size, int flags);
 int sceNetPoolDestroy(int pool);
-int sceSslInit(size_t pool_size);
-int sceSslTerm(int ctx);
-int sceHttp2Init(int net_pool, int ssl_ctx, size_t pool_size, int max_requests);
-int sceHttp2Term(int ctx);
-int sceHttp2CreateTemplate(int ctx, const char* user_agent, int http_version, int auto_proxy);
-int sceHttp2DeleteTemplate(int tmpl);
-int sceHttp2CreateRequestWithURL(int tmpl, const char* method, const char* url, uint64_t content_length);
-int sceHttp2DeleteRequest(int req);
-int sceHttp2SendRequest(int req, const void* data, size_t size);
-int sceHttp2GetStatusCode(int req, int* status);
-int sceHttp2ReadData(int req, void* data, size_t size);
-int sceHttp2SetResolveTimeOut(int id, uint32_t usec);
-int sceHttp2SetConnectTimeOut(int id, uint32_t usec);
-int sceHttp2SetSendTimeOut(int id, uint32_t usec);
-int sceHttp2SetRecvTimeOut(int id, uint32_t usec);
-int sceHttp2AbortRequest(int req);
-int sceHttp2SetTimeOut(int id, uint32_t usec);
-int sceHttp2SetAutoRedirect(int id, int enable);
 int sceNetCtlInit(void);
 void sceNetCtlTerm(void);
 int sceNetCtlGetState(int* state);
@@ -268,166 +250,6 @@ std::string Clock()
 	return buf;
 }
 
-// ---- HTTPS through libSceHttp2, on the cover worker's thread only ----
-struct Http
-{
-	bool tried = false, ok = false, netctl = false;
-	int pool = -1, ssl = -1, ctx = -1, tmpl = -1;
-	std::atomic<int> active{-1}; // the request in flight, for Abort from the main thread
-	// vk-285-110: set by Abort, so a request that was still being set up when it ran doesn't start
-	// (Abort only reaches a request once `active` holds it).
-	std::atomic<bool> stopping{false};
-	// vk-285-110: Abort's call and the worker's delete of the same request never overlap.
-	std::mutex abort_mutex;
-
-	// The worker, done with `req`: out of `active` (after any Abort call on it), then deleted.
-	void Release(int req)
-	{
-		{
-			std::lock_guard<std::mutex> lock(abort_mutex);
-			active = -1;
-		}
-		sceHttp2DeleteRequest(req);
-	}
-
-	bool Init()
-	{
-		if (tried)
-			return ok;
-		tried = true;
-		// Is there a network at all? vk-285-41's first download never came back (100+ s): an
-		// offline console must not wait on the resolver. State 3 is "IP address obtained"; a state
-		// the call cannot tell leaves the decision to the request itself.
-		const int nc = sceNetCtlInit();
-		netctl = nc == 0;
-		int state[4] = {-1, 0, 0, 0}; // room to spare, as with the time call
-		const int gs = sceNetCtlGetState(state);
-		std::printf("[frontend] netctl: init %#x, state %d (%#x)\n", static_cast<unsigned>(nc), state[0],
-			static_cast<unsigned>(gs));
-		std::fflush(stdout);
-		if (gs == 0 && state[0] >= 0 && state[0] < 3)
-		{
-			std::printf("[frontend] the console is not connected; no cover downloads this time\n");
-			std::fflush(stdout);
-			return false;
-		}
-		const int net = sceNetInit(); // an error here only means it was up already
-		pool = sceNetPoolCreate("pcsx2-frontend", 64 * 1024, 0);
-		ssl = pool >= 0 ? sceSslInit(256 * 1024) : -1;
-		ctx = ssl >= 0 ? sceHttp2Init(pool, ssl, 256 * 1024, 1) : -1;
-		tmpl = ctx >= 0 ? sceHttp2CreateTemplate(ctx, "PS5SX2/1.0", 3, 1) : -1;
-		std::printf("[frontend] https: net %#x pool %#x ssl %#x http2 %#x template %#x\n", static_cast<unsigned>(net),
-			static_cast<unsigned>(pool), static_cast<unsigned>(ssl), static_cast<unsigned>(ctx), static_cast<unsigned>(tmpl));
-		std::fflush(stdout);
-		if (tmpl < 0)
-			return false;
-		ok = true;
-		return true;
-	}
-
-	// Main thread, at shutdown: fails the request in flight so the worker can finish.
-	void Abort()
-	{
-		stopping.store(true); // before reading `active`: Get stores `active`, then reads this
-		std::lock_guard<std::mutex> lock(abort_mutex);
-		const int req = active.load();
-		if (req >= 0)
-		{
-			const int r = sceHttp2AbortRequest(req);
-			std::printf("[frontend] aborted request %#x: %#x\n", static_cast<unsigned>(req), static_cast<unsigned>(r));
-			std::fflush(stdout);
-		}
-	}
-
-	// After the worker has stopped: gives the pools back.
-	void Term()
-	{
-		if (tmpl >= 0)
-			sceHttp2DeleteTemplate(tmpl);
-		if (ctx >= 0)
-			sceHttp2Term(ctx);
-		if (ssl >= 0)
-			sceSslTerm(ssl);
-		if (pool >= 0)
-			sceNetPoolDestroy(pool);
-		if (netctl)
-			sceNetCtlTerm();
-		tmpl = ctx = ssl = pool = -1;
-		tried = ok = netctl = false;
-		stopping = false;
-	}
-
-	// The HTTP status, or -1 when the request could not be made at all. Every step is logged with
-	// its time: vk-285-41's first request never returned, and the log could not say where.
-	int Get(const std::string& url, std::vector<uint8_t>& out)
-	{
-		if (stopping || !Init())
-			return -1;
-		const double t0 = Now();
-		auto ms = [&] { return (Now() - t0) * 1000.0; };
-		const int req = sceHttp2CreateRequestWithURL(tmpl, "GET", url.c_str(), 0);
-		std::printf("[frontend] get %s: request %#x\n", url.c_str(), static_cast<unsigned>(req));
-		std::fflush(stdout);
-		if (req < 0)
-			return -1;
-		// On the request, as Swordpdf/Twiso's working cover fetcher sets them (microseconds): each
-		// phase 10 s, the whole request 20 s, redirects followed.
-		const int t_resolve = sceHttp2SetResolveTimeOut(req, 10 * 1000 * 1000);
-		const int t_connect = sceHttp2SetConnectTimeOut(req, 10 * 1000 * 1000);
-		const int t_send = sceHttp2SetSendTimeOut(req, 10 * 1000 * 1000);
-		const int t_recv = sceHttp2SetRecvTimeOut(req, 10 * 1000 * 1000);
-		const int t_total = sceHttp2SetTimeOut(req, 20 * 1000 * 1000);
-		const int redirect = sceHttp2SetAutoRedirect(req, 1);
-		std::printf("[frontend] get: timeouts %#x %#x %#x %#x %#x, redirect %#x\n", static_cast<unsigned>(t_resolve),
-			static_cast<unsigned>(t_connect), static_cast<unsigned>(t_send), static_cast<unsigned>(t_recv),
-			static_cast<unsigned>(t_total), static_cast<unsigned>(redirect));
-		std::fflush(stdout);
-		active = req;
-		if (stopping) // Abort ran while this request was being set up, before `active` held it
-		{
-			Release(req);
-			std::printf("[frontend] get: stopped before sending\n");
-			std::fflush(stdout);
-			return -1;
-		}
-		int status = -1;
-		const int sent = sceHttp2SendRequest(req, nullptr, 0);
-		const int got = sent == 0 ? sceHttp2GetStatusCode(req, &status) : -1;
-		std::printf("[frontend] get: send %#x, status %d (%#x) after %.0f ms\n", static_cast<unsigned>(sent), status,
-			static_cast<unsigned>(got), ms());
-		std::fflush(stdout);
-		if (sent != 0 || got != 0)
-			status = -1;
-		else if (status == 200)
-		{
-			std::vector<uint8_t> buf(64 * 1024);
-			for (;;)
-			{
-				const int n = sceHttp2ReadData(req, buf.data(), buf.size());
-				if (n < 0)
-				{
-					std::printf("[frontend] get: read %#x after %zu bytes\n", static_cast<unsigned>(n), out.size());
-					status = -1;
-					break;
-				}
-				if (n == 0)
-					break;
-				out.insert(out.end(), buf.begin(), buf.begin() + n);
-				if (out.size() > (16u << 20))
-				{
-					status = -1;
-					break;
-				}
-			}
-			std::printf("[frontend] get: %zu bytes in %.0f ms\n", out.size(), ms());
-			std::fflush(stdout);
-		}
-		Release(req);
-		return status;
-	}
-};
-Http g_http;
-
 // ---- 2026-10-05 (AI-assisted): the HD texture packs' downloads (fe_texpacks.h) -----------------------------------------
 // archive.org's file list and the packs, in ranges of up to 32 MB that the manager asks for one after another, over our
 // own HTTPS (fe_https.h). The console's libSceHttp2 can't do it after the jailbreak: libSceSsl can't reach its certificate
@@ -514,6 +336,39 @@ struct TexHttp
 };
 TexHttp g_texhttp;
 TexHttp g_patchhttp("pcsx2-patches", "patches"); // 2026-10-08: the online patches' own client (fe_patchdl.h)
+
+// Covers use the same certificate-checking mbedTLS client rather than the PS5-only libSceHttp2 API. A
+// dedicated client keeps cover traffic from queueing behind texture-pack or patch downloads.
+struct CoverHttp
+{
+	TexHttp http{"pcsx2-covers", "covers"};
+
+	int Get(const std::string& url, std::vector<uint8_t>& out)
+	{
+		out.clear();
+		bool overflow = false;
+		const int status = http.Get(url, false, 0, 0, [&](const void* data, size_t len) {
+			if (out.size() + len > (16u << 20))
+			{
+				overflow = true;
+				return false;
+			}
+			const uint8_t* const bytes = static_cast<const uint8_t*>(data);
+			out.insert(out.end(), bytes, bytes + len);
+			return true;
+		});
+		if (overflow)
+		{
+			out.clear();
+			return -1;
+		}
+		return status;
+	}
+
+	void Abort() { http.Abort(); }
+	void Term() { http.Term(); }
+};
+CoverHttp g_coverhttp;
 
 // The free space of a folder's disk for the texture packs, or UINT64_MAX when the console won't say (the manager then
 // skips its room check; a full disk still fails the writes, which it reports). Two ways crashed the app on the console:
@@ -1606,8 +1461,8 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 		notify(buf);
 	}
 	const int saved = CoverService::Prefetch(games, missing, cc,
-		[](const std::string& url, std::vector<uint8_t>& out) { return g_http.Get(url, out); }, budget_s);
-	g_http.Term();
+		[](const std::string& url, std::vector<uint8_t>& out) { return g_coverhttp.Get(url, out); }, budget_s);
+	g_coverhttp.Term();
 	std::printf("[frontend] prefetch: %d saved in %.1f s\n", saved, Now() - t0);
 	std::fflush(stdout);
 	return saved;
@@ -1706,7 +1561,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	cc.url_template = kCoverUrl;
 	cc.allow_download = paths.allow_download;
 	cc.download_usb_only = true; // vk-285-110: the rest came from the prefetch, before the jailbreak
-	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) { return g_http.Get(url, out); });
+	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) { return g_coverhttp.Get(url, out); });
 
 	// The key sounds (vk-285-47). Without an audio port the shelf is simply quiet.
 	Mixer* mixer = nullptr;
@@ -1959,7 +1814,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	// The worker may be inside a download: stop it from starting another, fail the one in flight,
 	// give it a moment, then leave it behind if need be.
 	covers->RequestStop();
-	g_http.Abort();
+	g_coverhttp.Abort();
 	// 2026-10-05: the texture packs stop with the shelf: a download keeps its part for the next one.
 	if (texpacks)
 	{
@@ -1991,7 +1846,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	{
 		delete covers;
 		delete fonts;
-		g_http.Term();
+		g_coverhttp.Term();
 	}
 	else
 		std::printf("[frontend] a cover download is still running; leaving it to finish\n");

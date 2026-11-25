@@ -47,7 +47,7 @@ void orbis_ps4_load_system_modules()
 	static const Module kModules[] = {
 		{"SystemService", 0x80000010, true}, {"UserService", 0x80000011, true}, {"VideoOut", 0x80000022, true},
 		{"AudioOut", 0x80000001, true},      {"Pad", 0x80000024, true},         {"Net", 0x8000001C, true},
-		{"NetCtl", 0x80000009, true},        {"Ssl", 0x8000000B, true},         {"Http", 0x8000000A, true},
+		{"NetCtl", 0x80000009, true},
 		{"CommonDialog", 0x80000018, true},  {"Keyboard", 0x80000008, true},    {"ImeDialog", 0x0096, false},
 		{"Mouse", 0x00A9, false},            {"Random", 0x00BA, false},
 	};
@@ -90,25 +90,6 @@ int orbis_ps4_enable_dmem_aliasing()
 // ---- PS5 system calls PS5SX2 makes that the PS4 has no library for ----
 
 constexpr int kNotSupported = static_cast<int>(0x80020016); // a SCE error code: the caller's failure path runs
-
-// libSceHttp2 (frontend/fe_ps5.cpp's cover downloads): the PS4 has libSceHttp only. Every request fails, so the
-// shelf shows the covers already on disk. TODO: port fe_ps5.cpp's downloads to libSceHttp or curl.
-int sceHttp2Init(int, int, size_t, int) { return kNotSupported; }
-int sceHttp2Term(int) { return 0; }
-int sceHttp2CreateTemplate(int, const char*, int, int) { return kNotSupported; }
-int sceHttp2DeleteTemplate(int) { return 0; }
-int sceHttp2CreateRequestWithURL(int, const char*, const char*, uint64_t) { return kNotSupported; }
-int sceHttp2DeleteRequest(int) { return 0; }
-int sceHttp2SendRequest(int, const void*, size_t) { return kNotSupported; }
-int sceHttp2GetStatusCode(int, int*) { return kNotSupported; }
-int sceHttp2ReadData(int, void*, size_t) { return kNotSupported; }
-int sceHttp2SetResolveTimeOut(int, uint32_t) { return 0; }
-int sceHttp2SetConnectTimeOut(int, uint32_t) { return 0; }
-int sceHttp2SetSendTimeOut(int, uint32_t) { return 0; }
-int sceHttp2SetRecvTimeOut(int, uint32_t) { return 0; }
-int sceHttp2AbortRequest(int) { return 0; }
-int sceHttp2SetTimeOut(int, uint32_t) { return 0; }
-int sceHttp2SetAutoRedirect(int, int) { return 0; }
 
 // The PS5's VideoOut buffer API (orbis-shims/demo_renderer.cpp: the CPU overlay and the plain game list). Refused,
 // so those screens don't open; the game picks itself when it is the only one. TODO: the PS4's sceVideoOut*Buffers.
