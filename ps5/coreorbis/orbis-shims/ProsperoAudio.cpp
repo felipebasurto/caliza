@@ -33,7 +33,7 @@ int sceAudioOutClose(int handle);
 namespace
 {
 std::atomic<uint64_t> s_audio_grains{0};
-std::atomic<uint64_t> s_audio_underrun_grains{0};
+std::atomic<uint64_t> s_audio_underruns{0};
 std::atomic<uint64_t> s_audio_output_errors{0};
 std::atomic<int> s_audio_last_output_error{0};
 
@@ -90,11 +90,12 @@ private:
       }
       else
       {
-        // PCSX2 inserts silence and refills after an underrun. Count those grains so the once-per-second
-        // telemetry can distinguish emulation starvation from AudioOut failures. Needs proper testing.
-        if (GetBufferedFramesRelaxed() < GRAIN)
-          s_audio_underrun_grains.fetch_add(1, std::memory_order_relaxed);
+        // Count each transition into PCSX2's underrun-refill state, not every silent grain while it refills:
+        // startup is intentionally filling and is not an emulation starvation event. Needs proper testing.
+        const bool was_filling = m_filling;
         ReadFrames(buf, GRAIN);
+        if (!was_filling && m_filling)
+          s_audio_underruns.fetch_add(1, std::memory_order_relaxed);
       }
       s_audio_grains.fetch_add(1, std::memory_order_relaxed);
       const int out_rc = sceAudioOutOutput(m_handle, buf); // blocks until the previous grain has been consumed
@@ -117,12 +118,12 @@ private:
 };
 } // namespace
 
-extern "C" void orbis_audio_stats(uint64_t* grains, uint64_t* underrun_grains, uint64_t* output_errors, int* last_output_error)
+extern "C" void orbis_audio_stats(uint64_t* grains, uint64_t* underruns, uint64_t* output_errors, int* last_output_error)
 {
   if (grains)
     *grains = s_audio_grains.load(std::memory_order_relaxed);
-  if (underrun_grains)
-    *underrun_grains = s_audio_underrun_grains.load(std::memory_order_relaxed);
+  if (underruns)
+    *underruns = s_audio_underruns.load(std::memory_order_relaxed);
   if (output_errors)
     *output_errors = s_audio_output_errors.load(std::memory_order_relaxed);
   if (last_output_error)
