@@ -38,7 +38,7 @@ Metrics:
 ## Instrumentation now available
 
 - `[ps4wsi]`: noteworthy present/acquire/VideoOut registration deltas.
-- `[audio]`: output grains with less than one hardware grain buffered, plus `sceAudioOutOutput` failures.
+- `[audio]`: transitions into underrun-refill state, plus `sceAudioOutOutput` failures.
 - Existing `[copies]`, `[readbacks]`, `[shaders]`, `[threads]`, `[vkwait]` lines remain the primary performance evidence.
 
 ## Safe performance hypotheses to test later

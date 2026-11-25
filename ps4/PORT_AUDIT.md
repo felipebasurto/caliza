@@ -14,7 +14,7 @@
 10. Rebuilt candidate package; final dynamic import audit: 260 imports, 0 unresolved, no known PS5-only imports.
 11. Added executable-memory runtime probes before accepting direct recompiler memory; unexecutable mappings are rejected instead of crashing later.
 12. Fixed WSI semaphore lifetime tracking and debug-allocation wire layout; direct-memory failure paths now unmap/release correctly.
-13. Added opt-in USB keyboard/mouse hardware-test path, audio starvation/output telemetry, and complete third-party package notices.
+13. Added opt-in USB keyboard/mouse hardware-test path, accurate audio starvation/output telemetry, complete third-party package notices, and explicit PS4 NFS disablement while libc wrapping is unavailable.
 
 ## Diff classification of inherited `main..ps4-perf`
 
