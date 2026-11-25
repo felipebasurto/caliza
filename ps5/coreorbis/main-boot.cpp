@@ -63,6 +63,9 @@ extern volatile unsigned long long g_orbis_map_addr;
 #include "orbis-shims/OrbisTextureRoots.h" // vk-285-113: a game's texture pack on a USB drive
 #include "orbis-shims/ProsperoKbdMouse.h" // vk-285-72, vk-285-113: the PS5's USB keyboard and mouse
 #include "orbis-shims/OrbisPadMap.h"     // vk-285-116: the controller remapping
+#ifdef ORBIS_PS4
+#include "ps4_wsi_stats.h"
+#endif
 #include "OrbisNfs.h"                     // vk-285-135: games on NFS shares
 #include <mutex>
 #include <set> // vk-285-134
@@ -2740,12 +2743,6 @@ static bool orbis_no_usb_kbm()
 }
 
 #ifdef ORBIS_PS4
-struct Ps4WsiPresentStats
-{
-  unsigned long long presents, present_failures, flip_fallbacks, acquire_timeouts, acquire_not_ready,
-    videoout_register_failures, videoout_register_retries, videoout_unregister_retries,
-    videoout_unregister_retry_failures, videoout_unregister_retry_successes, videoout_slot_exhausted;
-};
 extern "C" void ps4_wsi_present_stats(Ps4WsiPresentStats* out);
 #endif
 

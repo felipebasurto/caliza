@@ -14,6 +14,7 @@
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
+#include "ps4_wsi_stats.h"
 
 #include <orbis/VideoOut.h>
 #include <orbis/libkernel.h>
@@ -39,23 +40,6 @@ int ac_ps4_submit_flip(int video, unsigned buffer, unsigned mode, int64_t arg);
 #ifndef ORBIS_VIDEO_OUT_PIXEL_FORMAT_A8R8G8B8_SRGB
 #define ORBIS_VIDEO_OUT_PIXEL_FORMAT_A8R8G8B8_SRGB 0x80000000
 #endif
-
-// Read with ps4_wsi_present_stats (declared again by its users; kept outside the anonymous namespace
-// so the extern "C" accessor has a stable, trivially copyable layout).
-struct Ps4WsiPresentStats
-{
-	uint64_t presents;
-	uint64_t present_failures;
-	uint64_t flip_fallbacks;
-	uint64_t acquire_timeouts;
-	uint64_t acquire_not_ready;
-	uint64_t videoout_register_failures;
-	uint64_t videoout_register_retries;
-	uint64_t videoout_unregister_retries;
-	uint64_t videoout_unregister_retry_failures;
-	uint64_t videoout_unregister_retry_successes;
-	uint64_t videoout_slot_exhausted;
-};
 
 namespace
 {
@@ -846,6 +830,20 @@ std::mutex s_semaphore_lock;
 std::unordered_set<VkSemaphore> s_acquire_semaphores; // handed to acquire, not yet waited on
 std::unordered_set<VkSemaphore> s_present_semaphores; // seen in a present's waits
 
+// Window-system semaphores are tracked only while they are alive. Without this hook a destroyed
+// semaphore stayed in the sets forever, and a later unrelated semaphore reusing the same handle could
+// have a real wait or signal silently dropped. Needs proper testing with swapchain recreation.
+VKAPI_ATTR void VKAPI_CALL DestroySemaphore(VkDevice device, VkSemaphore semaphore, const VkAllocationCallbacks* alloc)
+{
+	if (semaphore)
+	{
+		std::lock_guard<std::mutex> guard(s_semaphore_lock);
+		s_acquire_semaphores.erase(semaphore);
+		s_present_semaphores.erase(semaphore);
+	}
+	Device<PFN_vkDestroySemaphore>(device, "vkDestroySemaphore")(device, semaphore, alloc);
+}
+
 // A recorded command buffer with nothing in it, for submissions that have none. The GNM winsys refuses a submission
 // without an IB (ac_ps4_drm.c ac_drm_cs_submit_raw2: -EINVAL), and RADV then calls the device lost: paraLLEl-GS's
 // Granite lost it on its second submission, an empty one that only signals a fence. An empty command buffer still
@@ -1217,6 +1215,7 @@ PFN_vkVoidFunction Lookup(const char* name)
 		OURS(QueuePresentKHR),
 		OURS(QueueSubmit),
 		OURS(QueueSubmit2),
+		OURS(DestroySemaphore),
 	};
 #undef OURS
 	for (const auto& entry : kTable)
