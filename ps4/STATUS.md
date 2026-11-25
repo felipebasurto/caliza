@@ -2,7 +2,7 @@
 
 Living board for the overnight PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 00:22 UTC by orchestrator.
+Last updated: 2026-11-26 00:24 UTC by orchestrator.
 
 ## Current repository baseline
 
@@ -51,11 +51,17 @@ Several long-running research subagents had not returned by this checkpoint. The
 
 ## Immediate next steps
 
-1. Commit the validated checkpoint locally with `(AI-assisted)` in the message.
-2. Re-run `git diff --check` and preserve final validation logs.
-3. If console access exists, install only this PKG through the existing flow and run the smoke protocol in `COMPATIBILITY.md`.
-4. Implement runtime executable-memory probe before broader performance work.
-5. Continue research integration and refine `PORT_AUDIT.md`/`ROADMAP.md`.
+Local checkpoint commits created:
+
+- `9c7e1ea` — boot imports, packaging, input, baseline/audit docs.
+- `fb40d34` — executable-memory runtime probe and initial-RWX fallback.
+
+Next:
+
+1. If console access exists, install only the candidate PKG through the existing flow and run the smoke protocol in `COMPATIBILITY.md`.
+2. Validate the executable-memory probe across the firmware/loader matrix.
+3. Continue research integration and refine `PORT_AUDIT.md`/`ROADMAP.md`.
+4. Measure before any further optimization; no speedup is claimed yet.
 
 ## Validation ledger
 
