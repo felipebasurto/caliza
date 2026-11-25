@@ -249,6 +249,7 @@ bool SysMemory::AllocateMemoryMap()
 				printf("[dbg] memmap: alloc code direct rc=%d phys=%lld\n", rcc, phys2);
 				fflush(stdout);
 				rcc2 = -1;
+				bool phys2_owned = rcc == 0;
 #ifdef ORBIS_PS4
 				// PS4: never accept a non-executable fallback. Try the other direct-memory permission
 				// transition (initial RWX rather than RW-then-mprotect) and prove execution before use.
@@ -259,6 +260,7 @@ bool SysMemory::AllocateMemoryMap()
 					printf("[dbg] memmap: initial-RWX code direct mapping did not execute; rejecting it\n");
 					sceKernelMunmap(code, code_size);
 					sceKernelReleaseDirectMemory(phys2, code_size);
+					phys2_owned = false;
 					rcc = rcc2 = -1;
 					code = nullptr;
 				}
@@ -266,6 +268,8 @@ bool SysMemory::AllocateMemoryMap()
 				if (rcc == 0)
 					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x33, 0, phys2, align);
 #endif
+				if (rcc2 != 0 && phys2_owned)
+					sceKernelReleaseDirectMemory(phys2, code_size);
 				printf("[dbg] memmap: map code direct rc=%d addr=%p\n", rcc2, code);
 				fflush(stdout);
 			}
@@ -284,6 +288,7 @@ bool SysMemory::AllocateMemoryMap()
 				DumpMemoryMap();
 				return true;
 			}
+			sceKernelMunmap(data, main_size);
 			sceKernelReleaseDirectMemory(phys, main_size);
 		}
 		Console.WriteLn("[dbg] memmap: direct alloc failed, falling through");
