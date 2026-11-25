@@ -787,8 +787,9 @@ static void *orbis_pad_thread(void *)
   printf("[pad] lib=%p us=%p ui=%x uu=%x user=%d init=%x handle=%d\n", pad, us, rc_ui, rc_uu, user, rc_pi, handle);
   fflush(stdout);
   if (handle < 0)
-    return nullptr;
-  orbis_pad_rumble_mode(handle, "player 1"); // vk-285-117
+    printf("[pad] player 1 has no handle yet; keyboard/mouse, extra players and hotplug retry stay active\n");
+  else
+    orbis_pad_rumble_mode(handle, "player 1"); // vk-285-117
   OrbisPadPort port1;
   port1.port = 0;
   port1.handle = handle;
@@ -810,9 +811,20 @@ static void *orbis_pad_thread(void *)
   unsigned reads = 0;
   for (;;)
   {
+    if (handle < 0 && user >= 0 && rc_pi == 0 && (reads % 250u) == 0u)
+    {
+      const int retry = scePadGetHandle(user, 0, 0);
+      if (retry >= 0)
+      {
+        handle = retry;
+        port1.handle = retry;
+        printf("[pad] player 1 controller handle appeared: %d\n", retry);
+        orbis_pad_rumble_mode(handle, "player 1");
+      }
+    }
     OrbisPadData d;
     memset(&d, 0, sizeof(d));
-    int rc = p_read(handle, &d);
+    int rc = handle >= 0 ? p_read(handle, &d) : -1;
     // vk-285-113: the PS5's USB keyboard and mouse as the PS2 controller (orbis-shims/ProsperoKbdMouse.cpp): the keys held,
     // the mouse's buttons and its aim are added to what the DualSense reports (a button held on either is held; a stick the
     // keyboard or mouse moves is theirs while they move it). With no DualSense data at all they stand alone.
