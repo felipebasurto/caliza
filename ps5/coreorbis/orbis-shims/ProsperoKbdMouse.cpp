@@ -127,6 +127,23 @@ namespace
 			s_events.push_back({kind, code, value});
 	}
 
+	struct MouseButtonMap
+	{
+		uint32_t mask;
+		InputButton button;
+	};
+	constexpr MouseButtonMap kMouseButtons[] = {{0x1, INPUT_BUTTON_LEFT}, {0x2, INPUT_BUTTON_RIGHT}, {0x4, INPUT_BUTTON_MIDDLE}};
+
+	void ReleaseMouseButtons(uint32_t& buttons)
+	{
+		for (const MouseButtonMap& m : kMouseButtons)
+		{
+			if (buttons & m.mask)
+				Queue(Kind::Button, static_cast<uint16_t>(m.button), 0.0f);
+		}
+		buttons = 0;
+	}
+
 	// A system library by name, from the directories the ps5-payload-dev SDK's loader searches.
 	const char* const kLibraryDirs[] = {"/system/common/lib/", "/system/priv/lib/", "/system_ex/common_ex/lib/",
 		"/system_ex/priv_ex/lib/"};
@@ -403,6 +420,7 @@ namespace
 		uint32_t buttons = 0;
 		bool keyboard_seen = false, mouse_seen = false;
 		unsigned keyboard_errors = 0, mouse_errors = 0;
+		unsigned keyboard_read_failures = 0, mouse_read_failures = 0;
 		AimState aim;
 		Hotkeys hotkeys;
 		bool was_keys_to_pad = false, was_mouse_to_pad = false;
@@ -416,6 +434,7 @@ namespace
 				const int rc = keyboard_read(keyboard, state);
 				if (rc == 0)
 				{
+					keyboard_read_failures = 0;
 					key_count = PressedKeys(state, keys);
 					if (!keyboard_seen && state[16] != 0)
 					{
@@ -436,10 +455,23 @@ namespace
 					std::memcpy(previous, keys, sizeof(keys));
 					previous_count = key_count;
 				}
-				else if (keyboard_errors++ < 5)
+				else
 				{
-					printf("[kbm] keyboard read %#x\n", static_cast<unsigned>(rc));
-					fflush(stdout);
+					keyboard_read_failures++;
+					if (keyboard_errors++ < 5)
+					{
+						printf("[kbm] keyboard read %#x\n", static_cast<unsigned>(rc));
+						fflush(stdout);
+					}
+					if (keyboard_read_failures == 25)
+					{
+						// A persistently failing read must not leave keys held forever. Needs proper testing.
+						for (int i = 0; i < previous_count; i++)
+							Queue(Kind::Key, previous[i], 0.0f);
+						std::memset(keys, 0, sizeof(keys));
+						std::memset(previous, 0, sizeof(previous));
+						key_count = previous_count = 0;
+					}
 				}
 			}
 			if (mouse >= 0)
@@ -447,12 +479,18 @@ namespace
 				const int count = mouse_read(mouse, records, MOUSE_RECORDS);
 				if (count > 0 && count <= MOUSE_RECORDS)
 				{
+					mouse_read_failures = 0;
 					long dx = 0, dy = 0;
+					bool disconnected_seen = false, connected_seen = false;
 					for (int i = 0; i < count; i++)
 					{
 						const uint8_t* const record = records + static_cast<size_t>(i) * MOUSE_RECORD_BYTES;
 						if (record[8] == 0) // not connected
+						{
+							disconnected_seen = true;
 							continue;
+						}
+						connected_seen = true;
 						if (!mouse_seen)
 						{
 							mouse_seen = true;
@@ -471,12 +509,7 @@ namespace
 							continue;
 						dx += x;
 						dy += y;
-						static constexpr struct
-						{
-							uint32_t mask;
-							InputButton button;
-						} map[] = {{0x1, INPUT_BUTTON_LEFT}, {0x2, INPUT_BUTTON_RIGHT}, {0x4, INPUT_BUTTON_MIDDLE}};
-						for (const auto& m : map)
+						for (const MouseButtonMap& m : kMouseButtons)
 						{
 							if ((now ^ buttons) & m.mask)
 								Queue(Kind::Button, static_cast<uint16_t>(m.button), (now & m.mask) ? 1.0f : 0.0f);
@@ -485,6 +518,8 @@ namespace
 						for (int notch = 0; notch < (wheel < 0 ? -wheel : wheel) && notch < 16; notch++)
 							Queue(Kind::Wheel, 0, wheel > 0 ? 1.0f : -1.0f);
 					}
+					if (disconnected_seen && !connected_seen && buttons)
+						ReleaseMouseButtons(buttons);
 					if (dx != 0 || dy != 0)
 					{
 						std::lock_guard<std::mutex> lock(s_lock);
@@ -494,10 +529,16 @@ namespace
 					poll_dx = dx;
 					poll_dy = dy;
 				}
-				else if (count < 0 && mouse_errors++ < 5)
+				else if (count < 0)
 				{
-					printf("[kbm] mouse read %#x\n", static_cast<unsigned>(count));
-					fflush(stdout);
+					mouse_read_failures++;
+					if (mouse_errors++ < 5)
+					{
+						printf("[kbm] mouse read %#x\n", static_cast<unsigned>(count));
+						fflush(stdout);
+					}
+					if (mouse_read_failures == 25 && buttons)
+						ReleaseMouseButtons(buttons);
 				}
 			}
 

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
+#include <unistd.h>
 // Orbis audio shims: cubeb/SDL drivers don't exist here (libSceAudioOut later).
 #include "Host/AudioStream.h"
 #include "common/Error.h"
@@ -82,6 +83,7 @@ private:
   void Run()
   {
     alignas(64) float buf[GRAIN * 2];
+    bool refill_completed = false;
     while (!m_quit.load(std::memory_order_relaxed))
     {
       if (m_paused)
@@ -94,7 +96,9 @@ private:
         // startup is intentionally filling and is not an emulation starvation event. Needs proper testing.
         const bool was_filling = m_filling;
         ReadFrames(buf, GRAIN);
-        if (!was_filling && m_filling)
+        if (!m_filling)
+          refill_completed = true;
+        else if (!was_filling && refill_completed)
           s_audio_underruns.fetch_add(1, std::memory_order_relaxed);
       }
       s_audio_grains.fetch_add(1, std::memory_order_relaxed);
@@ -109,6 +113,7 @@ private:
             static_cast<unsigned long long>(errors));
           std::fflush(stdout);
         }
+        usleep(10000); // a persistent output failure must not spin a Jaguar core
       }
     }
   }
