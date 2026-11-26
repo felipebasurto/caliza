@@ -28,6 +28,7 @@ This matrix separates inherited claims, static evidence, host verification, and 
 | Frontend/shelf | Implemented through Vulkan WSI | fe_ps5 Vulkan shelf | CPU overlay VideoOut buffers API is PS5-only/stubbed |
 | Cover downloads | Implemented, console-unverified | Uses the mbedTLS HTTPS client with Mozilla roots; HTTP/SSL system library dependencies removed | Test online, offline, DNS failure, redirect, and certificate failure on console |
 | PS4 Pro mode | Enabled in package SFO | attribute `0x00810000`; Neo mode default 2x upscale | Not measured on Pro |
+| Smart tune auto-tuner | Implemented, experimental, compile-validated only | per-game sheet row arms a one-shot boot flag; ladder sweep applies live through gs.ini pipeline and persists the winner in the game's ini | Requires in-game validation with `[smarttune]` log lines; menu-scene measurements produce wrong winners by design |
 
 ## Required console smoke protocol
 
