@@ -49,3 +49,8 @@ Metrics:
 4. Measure base PS4 native vs Pro 2x defaults separately.
 5. Measure shader pipeline compile hitches from `[shaders]` before considering VU/pipeline caching.
 6. Reduce CPU-side GPU copies/readbacks only after `[copies]`/`[readbacks]` evidence identifies the dominant kind.
+
+
+## ThinLTO experiment checkpoint (2026-11-26)
+
+`LTO=1` now configures and packages successfully after using the LLVM 21 linker matching clang-21 and disabling RELRO segmentation for the PS4's one-RW-load packaging constraint. Experimental package: `/Users/felipe/ps4-build-work/ps4sx2-candidate-lto1-experimental.pkg`, SHA-256 `5001507188009b9cbfe7ca9db04ec6f2cd96b9c6579d69f139da3efceafbd4d2`, 60,424,192 bytes; 251 dynamic imports, zero unresolved, zero known PS5-only imports. This is only a build-validated experiment: no boot, compatibility, or performance claim exists until hardware A/B measurement.

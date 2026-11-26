@@ -109,7 +109,7 @@ Built in the Linux x86_64 OpenOrbis container after commit `3159626`:
 | P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 `nfs://host/export` shares mount through CEMUPS4 `/net/shareN`; query options/ports unsupported; SMB API exists but is not exposed yet |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
-| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol |
+| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured |
 
 ## Console smoke-test priority
 

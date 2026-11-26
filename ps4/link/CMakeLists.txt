@@ -38,8 +38,17 @@ set(ORBIS_ORDER_FILE "${_orbis_order_default}" CACHE STRING "ld.lld --symbol-ord
 # runtime sources the same way and keep the backend at the compile flags' O3. Needs proper testing: LTO can change
 # both performance and the order file's effect.
 if (PS4_LTO STREQUAL "1")
+    # ps4.cmake selects OpenOrbis' LLVM 12 ld.lld, which cannot read clang-21 ThinLTO bitcode.
+    # Use the linker clang-21 itself names; fail configure rather than dying in the final link.
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=ld.lld
+                    OUTPUT_VARIABLE _ps4_lto_linker OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (NOT EXISTS "${_ps4_lto_linker}")
+        message(FATAL_ERROR "PS4_LTO=1 needs the ld.lld next to ${CMAKE_CXX_COMPILER}")
+    endif ()
+    set(CMAKE_LINKER "${_ps4_lto_linker}" CACHE FILEPATH "linker used for clang-21 ThinLTO bitcode" FORCE)
+    message(STATUS "ThinLTO linker: ${CMAKE_LINKER}")
     target_compile_options(pcsx2 PRIVATE -flto=thin)
-    string(APPEND CMAKE_EXE_LINKER_FLAGS " --lto-O3")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " --lto-O3 -z norelro") # LLVM 21 otherwise splits RELRO into a second RW PT_LOAD, which create-fself cannot represent safely
     # Without LTO this reaches the backend while each object is compiled. With LTO the backend runs here instead,
     # and clang does not encode that -mllvm answer in the bitcode, so ld.lld needs it again.
     if (PS4_NARROW STREQUAL "1")
