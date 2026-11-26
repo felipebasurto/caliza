@@ -1446,7 +1446,17 @@ __fi void cdvdReadInterrupt()
 				CDVDREAD_INT(cdvd.ReadTime);
 			}
 			else
+			{
 				ERROR_LOG("CDVD READ ERROR, sector = {}", cdvd.CurrentSector);
+				// Complete the command with a read error after the game-selected retry budget.
+				// Otherwise the drive stays busy forever and even BREAK/new commands are rejected.
+				// needs proper testing with truncated/corrupt images on hardware.
+				cdvd.Error = 0x30; // Problem occurred during read
+				cdvdUpdateReady(CDVD_DRIVE_READY | CDVD_DRIVE_ERROR);
+				cdvdUpdateStatus(CDVD_STATUS_PAUSE);
+				cdvd.WaitingDMA = false;
+				cdvdSetIrq();
+			}
 
 			return;
 		}
