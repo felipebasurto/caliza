@@ -171,7 +171,6 @@ struct MemoryCardFileMetadataReference
 
 struct MemoryCardFileHandleStructure
 {
-	MemoryCardFileMetadataReference* fileRef;
 	std::string hostFilePath;
 	std::FILE* fileHandle;
 };
@@ -193,11 +192,11 @@ public:
 	// Get an already opened file if possible, or open a new one and remember it
 	std::FILE* ReOpen(const std::string_view folderName, MemoryCardFileMetadataReference* fileRef, bool writeMetadata = false);
 	// Close all open files that start with the given path, so either a file if a filename is given or all files in a directory and its subdirectories when a directory is given
-	void CloseMatching(const std::string_view path);
-	// Close all open files
-	void CloseAll();
-	// Flush the written data of all open files to the file system
-	void FlushAll();
+	u32 CloseMatching(const std::string_view path);
+	// Close all open files, returning the number of close failures
+	u32 CloseAll();
+	// Flush the written data of all open files to the file system, returning failures
+	u32 FlushAll();
 
 	// Force metadata to be written on next file access, not sure if this is necessary but it can't hurt.
 	void ClearMetadataWriteState();
@@ -214,9 +213,8 @@ private:
 
 	// Open a new file and remember it for later
 	std::FILE* Open(const std::string_view folderName, MemoryCardFileMetadataReference* fileRef, bool writeMetadata = false);
-	// Close a file and delete its handle
-	// If entry is given, it also attempts to set the created and modified timestamps of the file according to the entry
-	void CloseFileHandle(std::FILE*& file, const MemoryCardFileEntry* entry = nullptr);
+	// Close a file and delete its handle; returns false when fclose reports failure
+	bool CloseFileHandle(std::FILE*& file);
 
 	void WriteMetadata(const std::string_view folderName, const MemoryCardFileMetadataReference* fileRef);
 };

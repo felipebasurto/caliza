@@ -124,7 +124,9 @@ void FolderMemoryCard::InitializeInternalData()
 	memset(&m_backupBlock2, 0xFF, sizeof(m_backupBlock2));
 	m_cache.clear();
 	m_oldDataCache.clear();
-	m_lastAccessedFile.CloseAll();
+	const u32 closeFailures = m_lastAccessedFile.CloseAll();
+	if (closeFailures != 0)
+		Console.Error("FolderMcd: %u file handle(s) failed to close on slot %u", closeFailures, m_slot);
 	m_fileMetadataQuickAccess.clear();
 	m_timeLastWritten = 0;
 	m_isEnabled = false;
@@ -1252,7 +1254,8 @@ void FolderMemoryCard::Flush()
 		FlushPage(i);
 	}
 
-	m_lastAccessedFile.FlushAll();
+	if (m_lastAccessedFile.FlushAll() != 0)
+		NoteFileWriteFailure();
 	m_lastAccessedFile.ClearMetadataWriteState();
 	m_oldDataCache.clear();
 
@@ -1335,8 +1338,12 @@ void FolderMemoryCard::FlushSuperBlock()
 
 void FolderMemoryCard::FlushFileEntries()
 {
-	// Flush all file entry data from the cache into m_fileEntryDict.
+	// Flush all file entry data from the cache into m_fileEntryDict. The
+	// quick-access map is rebuilt below; clearing it first prevents deleted or
+	// orphaned files from retaining stale write targets across retry windows.
 	m_directoryTraversalMarks.reset();
+	m_lastAccessedFile.ClearMetadataWriteState();
+	m_fileMetadataQuickAccess.clear();
 	const u32 rootDirCluster = m_superBlock.data.rootdir_cluster;
 	FlushCluster(rootDirCluster + m_superBlock.data.alloc_offset);
 	MemoryCardFileEntryCluster* rootEntries = &m_fileEntryDict[rootDirCluster];
@@ -2221,7 +2228,6 @@ std::FILE* FileAccessHelper::Open(const std::string_view folderName, MemoryCardF
 	{
 		MemoryCardFileHandleStructure handleStruct;
 		handleStruct.fileHandle = file;
-		handleStruct.fileRef = fileRef;
 		handleStruct.hostFilePath = std::move(filename);
 		m_files.emplace(std::move(internalPath), std::move(handleStruct));
 	}
@@ -2355,9 +2361,6 @@ std::FILE* FileAccessHelper::ReOpen(const std::string_view folderName, MemoryCar
 			}
 		}
 
-		// update the fileRef in the map since it might have been modified or deleted
-		it->second.fileRef = fileRef;
-
 		return it->second.fileHandle;
 	}
 	else
@@ -2366,22 +2369,25 @@ std::FILE* FileAccessHelper::ReOpen(const std::string_view folderName, MemoryCar
 	}
 }
 
-void FileAccessHelper::CloseFileHandle(std::FILE*& file, const MemoryCardFileEntry* entry /* = nullptr */)
+bool FileAccessHelper::CloseFileHandle(std::FILE*& file)
 {
-	if (file)
-	{
-		std::fclose(file);
-		file = nullptr;
-	}
+	if (!file)
+		return true;
+
+	const bool success = std::fclose(file) == 0;
+	file = nullptr;
+	return success;
 }
 
-void FileAccessHelper::CloseMatching(const std::string_view path)
+u32 FileAccessHelper::CloseMatching(const std::string_view path)
 {
+	u32 failures = 0;
 	for (auto it = m_files.begin(); it != m_files.end();)
 	{
 		if (it->second.hostFilePath.starts_with(path))
 		{
-			CloseFileHandle(it->second.fileHandle, it->second.fileRef->entry);
+			if (!CloseFileHandle(it->second.fileHandle))
+				++failures;
 			it = m_files.erase(it);
 		}
 		else
@@ -2389,23 +2395,30 @@ void FileAccessHelper::CloseMatching(const std::string_view path)
 			++it;
 		}
 	}
+	return failures;
 }
 
-void FileAccessHelper::CloseAll()
+u32 FileAccessHelper::CloseAll()
 {
+	u32 failures = 0;
 	for (auto it = m_files.begin(); it != m_files.end(); ++it)
 	{
-		CloseFileHandle(it->second.fileHandle, it->second.fileRef->entry);
+		if (!CloseFileHandle(it->second.fileHandle))
+			++failures;
 	}
 	m_files.clear();
+	return failures;
 }
 
-void FileAccessHelper::FlushAll()
+u32 FileAccessHelper::FlushAll()
 {
+	u32 failures = 0;
 	for (auto it = m_files.begin(); it != m_files.end(); ++it)
 	{
-		std::fflush(it->second.fileHandle);
+		if (std::fflush(it->second.fileHandle) != 0)
+			++failures;
 	}
+	return failures;
 }
 
 void FileAccessHelper::ClearMetadataWriteState()
