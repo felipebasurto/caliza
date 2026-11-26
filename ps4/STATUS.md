@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `3159626`.
+Last updated: 2026-11-26 after commit `587d2f8`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **34 local commits** on top of the baseline.
+- Current candidate: **41 local commits** on top of the baseline.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -43,11 +43,18 @@ Last updated: 2026-11-26 after commit `3159626`.
 27. `4598aff` — make crash hooks async-signal-safe.
 28. `b128266` — stream synchronous savestate writes.
 29. `9b5fb08` — integrate robustness review fixes.
-30. `bb0d1ad` — arm executable probe only after sigsetjmp.
+30. `a5ae086` — finalize probe safety and validation evidence.
 31. `8300eb8` — polish streaming savestate failure behavior.
 32. `ac6ebed` — expose NFS shares through CEMUPS4 netfs.
 33. `385df24` — add savestate validation tooling and PS4Mount folder integration.
 34. `3159626` — harden executable memory probing and release tracking.
+35. `22132cc` — record netfs and memory-hardening checkpoint evidence.
+36. `af53105` — make ThinLTO experimental builds link and package.
+37. `d88194e` — add console log smoke-test analyzer.
+38. `51c3f70` — fail boot cleanly when VM memory initialization fails.
+39. `6c5b260` — report early memory reset failure accurately.
+40. `60c3a75` — add read-only console log collection helper.
+41. `587d2f8` — bound network-share boot checks with parallelism.
 
 ## Completed work
 
@@ -72,25 +79,26 @@ Last updated: 2026-11-26 after commit `3159626`.
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container after commit `3159626`:
+Built in the Linux x86_64 OpenOrbis container after commit `587d2f8`:
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,877,864 bytes**, SHA-256 `5f9f6762de08ec2696767de33cad7432cfa6166a8a3bd9fda2b2b96964e3d73f`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,004,240 bytes**, SHA-256 `adf3ef04beb18a335a0c4d364829d64bb3d42d05d68775042fa21c2882f3b608`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `8f2303a23ed31f5f73deabaa18c5d962c8bdeafd9de53a22a1083036165ce656`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,956,944 bytes**, SHA-256 `e7191ac866b297744336332746e160c4fea4d3dc160407f5dda3ee092d884201`.
+- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: **41,004,240 bytes**, SHA-256 `cdd44431a6355925e32e841fab6070772f8944b153fc8af7281d2528e1a8b1ec`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `1d463adfb0f753fad957a5f37f3111fab2be32b9820699d6e51ee0b328eb1857`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
+- ThinLTO remains a separate experimental artifact only: `/Users/felipe/ps4-build-work/ps4sx2-candidate-lto1-experimental.pkg`, SHA-256 `5001507188009b9cbfe7ca9db04ec6f2cd96b9c6579d69f139da3efceafbd4d2`.
 
 ## Validation ledger
 
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate31-memrelease.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate35-netfs-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Host tests | PASS | `ps4/logs/host-tests-memrelease.log` |
+| Host tests | PASS | `ps4/logs/host-tests-netfs-final.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -106,7 +114,7 @@ Built in the Linux x86_64 OpenOrbis container after commit `3159626`:
 | P1-CONSOLE | Real PS4 boot/render/input/audio validation | not started | install only the current candidate through the user's existing safe flow |
 | P1-FW | Firmware/loader matrix | empty | requires console evidence per firmware/loader |
 | P1-INTERPRETER | Automatic fallback when no executable memory exists | absent | currently rejects memory and fails clearly; implement explicit fallback policy if needed |
-| P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 `nfs://host/export` shares mount through CEMUPS4 `/net/shareN`; query options/ports unsupported; SMB API exists but is not exposed yet |
+| P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 shares mount through CEMUPS4 `/net/shareN`; per-share boot checks now run concurrently (maximum four workers) with deterministic result logging; failed shares stay registered for explicit retry but are excluded from automatic scans; query options/ports unsupported; SMB remains deliberately unexposed |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
 | P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured |
@@ -114,13 +122,21 @@ Built in the Linux x86_64 OpenOrbis container after commit `3159626`:
 ## Console smoke-test priority
 
 1. Install only `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg` using the already existing safe flow.
-2. Preserve `/data/PCSX2/boot.log`, `emulog.txt`, and `settings.log` after first boot; also check `/data/Crema/boot-trace.log` and `/data/Crema/crash.log` when present.
+2. Collect logs read-only with `PS4_HOST=<console-ip> bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs` (or manually preserve `/data/PCSX2/boot.log`, `emulog.txt`, `settings.log`, `/data/Crema/boot-trace.log`, and `/data/Crema/crash.log`).
 3. Confirm `[dbg] memmap`, `[jitprobe]`/memprobe messages, `[ps4wsi]`, `[audio]`, `[pad]`, `[threads]`, `[copies]`, and `[readbacks]`.
 4. Test boot to shelf, BIOS detection, one legal user-owned game, controller disconnect/reconnect, memory card, savestate, and one minutes-long gameplay sample.
 5. Test cover download both online and offline; preserve `[covers]`/`[https]` lines.
 6. Test a plain NFSv3 share with `PS5SX2/NfsShares=nfs://<server>/<export>`; preserve `[boot] ... network share` lines, scan one ISO, and note throughput/stutter.
 7. After a pad-combo savestate, pull the `.p2s` and run `python3 ps4/tools/validate_savestate.py --require-current-version <file>` on the host.
 8. Optional USB keyboard/mouse test: create empty flag file `/data/PCSX2/flags/usbkbm`, restart, and preserve `[kbm]` lines.
+9. Analyze the collected logs with `python3 ps4/tools/analyze_console_logs.py --expect-input --expect-wsi --expect-audio --expect-state --expect-gameplay /tmp/ps4-logs/*` and investigate every FAIL before changing performance settings.
+
+## New audit evidence since the previous checkpoint
+
+- **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.
+- **Hot-order file:** exact symbol coverage in the current non-LTO candidate is 362/397. Most missing entries are stale PS5 recorder symbols (`ps5vk_record_*`) or STL hash-table instantiations whose mangled names changed when Orbis node allocators/libc++ details changed; `V_VolumeSlide::Update` is now `UpdateSlide`, and `__emutls_get_address` is absent. The order file still must not be treated as Jaguar-tuned.
+- **SMB:** remains correctly unexposed because there is no credential/UI design and guest-only SMB would fail on many real servers.
+
 
 ## Compatibility preservation rules for this session
 

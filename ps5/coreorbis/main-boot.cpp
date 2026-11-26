@@ -2065,9 +2065,9 @@ extern "C" int ps4_netfs_check(const char* name, char* message, size_t size);
 #endif
 
 // vk-285-135 (AI-assisted; testers: "nfs mounting"): gs.ini's PS5SX2/NfsShares, nfs:// addresses separated by ';' (the
-// settings page's Folders group, the shelf's folder picker), mounted after the jailbreak (orbis-shims/OrbisNfs.cpp: the
-// app's own NFS client) and listed like the drives: each share's folder under /nfs/<host>/<path>. All at once, each try
-// giving up after 5 s; a share that didn't mount is said in boot.log and left out, and the shelf starts without it.
+// settings page's Folders group, the shelf's folder picker). PS5 uses OrbisNfs and mounts under /nfs; PS4 reuses
+// CEMUPS4 netfs under /net. PS5 checks all shares at once with a 5 s budget; PS4 checks independent mounts with a
+// small bounded worker set because one network mount cannot be interrupted once its kernel/RPC wait begins.
 static std::vector<std::string> orbis_nfs_game_folders(const char* when)
 {
   std::vector<std::string> dirs;
