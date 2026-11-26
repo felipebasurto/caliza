@@ -33,6 +33,7 @@ This matrix separates inherited claims, static evidence, host verification, and 
 
 When a console is available, run exactly this sequence and preserve `/data/PCSX2/boot.log`, `emulog.txt`, `settings.log`:
 
+0. Install only the candidate whose current expected PKG SHA-256 is recorded in `ps4/STATUS.md`; verify that hash before installation.
 1. Cold boot to shelf.
 2. Confirm BIOS detection without any BIOS in PKG.
 3. Start a legally owned test ISO at native resolution.
