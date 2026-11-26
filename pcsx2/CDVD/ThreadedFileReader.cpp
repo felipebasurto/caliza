@@ -48,9 +48,16 @@ size_t ThreadedFileReader::CopyBlocks(void* dst, const void* src, size_t size) c
 	const char* cend = csrc + size;
 	if (m_internalBlockSize)
 	{
+		// Never copy more per unit than the backing unit actually holds: when the external
+		// block size exceeds the internal unit size the copy would otherwise splice the next
+		// unit's leading bytes into this unit's tail. A short copy makes the read fail closed
+		// instead of transporting wrongly-ordered data. needs proper testing with odd CHD layouts.
+		const size_t per_unit = std::min<size_t>(static_cast<size_t>(m_blocksize), static_cast<size_t>(m_internalBlockSize));
 		for (; csrc < cend; csrc += m_internalBlockSize, cdst += m_blocksize)
 		{
-			memcpy(cdst, csrc, m_blocksize);
+			memcpy(cdst, csrc, per_unit);
+			if (per_unit < static_cast<size_t>(m_blocksize))
+				std::memset(cdst + per_unit, 0, static_cast<size_t>(m_blocksize) - per_unit);
 		}
 		return cdst - static_cast<char*>(dst);
 	}
