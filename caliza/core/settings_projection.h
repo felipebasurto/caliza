@@ -16,8 +16,10 @@ struct ProjectionOptions
 {
 	ScopeMask scope = ScopeMask::Global;
 	bool include_composite_memory_cards = false;
-	// Values are effective canonical scalar values keyed by compatibility key. Missing values use schema defaults.
+	// Values are explicit canonical scalar values keyed by compatibility key for this layer. Base values are the
+	// inherited global layer for a game projection; missing values use base values and then schema defaults.
 	std::map<std::string, std::string> values;
+	std::map<std::string, std::string> base_values;
 };
 
 // Projects every visible schema row into immutable contract categories. Backend adapters must use this rather

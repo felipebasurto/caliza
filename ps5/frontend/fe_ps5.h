@@ -25,15 +25,15 @@ struct OrbisFrontendPaths
 	std::string patches_dir;  // *.pnach, for the 16:9 badge
 	std::string covers_dir;   // covers the user supplies (PCSX2's covers folder)
 	std::string cache_dir;    // downloaded covers
-	// The prefetch's downloads; on the shelf (vk-285-110), a try at the covers of games on USB drives
+	// The prefetch's downloads; on the shell (vk-285-110), a try at the covers of games on USB drives
 	// that are still missing after the jailbreak. Off with the nocoverdl flag.
 	bool allow_download = true;
-	bool sound = true;        // the shelf's key sounds (vk-285-47; off with the nomenusound flag)
+	bool sound = true;        // the shell's key sounds (vk-285-47; off with the nomenusound flag)
 	std::string settings_log; // vk-285-51: logs/settings.log, what the settings page changed
 	// Test build 1 (vk-285-55):
 	std::vector<std::string> usb_dirs; // folders on USB drives to list games from (orbis_usb_game_dirs)
 	std::string usb_list;              // cache/usb-games.txt: the USB games seen, for the next start's cover prefetch
-	int test_build = 0;                // > 0: a testing build; the shelf shows TESTING and this label
+	int test_build = 0;                // > 0: a testing build; the shell shows TESTING and this label
 	std::string build_label;           // "Test build 1 · vk-285-55", or the plain tag
 	std::string test_note;             // vk-285-105: testing builds, under the label (the testers' Discord)
 	std::string logs_dir;              // logs/: the settings page's logs download reads the sessions there
@@ -53,7 +53,7 @@ struct OrbisFrontendPaths
 	bool online_patches = true;
 	// vk-285-134 (AI-assisted): the PS2 BIOS (build 130's logs: 961 starts on 235 consoles without one). bios_check looks
 	// again (a BIOS in an archive is taken out) and says whether PCSX2 finds one; bios_problem is then what was found
-	// instead (a sentence); bios_dir where the BIOS goes. Unset: the shelf doesn't check.
+	// instead (a sentence); bios_dir where the BIOS goes. Unset: the shell doesn't check.
 	std::function<bool()> bios_check;
 	std::function<std::string()> bios_problem;
 	std::string bios_dir;
@@ -80,11 +80,11 @@ bool orbis_frontend_watermark(const char* line1, const char* line2, const char* 
 // HTTPS works there and failed after the jailbreak (vk-285-41/42). `notify` (may be null) is told
 // how many are coming before the first request. Returns how many it saved (0 when none were
 // missing, or with downloads off). The covers of the games on USB drives come from
-// cache/usb-games.txt, the list the shelf wrote last time: the drives appear only after the jailbreak.
+// cache/usb-games.txt, the list the shell wrote last time: the drives appear only after the jailbreak.
 int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budget_s, void (*notify)(const char*));
 
 // vk-285-50: the settings page's web server (fe_web.cpp), for phones and PCs on the LAN. Start it
-// once, after the jailbreak; it runs until the app ends, through the shelf and the game. The shelf
+// once, after the jailbreak; it runs until the app ends, through the shell and the game. The shell
 // shows its address as a QR code. The access token is kept in /data/caliza/webui_token.txt.
 bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag);
 // The disc image PCSX2 runs, for the page's "now playing".
@@ -93,7 +93,7 @@ void orbis_web_now_playing(const std::string& image_path);
 std::string orbis_current_disc();
 std::vector<std::string> orbis_disc_set();
 bool orbis_request_disc(const std::string& path);
-// vk-285-113: the page's address as the QR code the shelf shows: `modules` (one byte a module, row by row), its
+// vk-285-113: the page's address as the QR code the shell shows: `modules` (one byte a module, row by row), its
 // side length in `size`, and the short "<ip>:<port>" in `shown`. GSRenderer.cpp draws it over the game when the
 // PS5's browser can't be opened (L2 + D-pad down held for 2 s). False without a web server or a network.
 bool orbis_web_qr(std::vector<unsigned char>& modules, int& size, std::string& shown);
@@ -114,7 +114,7 @@ void orbis_event_log_init(const std::string& path);
 
 // vk-285-53: hides the system's launch screen (sce_sys/pic1.dds), which covers the app until then.
 // The shelf calls it on its first frame; main() calls it again before the plain list or the game
-// in case the shelf didn't run. Only the first call does anything; it returns that call's result.
+// in case the shell didn't run. Only the first call does anything; it returns that call's result.
 int orbis_hide_splash();
 extern "C" void orbis_event_log(const char* line);
 
@@ -122,7 +122,7 @@ extern "C" void orbis_event_log(const char* line);
 // ...; English when the call fails), read once.
 int orbis_ps5_language();
 
-// vk-285-110: the shelf's and the notifications' text in that language (fe_i18n.h). `lang_dir` holds
+// vk-285-110: the shell's and the notifications' text in that language (fe_i18n.h). `lang_dir` holds
 // testers' fixes (<code>.txt); empty reads none (before the jailbreak /data isn't readable).
 void orbis_frontend_set_language(const std::string& lang_dir);
 
@@ -134,8 +134,8 @@ bool orbis_frontend_services_start(const OrbisFrontendPaths& paths, fe::TextureP
 // deliberately left alive and reused by the next menu instead of being destroyed under its feet.
 void orbis_frontend_services_stop();
 
-// Shows the shelf and returns the picked image's path. *ran is false when the frontend could not
+// Shows the shell and returns the picked image's path. *ran is false when the frontend could not
 // start (no Vulkan display, say): the caller then shows the plain list instead. With no images the
-// result is empty. One image opens the shelf too (vk-285-69, for its QR code); the caller's nomenu
-// flag skips the shelf.
+// result is empty. One image opens the shell too (vk-285-69, for its QR code); the caller's nomenu
+// flag skips the shell.
 std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* build_tag, bool* ran);

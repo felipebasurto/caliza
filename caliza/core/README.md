@@ -1,7 +1,7 @@
 # Caliza core backend, storage and migration slice
 
 This directory slice implements the portable storage-facing half of the `contract.h` boundary. It is
-intentionally not wired into the PS4 Makefile or boot flow; the orchestrator owns that integration.
+wired into the PS4 Estratos shell through the production backend adapter.
 
 ## Components
 

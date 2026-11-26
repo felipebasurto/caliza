@@ -785,6 +785,7 @@ private:
 		case CommandType::ChangeDisc: return ExecuteChangeDisc(command);
 		case CommandType::OpenCompanionPanel: return ExecuteOpenCompanionPanel();
 		case CommandType::GenerateReport: return ExecuteGenerateReport();
+		case CommandType::SelectGame: return ExecuteSelectGame(command);
 		}
 		return {CommandStatus::Failed, "unknown command", false};
 	}
@@ -1592,6 +1593,22 @@ private:
 			snapshot.diagnostics.log_paths.push_back(path);
 		BumpRevisionLocked();
 		return {CommandStatus::Succeeded, "fake diagnostics report generated", false};
+	}
+
+	CommandExecution ExecuteSelectGame(const Command& command)
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		const std::string key = !command.id.empty() ? command.id : command.path;
+		if (!key.empty())
+		{
+			const bool found = std::any_of(snapshot.games.begin(), snapshot.games.end(),
+				[&](const GameEntry& game) { return game.id == key || game.path == key || game.file == key; });
+			if (!found)
+				return {CommandStatus::Failed, "the catalog entry is missing", false};
+		}
+		snapshot.selected_game_id = key;
+		BumpRevisionLocked();
+		return {CommandStatus::Succeeded, key.empty() ? "global settings scope selected" : "game settings scope selected", false};
 	}
 
 	uint64_t RegisterScanBatchLocked(CommandId command, CommandType type, const std::vector<std::string>& ids)

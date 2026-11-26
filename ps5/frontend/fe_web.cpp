@@ -914,6 +914,7 @@ void WebServer::ApiCover(const Request& req, Response& res)
 // without one is recommended to follow gs.ini, so its "values" are empty.
 void WebServer::ApiSettings(const Request& req, Response& res)
 {
+	std::lock_guard<std::recursive_mutex> mutation_lock(fe::settings::MutationMutex());
 	const std::string id = QueryValue(req.query, "id");
 	std::vector<GameInfo> games;
 	const GameInfo* g = nullptr;
@@ -1182,6 +1183,7 @@ void WebServer::ApiSave(const Request& req, Response& res)
 // there before is kept in <file>.before-recommended.
 void WebServer::ApiRecommended(const Request& req, const GameInfo* g, const std::string& path, Response& res)
 {
+	std::lock_guard<std::recursive_mutex> mutation_lock(fe::settings::MutationMutex());
 	std::string preset;
 	const bool has = PresetSection(m_cfg.presets, g ? g->serial : std::string("@global"), preset);
 	if (!g && !has)

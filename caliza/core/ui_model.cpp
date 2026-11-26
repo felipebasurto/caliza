@@ -272,6 +272,7 @@ std::string SettingValueForCommand(const SettingItem& item, int direction)
 const char* CaptureButtonName(const UiModel::LogicalInput& in)
 {
 	if (in.cross) return "Cross";
+	if (in.circle) return "Circle";
 	if (in.square) return "Square";
 	if (in.triangle) return "Triangle";
 	if (in.options) return "Options";
@@ -279,11 +280,34 @@ const char* CaptureButtonName(const UiModel::LogicalInput& in)
 	if (in.r1) return "R1";
 	if (in.l2) return "L2";
 	if (in.r2) return "R2";
-	if (in.up) return "D-Pad Up";
-	if (in.down) return "D-Pad Down";
-	if (in.left) return "D-Pad Left";
-	if (in.right) return "D-Pad Right";
+	if (in.up) return "Up";
+	if (in.down) return "Down";
+	if (in.left) return "Left";
+	if (in.right) return "Right";
 	return nullptr;
+}
+
+std::string EncodeGameSettingId(const std::string& setting_id, const std::string& game_key)
+{
+	static constexpr char kHex[] = "0123456789ABCDEF";
+	std::string encoded;
+	for (const unsigned char ch : game_key)
+	{
+		if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.')
+			encoded.push_back(static_cast<char>(ch));
+		else
+		{
+			encoded.push_back('%');
+			encoded.push_back(kHex[ch >> 4]);
+			encoded.push_back(kHex[ch & 15]);
+		}
+	}
+	return "game:" + setting_id + ":" + encoded;
+}
+
+std::string ScopedSettingCommandId(const SettingItem& item, const std::string& game_key)
+{
+	return !game_key.empty() && item.game_scoped ? EncodeGameSettingId(item.id, game_key) : item.id;
 }
 
 std::string JoinBreadcrumbs(const std::vector<std::string>& crumbs)
@@ -433,7 +457,7 @@ void UiModel::SyncAfterSnapshot()
 	m_first_run_index = ClampIndex(m_first_run_index, static_cast<int>(FirstRunActions(m_snapshot).size()));
 	m_filter_index = ClampIndex(m_filter_index, static_cast<int>(Filters().size()));
 	SyncLibraryFocus();
-	m_detail_index = ClampIndex(m_detail_index, 3);
+	m_detail_index = ClampIndex(m_detail_index, static_cast<int>(DetailActions(FindGame(m_detail_game_id), m_snapshot.bios, m_snapshot.operations).size()));
 	m_pause_index = ClampIndex(m_pause_index, 5);
 	m_memory_slot = std::max(0, std::min(1, m_memory_slot));
 	m_memory_index = std::max(0, m_memory_index);
@@ -648,10 +672,12 @@ void UiModel::OpenPause()
 	m_screen = Screen::PauseOverlay;
 }
 
-void UiModel::OpenSettings(Screen return_screen)
+void UiModel::OpenSettings(Screen return_screen, const std::string& game_id)
 {
 	m_settings_return_screen = return_screen;
+	m_settings_game_id = game_id;
 	m_settings_zone = 0;
+	Post(CommandType::SelectGame, game_id);
 	m_screen = Screen::Settings;
 	SyncSettingsFocus();
 }
@@ -898,7 +924,7 @@ void UiModel::ActivateGameDetail(int index)
 			Post(CommandType::DownloadTexturePack, game->id, "", "", 0);
 	}
 	else if (id == "settings")
-		OpenSettings(Screen::GameDetail);
+		OpenSettings(Screen::GameDetail, m_detail_game_id);
 	else if (id == "memory")
 	{
 		m_memory_return_screen = Screen::GameDetail;
@@ -958,7 +984,7 @@ static std::vector<NamedAction> MemoryActionsForSlot(const Snapshot& snapshot, i
 		action.id = card.file;
 		action.label = card.file;
 		action.value = card.slot == slot ? "In slot " + std::to_string(slot + 1) : "Available";
-		action.detail = FormatBytes(card.used_bytes) + " used of " + FormatBytes(card.bytes);
+		action.detail = FormatBytes(card.bytes) + " card";
 		action.icon = EntryIcon::MemoryCard;
 		out.push_back(action);
 	}
@@ -1070,7 +1096,7 @@ void UiModel::HandleSettings(const LogicalInput& in)
 	if (in.square && item.modified)
 	{
 		OpenDialog(PendingAction::ResetSetting, "Reset Setting?", item.label + " returns to its default value.",
-			"Reset", item.destructive, item.id);
+			"Reset", item.destructive, ScopedSettingCommandId(item, m_settings_game_id));
 		return;
 	}
 	if (in.left)
@@ -1098,7 +1124,7 @@ void UiModel::ChangeSetting(const SettingItem& item, int direction)
 {
 	if (item.kind == SettingKind::Text)
 	{
-		OpenKeyboard(KeyboardTarget::SettingText, item.label, item.value, item.id);
+		OpenKeyboard(KeyboardTarget::SettingText, item.label, item.value, ScopedSettingCommandId(item, m_settings_game_id));
 		return;
 	}
 	if (item.kind == SettingKind::Action)
@@ -1109,10 +1135,10 @@ void UiModel::ChangeSetting(const SettingItem& item, int direction)
 		else if (item.id.find("recommended") != std::string::npos)
 			Post(CommandType::ApplyRecommendedSettings);
 		else
-			Post(CommandType::SetSetting, item.id, "", "activate");
+			Post(CommandType::SetSetting, ScopedSettingCommandId(item, m_settings_game_id), "", "activate");
 		return;
 	}
-	Post(CommandType::SetSetting, item.id, "", SettingValueForCommand(item, direction));
+	Post(CommandType::SetSetting, ScopedSettingCommandId(item, m_settings_game_id), "", SettingValueForCommand(item, direction));
 }
 
 void UiModel::HandleControls(const LogicalInput& in)
@@ -1120,12 +1146,6 @@ void UiModel::HandleControls(const LogicalInput& in)
 	const int count = static_cast<int>(m_snapshot.controls.size());
 	if (m_controls_capture)
 	{
-		if (in.circle)
-		{
-			m_controls_capture = false;
-			SetToast("Remap cancelled");
-			return;
-		}
 		if (const char* button = CaptureButtonName(in))
 		{
 			if (count > 0)
@@ -1134,6 +1154,11 @@ void UiModel::HandleControls(const LogicalInput& in)
 				Post(CommandType::SetControlBinding, binding.action, "", button);
 			}
 			m_controls_capture = false;
+		}
+		else if (in.options)
+		{
+			m_controls_capture = false;
+			SetToast("Remap cancelled");
 		}
 		return;
 	}
@@ -1187,7 +1212,7 @@ void UiModel::ActivateAccessibility(int direction)
 	{
 		case 0:
 			id = "text_scale";
-			value = static_cast<int>(a11y.text_scale_percent) + direction * 10;
+			value = static_cast<int>(a11y.text_scale_percent) + direction * 25;
 			value = std::max(100, std::min(200, value));
 			break;
 		case 1:
@@ -1215,7 +1240,7 @@ void UiModel::HandleDiagnostics(const LogicalInput& in)
 	}
 	// Only the report action is focusable; metadata rows are informational and never swallow focus.
 	if (in.cross)
-		ActivateDiagnostics();
+		SetToast("Native report collection is not available yet; use the web panel");
 }
 
 void UiModel::ActivateDiagnostics()
@@ -1908,7 +1933,6 @@ UiView UiModel::BuildView() const
 						found = true;
 						entry.value = card.file;
 						entry.detail = card.enabled ? "Enabled" : "Disabled";
-						entry.progress = card.bytes ? static_cast<float>(card.used_bytes) / static_cast<float>(card.bytes) : 0.0f;
 						break;
 					}
 				if (!found)
@@ -1981,7 +2005,7 @@ UiView UiModel::BuildView() const
 		case Screen::Controls:
 		{
 			view.title = "Controls";
-			view.subtitle = m_controls_capture ? "Press the new button. Circle cancels." :
+			view.subtitle = m_controls_capture ? "Press the new button. Options cancels." :
 				"Map interface and emulator actions";
 			for (size_t i = 0; i < m_snapshot.controls.size(); i++)
 			{
@@ -2020,8 +2044,9 @@ UiView UiModel::BuildView() const
 			UiEntry report;
 			report.id = "report";
 			report.label = "Generate Report";
-			report.value = m_snapshot.diagnostics.report_available ? "Ready" : "Collecting";
-			report.detail = "Package logs and probe data for support";
+			report.value = "Web panel";
+			report.detail = "Native report collection is not bound yet; use the companion panel diagnostics";
+			report.disabled = true;
 			report.icon = EntryIcon::Diagnostics;
 			report.focused = true;
 			view.focus_id = "diagnostics:report";

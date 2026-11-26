@@ -327,6 +327,7 @@ struct ScanJob
 	uint64_t batch = 0;
 	std::string source_id;
 	std::string root_path;
+	uint32_t max_depth = 32;
 	std::shared_ptr<ScanControl> control;
 };
 
@@ -550,7 +551,7 @@ private:
 				}
 				if (S_ISDIR(st.st_mode))
 				{
-					if (current.second < 32)
+					if (current.second < job.max_depth)
 						stack.emplace_back(child, current.second + 1);
 					else if (first_error.empty())
 						first_error = "maximum scan depth reached";

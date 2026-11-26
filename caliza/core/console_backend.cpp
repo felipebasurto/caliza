@@ -175,6 +175,11 @@ public:
 
 	~Impl()
 	{
+		Shutdown();
+	}
+
+	void Shutdown()
+	{
 		m_stop.store(true);
 		m_cv.notify_all();
 		if (m_worker.joinable())
@@ -225,11 +230,17 @@ public:
 		out.memory_cards = overlay.memory_cards;
 		out.accessibility = overlay.accessibility;
 		out.continue_game_id = overlay.continue_game_id;
+		out.continue_valid = !overlay.continue_game_id.empty();
+		out.selected_game_id = overlay.selected_game_id;
 		out.operations = overlay.operations;
 		if (!overlay.projection_problem.empty())
 			out.diagnostics.console_status = overlay.projection_problem;
 		else if (m_options.hooks.web_panel_url)
-			out.diagnostics.console_status = m_options.hooks.web_panel_url();
+		{
+			out.diagnostics.web_panel_url = m_options.hooks.web_panel_url();
+			out.diagnostics.web_panel_connected = !out.diagnostics.web_panel_url.empty();
+			out.diagnostics.console_status = out.diagnostics.web_panel_connected ? "companion panel available" : "companion panel unavailable";
+		}
 		uint64_t high_water = 0;
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
@@ -266,6 +277,7 @@ private:
 		std::vector<MemoryCardInfo> memory_cards;
 		AccessibilityState accessibility;
 		std::string continue_game_id;
+		std::string selected_game_id;
 		std::string projection_problem;
 		std::vector<OperationStatus> operations;
 		uint64_t revision = 1;
@@ -511,6 +523,8 @@ private:
 			case CommandType::ReturnToLibrary:
 			case CommandType::ChangeDisc:
 				return RuntimeCommand(command);
+			case CommandType::SelectGame:
+				return SelectGame(command);
 			case CommandType::GenerateReport:
 				return Unsupported("native report generation; use the existing diagnostics/web service");
 			default:
@@ -1221,6 +1235,29 @@ private:
 		m_projection_due = false;
 	}
 
+	std::string SelectedGameId() const
+	{
+		std::lock_guard<std::mutex> lock(m_selection_mutex);
+		return m_selected_game_id;
+	}
+
+	Execution SelectGame(const Command& command)
+	{
+		const std::string key = !command.id.empty() ? command.id : command.path;
+		if (!key.empty())
+		{
+			Snapshot snapshot;
+			if (!FindGameInSnapshot(key, &snapshot))
+				return Failure("the catalog entry is missing; rescan the library");
+		}
+		{
+			std::lock_guard<std::mutex> lock(m_selection_mutex);
+			m_selected_game_id = key;
+		}
+		RefreshProjection(true);
+		return Success(key.empty() ? "global settings scope selected" : "game settings scope selected");
+	}
+
 	ConsoleOverlay BuildOverlay()
 	{
 		ConsoleOverlay out;
@@ -1236,8 +1273,10 @@ private:
 		projection.include_composite_memory_cards = true;
 		for (const auto& kv : global_doc.values)
 			projection.values[kv.first] = kv.second;
-		out.settings = settings::ProjectSettings(projection);
+		const std::vector<SettingCategory> global_settings = settings::ProjectSettings(projection);
+		out.settings = global_settings;
 		projection.scope = settings::ScopeMask::Game;
+		projection.base_values = projection.values;
 		const std::vector<SettingCategory> game_projection = settings::ProjectSettings(projection);
 		for (const SettingCategory& game_category : game_projection)
 		{
@@ -1259,6 +1298,57 @@ private:
 					category_it->items.push_back(game_item);
 			}
 		}
+		const std::string selected_game_key = SelectedGameId();
+		if (!selected_game_key.empty())
+		{
+			const Snapshot catalog = m_storage->GetSnapshot();
+			const GameEntry* selected_game = nullptr;
+			for (const GameEntry& game : catalog.games)
+				if (game.id == selected_game_key || game.path == selected_game_key || game.file == selected_game_key)
+				{
+					selected_game = &game;
+					break;
+				}
+			if (selected_game)
+			{
+				settings::DocumentState game_doc;
+				std::string game_error;
+				ReadSettingsDocument(GameSettingsPath(*selected_game), &game_doc, &game_error);
+				settings::ProjectionOptions selected_projection;
+				selected_projection.scope = settings::ScopeMask::Game;
+				selected_projection.include_composite_memory_cards = true;
+				for (const auto& kv : global_doc.values)
+					selected_projection.base_values[kv.first] = kv.second;
+				for (const auto& kv : game_doc.values)
+					selected_projection.values[kv.first] = kv.second;
+				std::vector<SettingCategory> scoped_settings = settings::ProjectSettings(selected_projection);
+				for (const SettingCategory& global_category : global_settings)
+				{
+					auto category_it = std::find_if(scoped_settings.begin(), scoped_settings.end(),
+						[&](const SettingCategory& category) { return category.id == global_category.id; });
+					if (category_it == scoped_settings.end())
+					{
+						SettingCategory category;
+						category.id = global_category.id;
+						category.label = global_category.label;
+						scoped_settings.push_back(std::move(category));
+						category_it = std::prev(scoped_settings.end());
+					}
+					for (const SettingItem& global_item : global_category.items)
+					{
+						if (global_item.game_scoped)
+							continue;
+						const bool already_projected = std::any_of(category_it->items.begin(), category_it->items.end(),
+							[&](const SettingItem& item) { return item.id == global_item.id; });
+						if (!already_projected)
+							category_it->items.push_back(global_item);
+					}
+				}
+				out.settings = std::move(scoped_settings);
+				out.selected_game_id = selected_game_key;
+			}
+		}
+
 		for (SettingCategory& category : out.settings)
 		{
 			for (SettingItem& item : category.items)
@@ -1461,6 +1551,8 @@ private:
 	std::unique_ptr<Backend> m_storage;
 	std::mutex m_mutex;
 	std::mutex m_projection_mutex;
+	mutable std::mutex m_selection_mutex;
+	std::string m_selected_game_id;
 	std::condition_variable m_cv;
 	std::deque<QueuedCommand> m_queue;
 	std::vector<CommandEvent> m_events;
@@ -1560,5 +1652,10 @@ FolderListing ConsoleBackend::BrowseFolder(const std::string& path, const std::s
 bool ConsoleBackend::ConsumeLaunchRequest(ConsoleLaunchRequest* out)
 {
 	return m_impl->ConsumeLaunchRequest(out);
+}
+
+void ConsoleBackend::Shutdown()
+{
+	m_impl->Shutdown();
 }
 } // namespace caliza

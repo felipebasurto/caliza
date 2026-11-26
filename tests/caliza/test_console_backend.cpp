@@ -213,6 +213,14 @@ void TestLaunchHandoffAndRuntimeHonesty()
 	const CommandEvent scoped = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, scoped_id, {}, "4:3")));
 	CHECK_EQ(static_cast<int>(scoped.status), static_cast<int>(CommandStatus::Succeeded));
 	CHECK_TRUE(ReadFile(root.path + "/settings/Valid Game (USA).ini").find("AspectRatio=4:3") != std::string::npos);
+	const CommandEvent select = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, scanned_snapshot.games.front().id)));
+	CHECK_EQ(static_cast<int>(select.status), static_cast<int>(CommandStatus::Succeeded));
+	const Snapshot selected_snapshot = backend.GetSnapshot();
+	CHECK_EQ(selected_snapshot.selected_game_id, scanned_snapshot.games.front().id);
+	const SettingItem* aspect = FindSettingItem(selected_snapshot, "AspectRatio");
+	CHECK_TRUE(aspect != nullptr);
+	if (aspect)
+		CHECK_EQ(aspect->value, std::string("4:3"));
 	const CommandEvent bad_scope = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, "discs.elf-disc-image", {}, "Valid Game (USA)")));
 	CHECK_EQ(static_cast<int>(bad_scope.status), static_cast<int>(CommandStatus::Failed));
 	const CommandEvent launched = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::LaunchGame, scanned_snapshot.games.front().id)));

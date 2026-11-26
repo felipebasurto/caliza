@@ -131,6 +131,10 @@ public:
 	// and validated the shell handoff; it is not a claim that the VM has already booted or presented a frame.
 	bool ConsumeLaunchRequest(ConsoleLaunchRequest* out);
 
+	// Stops and joins the serialized command worker before service hooks are torn down. The destructor also
+	// performs this shutdown; shell code calls it explicitly so service managers cannot be deleted under the worker.
+	void Shutdown();
+
 private:
 	class Impl;
 	std::unique_ptr<Impl> m_impl;

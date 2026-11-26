@@ -325,7 +325,7 @@ private:
 	void OpenLibrary();
 	void OpenGameDetail(const std::string& game_id);
 	void OpenPause();
-	void OpenSettings(Screen return_screen);
+	void OpenSettings(Screen return_screen, const std::string& game_id = std::string());
 	void OpenPicker(PickerPurpose purpose, Screen return_screen, const std::string& initial_path = std::string(),
 		const std::string& source_id = std::string());
 	void ClosePicker(bool restore);
@@ -396,6 +396,7 @@ private:
 	int m_memory_index = 0;
 	Screen m_memory_return_screen = Screen::Home;
 	Screen m_settings_return_screen = Screen::Home;
+	std::string m_settings_game_id;
 	int m_settings_zone = 0; // 0 categories, 1 items
 	int m_settings_category = 0;
 	std::map<std::string, int> m_settings_item_by_category;

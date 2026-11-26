@@ -20,6 +20,12 @@
 
 namespace fe::settings
 {
+std::recursive_mutex& MutationMutex()
+{
+	static std::recursive_mutex mutex;
+	return mutex;
+}
+
 std::string Lower(std::string s)
 {
 	for (char& c : s)
@@ -512,6 +518,7 @@ std::vector<std::pair<std::string, std::string>> ManualFixSettings(const std::st
 bool EditSettingsFile(const std::string& path, const std::string& header_if_new, const std::vector<Change>& changes, std::string& what,
 	std::string& error)
 {
+	std::lock_guard<std::recursive_mutex> mutation_lock(MutationMutex());
 	what.clear();
 	error.clear();
 	std::string text;
@@ -617,6 +624,7 @@ bool EditSettingsFile(const std::string& path, const std::string& header_if_new,
 bool ApplyRecommended(const std::string& path, const std::string& presets, const std::string& id, const std::string& header, std::string& what,
 	std::string& error)
 {
+	std::lock_guard<std::recursive_mutex> mutation_lock(MutationMutex());
 	what.clear();
 	error.clear();
 	std::string preset;

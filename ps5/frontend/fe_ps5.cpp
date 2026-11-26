@@ -1566,7 +1566,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	// BIOS execution, save-state policy, disc transport and the re-exec return path.
 	const caliza::ps4shell::ShellResult shell = caliza::ps4shell::RunEstratos(paths, build_tag);
 	if (ran)
-		*ran = shell.ui_ran;
+		*ran = shell.ui_ran && shell.kind != caliza::ps4shell::ShellResult::Kind::Failed;
 	if (shell.kind == caliza::ps4shell::ShellResult::Kind::Game)
 	{
 		std::printf("[estratos] boot selection: %s\n", shell.path.c_str());

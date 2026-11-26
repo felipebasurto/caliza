@@ -10,6 +10,7 @@
 #include <cstdio>
 
 #if defined(ORBIS_PS4)
+#include "../../ps5/frontend/fe_bios.h"
 #include "../../ps5/frontend/fe_games.h"
 #include "../../ps5/frontend/fe_settings.h"
 #include "../../ps5/frontend/fe_texpacks.h"
@@ -19,6 +20,7 @@
 #include <ctime>
 #include <dirent.h>
 #include <memory>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -295,13 +297,51 @@ private:
 	OrbisFrontendPaths m_paths;
 };
 
+std::string ConfiguredBiosDir(const OrbisFrontendPaths& paths)
+{
+	std::string text;
+	if (!fe::settings::ReadFile(paths.gs_ini, text))
+		return paths.bios_dir;
+	std::string configured;
+	for (const fe::settings::IniLine& line : fe::settings::ParseIni(text))
+		if (line.kv && line.key == "Caliza/BiosFolder")
+			configured = line.value;
+	return configured.empty() ? paths.bios_dir : configured;
+}
+
+bool HasPlausibleBiosFile(const std::string& dir_path, int depth = 0)
+{
+	DIR* dir = opendir(dir_path.c_str());
+	if (!dir)
+		return false;
+	bool found = false;
+	while (!found)
+	{
+		const dirent* entry = readdir(dir);
+		if (!entry)
+			break;
+		if (entry->d_name[0] == '.')
+			continue;
+		const std::string path = dir_path + "/" + entry->d_name;
+		struct stat st = {};
+		if (stat(path.c_str(), &st) != 0)
+			continue;
+		if (S_ISREG(st.st_mode) && static_cast<uint64_t>(st.st_size) >= fe::kBiosMinSize && static_cast<uint64_t>(st.st_size) <= fe::kBiosMaxSize)
+			found = true;
+		else if (depth < 2 && S_ISDIR(st.st_mode))
+			found = HasPlausibleBiosFile(path, depth + 1);
+	}
+	closedir(dir);
+	return found;
+}
+
 std::vector<caliza::settings::Choice> DynamicChoices(const OrbisFrontendPaths& paths, const caliza::settings::SettingDef& definition)
 {
 	std::vector<caliza::settings::Choice> out;
 	if (definition.id == "bios.image")
 	{
 		out.push_back({"", "Automatic"});
-		if (DIR* dir = opendir(paths.bios_dir.c_str()))
+		if (DIR* dir = opendir(ConfiguredBiosDir(paths).c_str()))
 		{
 			while (const dirent* entry = readdir(dir))
 				if (entry->d_name[0] != '.')
@@ -491,8 +531,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 {
 	ShellResult result;
 	int user_id = -1;
-	int user_params[16] = {1};
-	if (sceUserServiceInitialize(user_params) != 0 || sceUserServiceGetInitialUser(&user_id) != 0)
+	if (sceUserServiceInitialize(nullptr) != 0 || sceUserServiceGetInitialUser(&user_id) != 0)
 	{
 		result.error = "user service initialization failed";
 		return result;
@@ -508,6 +547,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	if (!display.Init())
 	{
 		result.error = "Vulkan direct-display initialization failed";
+		display.Destroy();
 		scePadClose(pad);
 		return result;
 	}
@@ -547,12 +587,23 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	};
 	options.hooks.bios_status = [&paths] {
 		caliza::BiosStatus status;
-		if (paths.bios_check) status.present = paths.bios_check();
-		if (!status.present && paths.bios_problem) status.problem = paths.bios_problem();
-		if (status.present) status.path = paths.bios_dir;
+		const std::string active_dir = ConfiguredBiosDir(paths);
+		if (active_dir == paths.bios_dir && paths.bios_check)
+			status.present = paths.bios_check();
+		else
+			status.present = HasPlausibleBiosFile(active_dir);
+		if (!status.present && active_dir == paths.bios_dir && paths.bios_problem)
+			status.problem = paths.bios_problem();
+		else if (!status.present)
+			status.problem = "no PS2 BIOS-sized file was found in the selected folder";
+		status.path = active_dir;
 		return status;
 	};
 	options.hooks.dynamic_choices = [&paths](const caliza::settings::SettingDef& definition) { return DynamicChoices(paths, definition); };
+	options.hooks.web_panel_url = [] {
+		std::string url, shown;
+		return orbis_web_browser_url(url, shown) ? shown : std::string();
+	};
 	options.hooks.fetch_online_patches = [patch_service, service_tracking](const caliza::GameEntry& game, std::string* error) {
 		if (!patch_service.begin)
 		{
@@ -680,6 +731,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 		}
 		slot ^= 1;
 	}
+	backend.Shutdown();
 	orbis_frontend_services_stop();
 	renderer.WaitIdle();
 	renderer.Shutdown();
@@ -687,6 +739,12 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	scePadClose(pad);
 	if (launch.kind == caliza::ConsoleLaunchRequest::Kind::Game)
 	{
+		if (launch.smart_tune)
+		{
+			const std::string flags = paths.top_dir + "/flags";
+			mkdir(flags.c_str(), 0777);
+			fe::settings::WriteFileAtomic(flags + "/smarttune", "one-shot\n");
+		}
 		WriteLastGame(paths, launch.path);
 		result.kind = ShellResult::Kind::Game;
 		result.path = launch.path;

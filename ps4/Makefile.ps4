@@ -10,15 +10,15 @@
 # and the static shaderc shim over glslang (orbis-shims/ps5_shaderc.cpp).
 # Objects go to obj-vk/, so the two builds never share an object.
 #
-#   make -f Makefile.vk -j2        compile everything
-#   bash link-vk.sh                link, sign -> $(VK_OUT)/app/eboot.bin
+#   bash ps4/build-ps4.sh package        compile, link and package everything
+#   #   (objects and the signed eboot are intermediate outputs)
 #
 # Run it from this folder. PCSX2 is this repository's root; the other dependencies
 # come from PS5SX2_DEPS (see ps5/README.md) unless set one by one.
 
 VK_MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 # vk-285-131: 1.9's fe_https.o rule (its roots file) came before "all:" and became the default goal, so a bare
-# `make -f Makefile.vk -j2` built that one object and link-vk.sh compiled the rest one at a time.
+# `make -f Makefile.ps4 -j2` built that one object and the package script compiled the rest one at a time.
 .DEFAULT_GOAL := all
 PCSX2           ?= $(abspath $(VK_MAKEFILE_DIR)..)
 # PS4 (AI-assisted): PS5SX2's port layer is used from ps5/coreorbis; this folder holds the PS4 replacements.
@@ -343,7 +343,7 @@ MBEDTLS_FLAGS := -DMBEDTLS_CONFIG_FILE='"ps5sx2_mbedtls_config.h"' -I$(PS5_THIRD
 C_SRCS := $(C_SRCS) $(MBEDTLS_CSRCS)
 
 # vk-285-135 (AI-assisted): libnfs, for games on NFS shares (orbis-shims/OrbisNfs.cpp; the console's kernel has no NFS
-# client). ps5/third_party/README.md says what is vendored and how its config.h was made. link-vk.sh routes the C
+# client). ps5/third_party/README.md says what is vendored and how its config.h was made. the package script routes the C
 # library's file calls through OrbisNfs.cpp (orbis-shims/OrbisNfs.wrap).
 NFS_DIR := $(PS5_THIRD)/libnfs
 NFS_CSRCS := $(wildcard $(NFS_DIR)/lib/*.c) $(wildcard $(NFS_DIR)/mount/*.c) $(wildcard $(NFS_DIR)/nfs/*.c) \
@@ -499,7 +499,7 @@ $(PGS_OBJ): $(PCSX2)/pcsx2/GS/Renderers/parallel-gs/GSRendererPGS.cpp
 	$(CXX) $(PGS_INCLUDES) $(CXXFLAGS) -DHAVE_PARALLEL_GS -DGRANITE_SHIPPING -fexceptions -Wno-shadow -c $< -o $@
 endif
 
-# PS4 (AI-assisted): PS5SX2's entry point (link-vk.sh compiles it there), with this build's tags.
+# PS4 (AI-assisted): PS5SX2's entry point (the package script compiles it there), with this build's tags.
 ORBIS_BUILD_TAG ?= ps4-poc
 MAIN_OBJ := $(OBJDIR)/shim/main-boot.o
 $(MAIN_OBJ): $(CO)/main-boot.cpp $(wildcard $(OBJDIR)/.build-tag)
@@ -557,7 +557,7 @@ $(OBJDIR)/frontend/fe_https.o: $(FE_DIR)/fe_https_roots.inc
 # 2026-10-05 (AI-assisted), an experiment: ORBIS_IME_IMPORT=1 imports libSceImeDialog (the PS5's keyboard for the
 # RetroAchievements panel) at the app's start instead of loading it when first needed (fe_ps5.cpp). An app whose import
 # the system refuses doesn't start, so it is off by default. The flag isn't a dependency of the object: rebuild it with
-# `make -f Makefile.vk -B obj-vk/frontend/fe_ps5.o ORBIS_IME_IMPORT=1` (and again without, to go back). Needs testing.
+# `make -f Makefile.ps4 -B $(OBJDIR)/frontend/fe_ps5.o ORBIS_IME_IMPORT=1` (and again without, to go back). Needs testing.
 ORBIS_IME_IMPORT ?= 0
 ifeq ($(ORBIS_IME_IMPORT),1)
 $(OBJDIR)/frontend/fe_ps5.o: CXXFLAGS += -DPS5SX2_IME_IMPORT=1

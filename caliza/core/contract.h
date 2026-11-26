@@ -105,6 +105,7 @@ enum class CommandType
 	ChangeDisc,
 	OpenCompanionPanel,
 	GenerateReport,
+	SelectGame, // selects the game scope used by the settings projection; empty clears it
 };
 
 struct GameEntry
@@ -212,6 +213,7 @@ struct SettingItem
 	bool modified = false;
 	bool restart_required = false;
 	bool destructive = false;
+	bool game_scoped = false;
 };
 
 struct SettingCategory
@@ -317,6 +319,7 @@ struct Snapshot
 	std::vector<OperationStatus> operations;
 	std::string continue_game_id;
 	bool continue_valid = false;
+	std::string selected_game_id;
 	uint64_t time_unix = 0;
 };
 

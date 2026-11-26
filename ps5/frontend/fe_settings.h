@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,6 +20,9 @@ std::string Lower(std::string s);
 std::string Trim(const std::string& s);
 
 bool ReadFile(const std::string& path, std::string& out);
+// Process-wide settings mutation serializer shared by the native shell and companion web server. It is recursive
+// because the web handlers and shared helpers may compose while both mutate the same ini files.
+std::recursive_mutex& MutationMutex();
 // Written beside, then renamed over: the GS thread polls these files and must never read half of one.
 bool WriteFileAtomic(const std::string& path, const std::string& data);
 bool Exists(const std::string& path);

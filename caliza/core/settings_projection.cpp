@@ -52,8 +52,10 @@ std::vector<SettingCategory> ProjectSettings(const ProjectionOptions& options)
 			item.kind = KindFor(def);
 			item.restart_required = RestartRequired(def.apply_timing);
 			const auto value = options.values.find(def.compatibility_key);
-			item.value = value == options.values.end() ? def.default_value : value->second;
-			item.modified = value != options.values.end() && !SameSettingValue(def, item.value, def.default_value);
+			const auto base = options.base_values.find(def.compatibility_key);
+			item.value = value != options.values.end() ? value->second : base != options.base_values.end() ? base->second : def.default_value;
+			item.modified = (value != options.values.end() || base != options.base_values.end()) && !SameSettingValue(def, item.value, def.default_value);
+			item.game_scoped = HasScope(def.scopes, ScopeMask::Game);
 			for (const Choice& choice : def.choices)
 				item.choices.push_back({choice.value, choice.label});
 			category.items.push_back(std::move(item));
