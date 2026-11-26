@@ -26,6 +26,7 @@
 #include "imgui.h"
 
 #include <bit>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 #include <sstream>
@@ -1330,7 +1331,10 @@ namespace
 	// hang dump lists the draws before it. the six distinct dumps in the vk-285-108..112 reports all said "the draw ring was off".
 	constexpr u32 ORBIS_VK_TRACE_SMALL_N = 512;
 	static_assert((ORBIS_VK_TRACE_N & (ORBIS_VK_TRACE_N - 1)) == 0 && (ORBIS_VK_TRACE_SMALL_N & (ORBIS_VK_TRACE_SMALL_N - 1)) == 0, "ring sizes are masks");
-	OrbisVkTraceEntry s_orbis_trace[ORBIS_VK_TRACE_N];
+	// PS4 port (AI-assisted): keep the always-on forensic small ring static, but allocate the
+	// optional 2 MiB big ring only when flags/vkring/post-hang diagnostics actually enable it.
+	OrbisVkTraceEntry s_orbis_trace_small[ORBIS_VK_TRACE_SMALL_N];
+	OrbisVkTraceEntry* s_orbis_trace_big = nullptr;
 	u64 s_orbis_trace_seq = 0;
 	u32 s_orbis_submit = 0;
 	// vk-285-113: what one submission holds, from the GS thread's side: PCSX2 draw configs, driver draws (a full-barrier config is
@@ -1370,6 +1374,15 @@ namespace
 					s_orbis_trace_on = true;
 				}
 			}
+			if (s_orbis_trace_on)
+			{
+				s_orbis_trace_big = static_cast<OrbisVkTraceEntry*>(std::malloc(sizeof(OrbisVkTraceEntry) * ORBIS_VK_TRACE_N));
+				if (!s_orbis_trace_big)
+				{
+					s_orbis_trace_on = false;
+					printf("[vkhw] big draw ring allocation failed; using the small ring only\n");
+				}
+			}
 			printf("[vkhw] draw ring for GPU-hang dumps: %s (%s); the last %u entries are always kept\n", s_orbis_trace_on ? "on" : "off",
 				after_hang ? "the run after a GPU hang" : "flags/vkring", ORBIS_VK_TRACE_SMALL_N);
 			fflush(stdout);
@@ -1377,10 +1390,15 @@ namespace
 		return s_orbis_trace_on;
 	}
 	__fi u32 OrbisVkTraceCap() { return OrbisVkTraceOn() ? ORBIS_VK_TRACE_N : ORBIS_VK_TRACE_SMALL_N; }
+	__fi OrbisVkTraceEntry* OrbisVkTraceRing(u32 cap)
+	{
+		return cap == ORBIS_VK_TRACE_N ? s_orbis_trace_big : s_orbis_trace_small;
+	}
 
 	OrbisVkTraceEntry& OrbisVkTraceNew(u8 kind)
 	{
-		OrbisVkTraceEntry& e = s_orbis_trace[s_orbis_trace_seq & (OrbisVkTraceCap() - 1)]; // both sizes are powers of two
+		const u32 cap = OrbisVkTraceCap();
+		OrbisVkTraceEntry& e = OrbisVkTraceRing(cap)[s_orbis_trace_seq & (cap - 1)]; // both sizes are powers of two
 		e = {};
 		e.seq = s_orbis_trace_seq++;
 		e.submit = s_orbis_submit;
@@ -1463,9 +1481,10 @@ namespace
 			fprintf(f, "draw: topo(0 pt,1 line,2 tri) vs depth colormask date(0 off,1 stencil,2 stencilone,3 primid,4 full) sampler flags(1 one-barrier,2 full-barrier,4 alpha2,8 blend-mp,16 line-expand,32+ hazard) blend ps nv/ni grp(drawlist groups of a full-barrier draw) rt ds tex pal drawarea scissor\n");
 			const u32 cap = OrbisVkTraceCap();
 			const u64 first = s_orbis_trace_seq > cap ? s_orbis_trace_seq - cap : 0;
+			OrbisVkTraceEntry* ring = OrbisVkTraceRing(cap);
 			for (u64 q = first; q < s_orbis_trace_seq; q++)
 			{
-				const OrbisVkTraceEntry& e = s_orbis_trace[q & (cap - 1)];
+				const OrbisVkTraceEntry& e = ring[q & (cap - 1)];
 				if (e.submit + 2 < hung)
 					continue;
 				if (e.kind == 1)
