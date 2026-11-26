@@ -123,7 +123,7 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     elif ev.has("Failed to load state"):
         ev.warnings.append("savestate load failure evidence present; inspect whether the .backup fallback succeeded")
 
-    mcd_write_failures = sum("WRITE FAILED" in line for line in ev.matching("[mcd]"))
+    mcd_write_failures = sum(("WRITE FAILED" in line or "close/checksum write failed" in line) for line in ev.matching("[mcd]"))
     if mcd_write_failures:
         ev.failures.append(f"memory-card cache write failure evidence present in {mcd_write_failures} line(s); guest saves are at risk")
     if ev.has("Failed to save NVRAM"):

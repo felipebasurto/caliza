@@ -63,6 +63,7 @@ static bool cdvdWriteMechaVersionFile(const std::string& mecfile)
 	}
 	if (!written)
 	{
+		ERROR_LOG("Failed to write MEC temp file {}: {}", Path::GetFileName(tmpfile), error.GetDescription());
 		FileSystem::DeleteFilePath(tmpfile.c_str());
 		return false;
 	}

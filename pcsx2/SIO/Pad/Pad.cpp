@@ -544,8 +544,8 @@ PadBase* Pad::CreatePad(u8 unifiedSlot, ControllerType controllerType, size_t ej
 
 bool Pad::HasConnectedPad(u8 unifiedSlot)
 {
-	return (
-		unifiedSlot < NUM_CONTROLLER_PORTS && s_controllers[unifiedSlot]->GetType() != ControllerType::NotConnected);
+	return (unifiedSlot < NUM_CONTROLLER_PORTS && s_controllers[unifiedSlot] &&
+		s_controllers[unifiedSlot]->GetType() != ControllerType::NotConnected);
 }
 
 PadBase* Pad::GetPad(u8 port, u8 slot)

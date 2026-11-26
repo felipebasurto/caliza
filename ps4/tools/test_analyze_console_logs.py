@@ -115,6 +115,12 @@ def main() -> int:
         ok &= expect("memory-card write failure is fatal", mcdfail, (), 1,
                      "memory-card cache write failure evidence")
 
+        mcdclosefail = root / "mcdclosefail.log"
+        mcdclosefail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                "[mcd] slot 0: close/checksum write failed\n")
+        ok &= expect("memory-card close failure is fatal", mcdclosefail, (), 1,
+                     "memory-card cache write failure evidence")
+
         nvramfail = root / "nvramfail.log"
         nvramfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                              "Failed to save NVRAM to scph10000.nvm: read-only file system\n")

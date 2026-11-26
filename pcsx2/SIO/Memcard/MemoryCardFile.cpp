@@ -304,6 +304,10 @@ void FileMemoryCard::Open()
 	for (int slot = 0; slot < 8; ++slot)
 	{
 		m_filenames[slot] = {};
+		m_idle_seconds[slot] = 0;
+		m_dirty_seconds[slot] = 0;
+		m_flush_fail_cooldown[slot] = 0;
+		m_flush_error_reported[slot] = false;
 
 		if (EmuConfig.Mcd[slot].Type != MemoryCardType::File)
 			continue;
@@ -525,19 +529,28 @@ void FileMemoryCard::Close()
 		if (!m_file[slot])
 			continue;
 
-		// vk-285-31: the RAM image's changes first.
+		// vk-285-31: the RAM image's changes first. This is the last chance to report a failed write.
+		m_flush_error_reported[slot] = false;
 		FlushCache(slot, "close", true);
 		m_cache[slot] = {};
 		m_dirty[slot] = {};
 		m_cache_ok[slot] = false;
 		g_orbis_mcd_cached.fetch_and(~(1 << slot), std::memory_order_relaxed);
 
-		// Store checksum
-		if (!m_ispsx[slot] && FileSystem::FSeek64(m_file[slot], m_chkaddr, SEEK_SET) == 0)
-			std::fwrite(&m_chksum[slot], sizeof(m_chksum[slot]), 1, m_file[slot]);
-
-		std::fclose(m_file[slot]);
+		// Store checksum. fclose is the last chance to catch buffered write errors.
+		bool close_ok = true;
+		if (!m_ispsx[slot])
+		{
+			close_ok = FileSystem::FSeek64(m_file[slot], m_chkaddr, SEEK_SET) == 0 &&
+			           std::fwrite(&m_chksum[slot], sizeof(m_chksum[slot]), 1, m_file[slot]) == 1;
+		}
+		close_ok = std::fclose(m_file[slot]) == 0 && close_ok;
 		m_file[slot] = nullptr;
+		if (!close_ok)
+		{
+			std::printf("[mcd] slot %u: close/checksum write failed\n", slot);
+			Host::ReportErrorAsync("Memory Card Write Failed", "Error finishing the memory card file.");
+		}
 
 		if (m_filenames[slot].ends_with(".bin") || m_filenames[slot].ends_with(".mc2"))
 		{

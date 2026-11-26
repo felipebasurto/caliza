@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after the lazy legacy-overlay memory optimization; binary artifact validated at that checkpoint.
+Last updated: 2026-11-26 after memory-card review integration; binary artifact validated at that checkpoint.
 
 ## Current repository state
 
@@ -94,11 +94,11 @@ Last updated: 2026-11-26 after the lazy legacy-overlay memory optimization; bina
 | P1-FASTMEM | Fastmem allocation degradation | implemented, console-unverified | `CHECK_FASTMEM` now includes runtime fastmem availability, so Orbis reservation failure degrades to non-fastmem recompiler paths instead of leaving empty lookup state; the page-fault handler is installed unconditionally for slowmem SMC protection, partial setup rolls back, and desktop fatal-on-reservation-failure behavior is preserved |
 | P1-BOOTFAIL | Memory initialization failure behavior | implemented, console-unverified | CPU/memory initialization and pre-reset failure now log persistent boot-trace milestones and terminate the boot cleanly instead of continuing with invalid memory |
 | P1-INTERP | Non-executable-memory resilience | implemented, console-unverified | PS4 keeps a validated RW direct mapping as a non-executable fallback, forces EE/IOP/VU interpreters, disables fastmem and generated VIF/scanline code at runtime truth level, and continues boot rather than dying before UI/BIOS diagnostics |
-| P1-STORAGE | NVRAM/savestate resilience | implemented, console-unverified | dirty NVRAM persists periodically from the owning CPU thread and writes atomically on PS4; unusable slot-one states fall back to their consistent `.backup`; failed cached memory-card flushes keep dirty blocks for retry/close instead of silently dropping guest saves; tiny mechacon-version files replace atomically |
+| P1-STORAGE | NVRAM/savestate resilience | implemented, console-unverified | dirty NVRAM persists periodically from the owning CPU thread and writes atomically on PS4; unusable slot-one states fall back to their consistent `.backup`; failed cached memory-card flushes keep dirty blocks for retry/close instead of silently dropping guest saves; tiny mechacon-version files replace atomically; close/checksum and final flush failures are reported rather than silently dropped |
 | P1-FAULTS | Concurrent page-fault handling | implemented, console-unverified | only same-thread handler re-entry is fatal; concurrent faults on other EE/IOP/VU/GS threads now serialize through the handler instead of killing the process |
 | P1-WSI-DECIDE | WSI decision logic testability | implemented/host-tested | pure acquire/flip decision helpers extracted without behavior change; host tests pin round-robin availability, scanout reuse, fallback, and sign semantics |
 | P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
-| P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second, host-side input dedup caches invalidate when PCSX2 recreates/resets pad objects |
+| P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second, host-side input dedup caches invalidate when PCSX2 recreates/resets pad objects; null pad slots cannot crash reset paths |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
 | P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/PCSX2/flags/usbkbm` opts in; disconnect/read-failure release logic added |
 | P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry; display planes now use supported-display evidence when the driver exposes it |
@@ -110,11 +110,11 @@ Last updated: 2026-11-26 after the lazy legacy-overlay memory optimization; bina
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at the lazy-overlay checkpoint (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
+Built in the Linux x86_64 OpenOrbis container at the memory-card-review checkpoint (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,131,480 bytes**, SHA-256 `bb2e578e0168300cc88824354b29875d27687f96bda3d72cd781b5619e1cb2ea` (`size`: text 38,922,839, data 929,888, bss 74,850,624; lazy legacy-overlay allocation removed 24,883,200 bytes of BSS versus the prior checkpoint, in addition to the dead 16 MiB worker-stack removal).
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `7690239bed286e349db406d3b62ff45850f718dc553f0ed4847eb1b16cf44af5`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `3150d66227a229f37fe23f71dd2ce2031a5fd317652a800aa13e59bf1258465d`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,133,224 bytes**, SHA-256 `6eb6bcac6ff028900617d27b3ac642b4b231c137bbda09a3380c7b6e827b28ce` (`size`: bss remains 74,850,624 after lazy legacy-overlay allocation).
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `69400ba7cb12967dfb621340e20746d2bf5e49079c4abeffe22dc76c8461268c`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `c02266f6b5bccc061bd0d8c66a7eaad71e17d69b1dee244a166981f208825b18`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -126,11 +126,11 @@ Built in the Linux x86_64 OpenOrbis container at the lazy-overlay checkpoint (in
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate75-lazy-overlay.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate77-mcd-review.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current lazy-overlay package is `candidate75` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current memory-card-review package is `candidate77` evidence |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
