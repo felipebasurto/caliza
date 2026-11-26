@@ -1036,6 +1036,9 @@ static void vtlb_RemoveFastmemMappings()
 
 bool vtlb_ResolveFastmemMapping(uptr* addr)
 {
+	if (!vtlb_IsFastmemAvailable())
+		return false;
+
 	uptr uaddr = *addr;
 	uptr fastmem_start = (uptr)vtlbdata.fastmem_base;
 	uptr fastmem_end = fastmem_start + 0xFFFFFFFFu;
@@ -1060,6 +1063,9 @@ bool vtlb_ResolveFastmemMapping(uptr* addr)
 
 bool vtlb_GetGuestAddress(uptr host_addr, u32* guest_addr)
 {
+	if (!vtlb_IsFastmemAvailable())
+		return false;
+
 	uptr fastmem_start = (uptr)vtlbdata.fastmem_base;
 	uptr fastmem_end = fastmem_start + 0xFFFFFFFFu;
 	if (host_addr < fastmem_start || host_addr > fastmem_end)

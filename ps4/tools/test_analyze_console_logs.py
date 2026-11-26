@@ -88,8 +88,20 @@ def main() -> int:
         failedboot = root / "failedboot.log"
         failedboot.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                               "[pcsx2] VMManager::Initialize failed\n")
-        ok &= expect("failure boot-trace milestone warns", failedboot, (), 0,
-                     "WARN boot trace ended at failure milestone: VMManager::Initialize failed")
+        ok &= expect("failure boot-trace milestone is fatal", failedboot, (), 1,
+                     "boot trace ended at failure milestone: VMManager::Initialize failed")
+
+        cpufail = root / "cpufail.log"
+        cpufail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                           "[boot] CPUThreadInitialize FAILED\n")
+        ok &= expect("CPUThreadInitialize failure is fatal", cpufail, (), 1,
+                     "VM memory initialization failed")
+
+        allocatefail = root / "allocatefail.log"
+        allocatefail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                "[dbg] sysmem: Allocate failed\n")
+        ok &= expect("canonical SysMemory allocation failure is fatal", allocatefail, (), 1,
+                     "VM memory initialization failed")
 
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1

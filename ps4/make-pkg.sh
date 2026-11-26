@@ -67,6 +67,36 @@ set_entry VERSION Utf8 8 "$VERSION"
 
 rm -f "$STAGE/pkg.gp4"
 ( cd "$STAGE" && "$TOOLS/create-gp4" -out pkg.gp4 --content-id="$CONTENT_ID" --path . ) >/dev/null
+# create-gp4 writes wall-clock volume_ts, and PkgTool uses wall-clock PUBTOOLINFO when c_date is absent.
+# Pin both to SOURCE_DATE_EPOCH, or this commit's timestamp, so identical trees produce identical PKGs.
+pkg_epoch="${SOURCE_DATE_EPOCH:-}"
+if ! [[ "$pkg_epoch" =~ ^[0-9]+$ ]]; then
+    pkg_epoch="$(git -C "$HERE/.." log -1 --format=%ct 2>/dev/null || echo 0)"
+fi
+PKG_EPOCH="$pkg_epoch" python3 - "$STAGE/pkg.gp4" <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+
+path = sys.argv[1]
+epoch = int(os.environ.get("PKG_EPOCH", "0"))
+stamp = datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+tree = ET.parse(path)
+root = tree.getroot()
+volume = root.find("volume")
+if volume is None:
+    raise SystemExit("pkg.gp4 lacks a volume element")
+volume_ts = volume.find("volume_ts")
+if volume_ts is None:
+    raise SystemExit("pkg.gp4 lacks volume_ts")
+volume_ts.text = stamp
+package = volume.find("package")
+if package is None:
+    raise SystemExit("pkg.gp4 lacks a package element")
+package.set("c_date", stamp)
+tree.write(path, encoding="utf-8", xml_declaration=True)
+PY
 mkdir -p "$OUT"
 ( cd "$STAGE" && "$TOOLS/PkgTool.Core" pkg_build pkg.gp4 "$OUT" ) >/dev/null
 rm -f "$STAGE/pkg.gp4"
