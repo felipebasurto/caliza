@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after hardening folder memory-card conversion/truncation/read failure/depth/durability behavior, making state requests non-lossy, improving pad fallback/diagnostics, retiring replaced pad objects safely, and validating a new exact candidate; binary artifact validated at `00ec767`.
+Last updated: 2026-11-26 after integrating CDDA mode-2448 support, memory-card conversion/truncation/fsync durability, non-lossy state requests, pad lifetime/bounds hardening, symlink-preserving card conversion, bounded use-after-free-safe audio teardown, and validating a new exact candidate; binary artifact validated at `6ceadf2`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **227 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **236 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -164,6 +164,12 @@ Last updated: 2026-11-26 after hardening folder memory-card conversion/truncatio
 148. `6d6d607` — persist memory-card shrink truncation.
 149. `a02a96e` — retry memory-card fsync failures.
 150. `00ec767` — add CDDA mode-2448 sector support.
+151. `f53b859` — pin mode-2448 read constant.
+152. `b9018ed` — pin mode-2448 SubQ positions.
+153. `d9a2fc8` — drop stale state requests after failed menu re-exec.
+154. `95ec4cc` — bound pad slot array indexing.
+155. `ac363ff` — preserve symlinked memory cards in conversion.
+156. `6ceadf2` — bound audio teardown and avoid use-after-free.
 
 ## Completed work
 
@@ -194,17 +200,17 @@ Last updated: 2026-11-26 after hardening folder memory-card conversion/truncatio
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `00ec767` (includes CD block-dump safety, folder memory-card truncation/atomic conversion/read-failure/depth-cap/close-durability hardening, atomic metadata replacement with best-effort directory synchronization, non-lossy prioritized state requests, foreground-user pad fallback, corrected pad diagnostics and D-pad cancellation, retired pad objects that cannot dangle across controller recreation, durable memory-card shrink/fsync retry handling, and CDDA mode-2448 sector support):
+Built in the Linux x86_64 OpenOrbis container at exactly `6ceadf2` (includes CD block-dump safety, folder memory-card truncation/atomic conversion/read-failure/depth-cap/close-durability hardening, atomic metadata replacement with best-effort directory synchronization, non-lossy prioritized state requests, foreground-user pad fallback, corrected pad diagnostics and D-pad cancellation, retired pad objects that cannot dangle across controller recreation, durable memory-card shrink/fsync retry handling, CDDA mode-2448 sector support, stale state-request elimination, pad slot bounds, symlink-preserving memory-card conversion, and bounded use-after-free-safe audio teardown):
 
-- ELF `/root/pcsx2ps4-build/build/link/pcsx2_eboot/pcsx2.oelf`: **149,410,392 bytes**, SHA-256 `fcaa9746a8101b9277aa6f0ff12fc7a8d95690f4cb2606b7f2305e4bcdea93eb`.
-- eboot `/root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin`: **41,070,048 bytes**, SHA-256 `716756c7eaff2f2851bd8d2f0e9245a38fdac8c59a25336c2d545ad74d35daa1`.
-- PKG `/root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `6cf0414af2b4d48ccbfc123492a44008c39327bae690a21c7e0198c4d0823961`.
+- ELF `/root/pcsx2ps4-build/build/link/pcsx2_eboot/pcsx2.oelf`: **149,445,696 bytes**, SHA-256 `89bec0d4c6113ef9a691c8a0e2c57b56a70e4efb4e56f38bbaa191248deb0568`.
+- eboot `/root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin`: **41,070,160 bytes**, SHA-256 `d491b4fcf6eae09d3315cad286d67cb5437322cb7c1b3d9faab4c27517362436`.
+- PKG `/root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `73fab216a26534331bb6bc1e951afa849180178d951e96017c519d234eaa6394`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
-- Embedded package provenance in staged `SOURCE.txt`: `Build commit: 00ec767b383b`.
+- Embedded package provenance in staged `SOURCE.txt`: `Build commit: 6ceadf268c24`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
-- Bit-for-bit packaging reproducibility at this commit: PASS; two independent package builds both produced SHA-256 `6cf0414af2b4d48ccbfc123492a44008c39327bae690a21c7e0198c4d0823961`.
+- Bit-for-bit packaging reproducibility at this commit: PASS; two independent package builds both produced SHA-256 `73fab216a26534331bb6bc1e951afa849180178d951e96017c519d234eaa6394`.
 - ThinLTO remains a separate stale experimental artifact only; do not treat it as the current candidate.
 
 ## Validation ledger
@@ -212,16 +218,16 @@ Built in the Linux x86_64 OpenOrbis container at exactly `00ec767` (includes CD 
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | container log `/tmp/ps4-package-00ec.log` |
+| Candidate compile/link/package at final documented commit | PASS | container log `/tmp/ps4-package-6cea.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `6cf0414a...3961` in the container reproducibility check |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `73fab216...6394` in the container reproducibility check |
 | Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`, and hostile-savestate/memory-card close hardening in `ps4/logs/host-tests-cd5da76.log`, and hostile-handle hardening in `ps4/logs/host-tests-2bb0446.log`, and shared file-chain/StateWrapper regression coverage in `ps4/logs/host-tests-72ec0be.log`, and exact-size savestate/folder-metadata diagnostics plus CDVD hardening in `ps4/logs/host-tests-474b844.log`, and final GIF/USB async hardening in `ps4/logs/host-tests-65c2d90.log`, and metadata fsync hardening in `ps4/logs/host-tests-e6f6bc4.log`, and bounded network-share boot checks in `ps4/logs/host-tests-f58cbf1.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
 | WSI decision host test | PASS | round-robin/image availability, scanout reuse, FIFO/immediate mode, GPU-flip fallback, and final-flip sign semantics |
-| Full host runner at 00ec767 | PASS | preserved in `ps4/logs/host-tests-00ec767.log` |
+| Full host runner at 6ceadf2 | PASS | preserved in `ps4/logs/host-tests-6ceadf2.log` |
 | Package validator negative/positive tests | PASS | same |
 | Savestate structural validator negative/positive tests | PASS | same; use `ps4/tools/validate_savestate.py` on states pulled from console |
 | Real console boot | NOT RUN | no confirmed console access in this session |
