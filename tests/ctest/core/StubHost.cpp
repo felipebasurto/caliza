@@ -309,8 +309,20 @@ void Host::PumpMessagesOnCPUThread()
 			OrbisOSDLabel("LOADED");
 		else
 		{
-			std::printf("[state] load failed: %s\n", err.GetDescription().c_str());
-			OrbisOSDLabel("LOAD FAILED");
+			// A power loss between the writer's two renames can leave only .backup. That backup is
+			// precisely the surviving consistent state, so try it before declaring the slot unusable.
+			Error backup_err;
+			if (VMManager::LoadStateFromSlot(1, true, &backup_err))
+			{
+				std::printf("[state] slot 1 missing/unusable (%s); loaded its backup\n", err.GetDescription().c_str());
+				OrbisOSDLabel("LOADED BACKUP");
+			}
+			else
+			{
+				std::printf("[state] load failed: %s (backup: %s)\n", err.GetDescription().c_str(),
+					backup_err.GetDescription().c_str());
+				OrbisOSDLabel("LOAD FAILED");
+			}
 		}
 		std::fflush(stdout);
 	}
