@@ -35,6 +35,21 @@ REQUIRED = [
 OPTIONAL = {"USB.bin", "Achievements.bin"}
 KNOWN = set(REQUIRED) | OPTIONAL
 
+# The loader now requires exact fixed-memory entry sizes. IOP memory can be
+# 2 MiB in normal PS2 mode or 8 MiB when the expanded/PS1 memory map is active.
+EXACT_MEMORY_ENTRY_SIZES = {
+    "eeMemory.bin": {32 * 1024 * 1024},
+    "iopMemory.bin": {2 * 1024 * 1024, 8 * 1024 * 1024},
+    "eeHwRegs.bin": {64 * 1024},
+    "iopHwRegs.bin": {64 * 1024},
+    "Scratchpad.bin": {16 * 1024},
+    "vu0Memory.bin": {4 * 1024},
+    "vu1Memory.bin": {16 * 1024},
+    "vu0MicroMem.bin": {4 * 1024},
+    "vu1MicroMem.bin": {16 * 1024},
+}
+MAX_INTERNAL_STRUCTURES_SIZE = 16 * 1024 * 1024
+
 
 def fail(message: str) -> int:
     print(f"savestate validation: FAIL: {message}", file=sys.stderr)
@@ -92,6 +107,18 @@ def main() -> int:
     unknown = [name for name in seen if name not in KNOWN]
     if missing:
         return fail("missing required entries: " + ", ".join(missing))
+
+    entry_sizes = {}
+    for name, _, size in entries:
+        entry_sizes.setdefault(name, size)
+    internal_size = entry_sizes.get("PCSX2 Internal Structures.dat")
+    if internal_size is not None and internal_size > MAX_INTERNAL_STRUCTURES_SIZE:
+        return fail(f"internal structures entry is too large ({internal_size} bytes, cap {MAX_INTERNAL_STRUCTURES_SIZE})")
+    for name, valid_sizes in EXACT_MEMORY_ENTRY_SIZES.items():
+        size = entry_sizes.get(name)
+        if size is not None and size not in valid_sizes:
+            valid_text = "/".join(str(valid_size) for valid_size in sorted(valid_sizes))
+            return fail(f"entry {name!r} has size {size}, expected {valid_text} bytes")
 
     total_payload = sum(size for _, _, size in entries)
     print(f"savestate validation: PASS: {count} entries, {total_payload} payload bytes, version {version:#x}")
