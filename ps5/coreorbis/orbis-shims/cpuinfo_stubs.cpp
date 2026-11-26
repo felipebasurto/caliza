@@ -13,17 +13,22 @@ static constexpr uint32_t kProcessors = kCores * kThreadsPerCore;
 
 static const struct cpuinfo_cache s_l1i = {64};
 static const struct cpuinfo_cache s_l1d = {64};
-static const struct cpuinfo_cluster s_cluster = {0, kProcessors, 0, kCores, 0};
+#ifdef ORBIS_PS4
+static const struct cpuinfo_cluster s_clusters[ORBIS_CPUINFO_CLUSTER_COUNT] = {{0, 4, 0, 4, 0}, {4, 4, 4, 4, 1}};
+#else
+static const struct cpuinfo_cluster s_clusters[ORBIS_CPUINFO_CLUSTER_COUNT] = {{0, kProcessors, 0, kCores, 0}};
+#endif
 static struct cpuinfo_processor s_procs[kProcessors];
 static struct cpuinfo_core s_cores[kCores];
 static const struct cpuinfo_uarch_info s_uarch = {cpuinfo_uarch_zen2};
 
 extern "C" bool cpuinfo_initialize(void)
 {
+  const uint32_t cluster_processors = ORBIS_CPUINFO_CLUSTER_CORE_COUNT * ORBIS_CPUINFO_THREADS_PER_CORE;
   for (uint32_t i = 0; i < kProcessors; i++)
   {
     s_procs[i].smt_id = i % kThreadsPerCore;
-    s_procs[i].cluster = &s_cluster;
+    s_procs[i].cluster = &s_clusters[i / cluster_processors];
     s_procs[i].cache.l1i = &s_l1i;
     s_procs[i].cache.l1d = &s_l1d;
   }
@@ -32,7 +37,7 @@ extern "C" bool cpuinfo_initialize(void)
     s_cores[i].processor_start = i * kThreadsPerCore;
     s_cores[i].processor_count = kThreadsPerCore;
     s_cores[i].core_id = i;
-    s_cores[i].cluster = &s_cluster;
+    s_cores[i].cluster = &s_clusters[i / ORBIS_CPUINFO_CLUSTER_CORE_COUNT];
     s_cores[i].vendor = cpuinfo_vendor_amd;
   }
   return true;
@@ -52,14 +57,14 @@ extern "C" uint32_t cpuinfo_get_processors_count(void)
 
 extern "C" uint32_t cpuinfo_get_clusters_count(void)
 {
-  return 1;
+  return ORBIS_CPUINFO_CLUSTER_COUNT;
 }
 
 extern "C" const struct cpuinfo_cluster* cpuinfo_get_cluster(uint32_t index)
 {
-  if (index != 0)
+  if (index >= ORBIS_CPUINFO_CLUSTER_COUNT)
     return 0;
-  return &s_cluster;
+  return &s_clusters[index];
 }
 
 extern "C" uint32_t cpuinfo_get_cores_count(void)

@@ -715,12 +715,14 @@ void WebServer::Route(const Request& req, Response& res)
 			if (a.path == req.path)
 			{
 				res.type = a.type;
+#ifdef ORBIS_PS4
 				if (a.path == "/" && SettingsPageWithPs4Knobs(a, res.body))
 				{
 					res.data = nullptr;
 					res.size = 0;
 				}
 				else
+#endif
 				{
 					res.data = a.data;
 					res.size = a.size;

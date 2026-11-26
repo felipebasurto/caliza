@@ -48,7 +48,9 @@ void orbis_ps4_load_system_modules()
 		{"SystemService", 0x80000010, true}, {"UserService", 0x80000011, true}, {"VideoOut", 0x80000022, true},
 		{"AudioOut", 0x80000001, true},      {"Pad", 0x80000024, true},         {"Net", 0x8000001C, true},
 		{"NetCtl", 0x80000009, true},
-		{"CommonDialog", 0x80000018, true},  {"Keyboard", 0x80000008, true},    {"ImeDialog", 0x0096, false},
+		// OpenOrbis' keyboard sample uses the public sysmodule ID; the internal 0x80000008
+		// load is rejected as invalid on the firmwares this port targets. Needs console retesting.
+		{"CommonDialog", 0x80000018, true},  {"Keyboard", 0x0106, false},       {"ImeDialog", 0x0096, false},
 		{"Mouse", 0x00A9, false},            {"Random", 0x00BA, false},
 	};
 	int failed = 0;

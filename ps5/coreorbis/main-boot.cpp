@@ -832,7 +832,9 @@ static void *orbis_pad_thread(void *)
   {
     if (handle < 0 && user >= 0 && rc_pi == 0 && (reads % 250u) == 0u)
     {
-      const int retry = scePadGetHandle(user, 0, 0);
+      int retry = scePadOpen(user, 0, 0, nullptr);
+      if (retry < 0)
+        retry = scePadGetHandle(user, 0, 0);
       if (retry >= 0)
       {
         handle = retry;
@@ -2495,6 +2497,11 @@ static void orbis_ensure_data_layout()
       return;
     }
   }
+  // A populated flags/ directory may mean the user deliberately removed a switch. Once any
+  // file is present, leave the set exactly as it is; only first-install empty/missing folders
+  // receive the release defaults. Needs proper testing with upgraded installs.
+  if (have_dir && entries > 0)
+    return;
   if (!have_dir && mkdir(flags.c_str(), 0777) != 0)
   {
     printf("[boot] data layout: can't create %s (errno %d)\n", flags.c_str(), errno);

@@ -920,6 +920,7 @@ static void OrbisPrintLoad()
 			static_cast<unsigned long long>(m[4] - s_mtvu_prev[4]), static_cast<unsigned long long>(m[5] - s_mtvu_prev[5]),
 			static_cast<unsigned long long>(m[6] - s_mtvu_prev[6]), static_cast<unsigned long long>(m[7] - s_mtvu_prev[7]),
 			g_orbis_mtvu_ring_hwm_kb.load(std::memory_order_relaxed));
+		g_orbis_mtvu_ring_hwm_kb.store(0, std::memory_order_relaxed);
 		std::memcpy(s_mtvu_prev, m, sizeof(m));
 	}
 	{

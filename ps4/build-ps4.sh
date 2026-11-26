@@ -13,6 +13,10 @@ PSB="${PCSX2PS4_BUILD:-$HOME/pcsx2ps4-build}"
 export PS4_SYSROOT="${PS4_SYSROOT:-$HOME/cemups4-build/sysroot}"
 OPENORBIS="${OPENORBIS:-/opt/pacbrew/ps4/openorbis}"
 mode="${1:-}"
+case "$mode" in
+  ""|imports|package|upload) ;;
+  *) echo "usage: bash ps4/build-ps4.sh [imports|package|upload]" >&2; exit 2 ;;
+esac
 
 # Performance experiment knobs. The environment is the interface, as with ORBIS_ORDER on PS5SX2's link scripts:
 #   NARROW=0|1 and LTO=0|1 select Makefile.ps4's compile flags; ORBIS_ORDER=<file|none> selects the order file.
