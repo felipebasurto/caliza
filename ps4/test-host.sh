@@ -28,5 +28,12 @@ else
     echo "FAIL: package_stage_validator" >&2
     status=1
 fi
+echo "== savestate_validator =="
+if python3 "$here/tools/test_validate_savestate.py"; then
+    echo "PASS: savestate_validator"
+else
+    echo "FAIL: savestate_validator" >&2
+    status=1
+fi
 echo "host test binaries: $out"
 exit "$status"

@@ -56,6 +56,7 @@ No optimization should be claimed without same-scene baseline/candidate logs.
 - Main writable data root is `/data/PCSX2`.
 - Package resources are `/app0/resources`; optional personal BIOS builds use `/app0/bios` then copy to `/data/PCSX2/bios`.
 - NFS game shares use CEMUPS4's `/net` network filesystem on PS4, not the PS5 `/nfs` libc-wrap layer. Plain NFSv3 `nfs://host/export` mounts appear as `/net/share1`, `/net/share2`, ...; query options and custom ports are rejected with boot-log lines.
+- PS4Mount integration is complementary: if PS4Mount has a NAS configured, its stable `/data/ps4mount/nas` symlink can be used as a normal game folder and is exposed as a folder-picker place when present. PS4Mount `emulators/` auto-mounts currently scan USB/ext roots rather than NAS/data roots, so direct `GameFolders` configuration is the reliable path.
 
 ## Firmware/loader matrix to fill on hardware
 

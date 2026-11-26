@@ -1686,6 +1686,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	acfg.folder_places.push_back({"Extended storage 2", "/mnt/ext1"});
 #ifdef ORBIS_PS4
 	acfg.folder_places.push_back({"Network shares", "/net"}); // CEMUPS4 netfs: a folder while shares are set
+	acfg.folder_places.push_back({"PS4Mount NAS", "/data/ps4mount/nas"}); // PS4Mount's stable NAS symlink, when installed
 #else
 	acfg.folder_places.push_back({"NFS shares", "/nfs"}); // OrbisNfs.cpp: a folder while shares are set
 #endif
