@@ -1379,7 +1379,7 @@ void vtlb_ResetFastmem()
 
 bool vtlb_IsFastmemAvailable()
 {
-	return vtlbdata.fastmem_base != 0;
+	return s_fastmem_area != nullptr;
 }
 
 // Reserves the vtlb core allocation used by various emulation components!
@@ -1403,9 +1403,15 @@ bool vtlb_Core_Alloc()
 	s_fastmem_area = SharedMemoryMappingArea::Create(FASTMEM_AREA_SIZE);
 	if (!s_fastmem_area)
 	{
-		// CHECK_FASTMEM includes vtlb_IsFastmemAvailable(), so the recompilers and VTLB mapping
+#ifdef ORBIS_VULKAN
+		// CHECK_FASTMEM includes vtlb_IsFastmemAvailable(), so Orbis recompiler and VTLB mapping
 		// paths degrade to non-fastmem accesses instead of dereferencing an empty reservation.
 		Console.Warning("Fastmem area reservation failed (continuing without fastmem).");
+#else
+		Host::ReportErrorAsync("Error", "Failed to allocate fastmem area.");
+		vtlb_Core_Free();
+		return false;
+#endif
 	}
 	else
 	{
@@ -1415,18 +1421,15 @@ bool vtlb_Core_Alloc()
 			vtlbdata.fastmem_base, vtlbdata.fastmem_base + (FASTMEM_AREA_SIZE - 1));
 	}
 
-	// Orbis: PageFaultHandler may already be installed by the host (main-boot
-	// installs it at startup). The double-install assertion would abort; skip
-	// it when fastmem was not reserved (interpreter-only boot).
-	if (s_fastmem_area)
+	// Recompiler self-modifying-code protection needs the fault handler even when fastmem
+	// is unavailable. Orbis main-boot may already have installed it; the Orbis implementation
+	// is idempotent, while desktop reaches this exactly once.
+	Error error;
+	if (!PageFaultHandler::Install(&error))
 	{
-		Error error;
-		if (!PageFaultHandler::Install(&error))
-		{
-			Host::ReportErrorAsync("Failed to install page fault handler.", error.GetDescription());
-			vtlb_Core_Free();
-			return false;
-		}
+		Host::ReportErrorAsync("Failed to install page fault handler.", error.GetDescription());
+		vtlb_Core_Free();
+		return false;
 	}
 
 	return true;

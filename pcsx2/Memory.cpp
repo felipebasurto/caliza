@@ -135,6 +135,8 @@ namespace
 {
 sigjmp_buf s_orbis_exec_probe_jump;
 pthread_mutex_t s_orbis_exec_probe_mutex = PTHREAD_MUTEX_INITIALIZER;
+// OpenOrbis/x86-64 compiles this as initial-exec TLS. That is a deliberate platform-specific
+// tradeoff: stricter async-signal-safe thread identity is not available without pthread_equal().
 thread_local volatile sig_atomic_t s_orbis_exec_probe_thread_active = 0;
 volatile sig_atomic_t s_orbis_exec_probe_active = 0;
 struct sigaction s_orbis_exec_probe_old_segv;
@@ -176,7 +178,7 @@ void orbis_exec_probe_fault(int sig, siginfo_t* info, void* context)
 // Needs proper testing on the console matrix.
 bool orbis_probe_executable_memory(void* mem, size_t size)
 {
-	static const unsigned char ret_instruction[] = {0xC3};
+	static constexpr unsigned char ret_instruction = 0xC3;
 	pthread_mutex_lock(&s_orbis_exec_probe_mutex);
 	s_orbis_exec_probe_thread_active = 0;
 	s_orbis_exec_probe_active = 0;
@@ -212,16 +214,18 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 		for (size_t offset : offsets)
 		{
 			unsigned char* at = static_cast<unsigned char*>(mem) + offset;
-			std::memcpy(at, ret_instruction, sizeof(ret_instruction));
-			__builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(at) + sizeof(ret_instruction));
+			*static_cast<volatile unsigned char*>(at) = ret_instruction;
+			__builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(at) + 1);
 			reinterpret_cast<void (*)()>(at)();
 		}
+		s_orbis_exec_probe_active = 0;
+		s_orbis_exec_probe_thread_active = 0;
 		ok = 1;
 	}
-	sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
-	sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
 	s_orbis_exec_probe_active = 0;
 	s_orbis_exec_probe_thread_active = 0;
+	sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
+	sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
 	pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
 	return ok != 0;
 }
@@ -335,28 +339,38 @@ bool SysMemory::AllocateMemoryMap()
 				fflush(stdout);
 				rcc2 = -1;
 				bool phys2_owned = rcc == 0;
-				bool code_mapped = false;
 #ifdef ORBIS_PS4
 				// PS4: never accept a non-executable fallback. Try both direct-memory permission
 				// transitions (initial RWX, then RW promoted with mprotect) and prove execution before use.
+				// Keep the successful in/out mapping pointer separate: a failed kernel call is not
+				// relied upon to preserve the hint it was given.
+				void* mapped = nullptr;
 				if (rcc == 0)
 				{
-					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x07, 0, phys2, align);
-					code_mapped = rcc2 == 0;
+					void* attempt = code;
+					rcc2 = sceKernelMapDirectMemory(&attempt, code_size, 0x07, 0, phys2, align);
+					if (rcc2 == 0)
+						mapped = attempt;
 				}
 				if (rcc2 != 0 && rcc == 0)
 				{
-					const int rw_map = sceKernelMapDirectMemory((void**)&code, code_size, 0x03, 0, phys2, align);
-					code_mapped = rw_map == 0;
-					const int rw_prot = rw_map == 0 ? sceKernelMprotect(code, code_size, 0x07) : -1;
+					void* attempt = code;
+					const int rw_map = sceKernelMapDirectMemory(&attempt, code_size, 0x03, 0, phys2, align);
+					const int rw_prot = rw_map == 0 ? sceKernelMprotect(attempt, code_size, 0x07) : -1;
 					printf("[dbg] memmap: fallback RW->mprotect code direct map rc=0x%x mprotect rc=0x%x\n", (unsigned)rw_map, (unsigned)rw_prot);
 					fflush(stdout);
+					if (rw_map == 0)
+						mapped = attempt;
 					rcc2 = rw_prot;
 				}
-				if (rcc2 == 0 && !orbis_probe_executable_memory(code, code_size))
+				if (rcc2 == 0)
 				{
-					printf("[dbg] memmap: executable code direct mapping did not execute; rejecting it\n");
-					rcc2 = -1;
+					code = static_cast<u8*>(mapped);
+					if (!orbis_probe_executable_memory(code, code_size))
+					{
+						printf("[dbg] memmap: executable code direct mapping did not execute; rejecting it\n");
+						rcc2 = -1;
+					}
 				}
 				if (rcc2 == 0)
 				{
@@ -367,8 +381,8 @@ bool SysMemory::AllocateMemoryMap()
 				}
 				else if (rcc == 0)
 				{
-					if (code_mapped)
-						sceKernelMunmap(code, code_size);
+					if (mapped)
+						sceKernelMunmap(mapped, code_size);
 					sceKernelReleaseDirectMemory(phys2, code_size);
 					phys2_owned = false;
 					rcc = -1;
@@ -526,32 +540,16 @@ bool SysMemory::Reset()
 {
 	DevCon.WriteLn(Color_StrongBlue, "Resetting host memory for virtual systems...");
 
-	// Orbis: VMManager::Initialize calls Reset before the CPU thread performs
-	// Allocate(). Ensure the main memory map (s_data_memory) and the VTLB core
-	// allocation exist so memReset() -> vtlb_Init() -> vtlb_VMapUnmap() does
-	// not touch a NULL s_data_memory/vmap (that would fault) or an empty
-	// s_fastmem_virtual_mapping (that would be UB / hang).
+	// Defensive Orbis path for abnormal ordering: use the canonical allocation sequence rather
+	// than duplicating it here. In the valid flow CPUThreadInitialize() has already allocated.
 	if (!vtlb_private::vtlbdata.vmap)
 	{
-		Console.WriteLn("[dbg] sysmem: pre-allocating memory map + VTLB core");
-		if (!AllocateMemoryMap())
+		Console.WriteLn("[dbg] sysmem: pre-allocating host memory");
+		if (!Allocate())
 		{
-			Console.Error("[dbg] sysmem: AllocateMemoryMap failed");
+			Console.Error("[dbg] sysmem: Allocate failed");
 			return false;
 		}
-		if (!vtlb_Core_Alloc())
-		{
-			Console.Error("[dbg] sysmem: vtlb_Core_Alloc failed");
-			return false;
-		}
-		// Orbis: the CPU thread's Allocate() (which normally sets eeMem/iopMem/vuMem)
-		// runs on the CPU thread during CPUThreadInitialize, i.e. AFTER
-		// VMManager::Initialize. Set the memory pointers now so memReset() has a
-		// valid eeMem to zero.
-		memAllocate();
-		iopMemAlloc();
-		vuMemAllocate();
-		Console.WriteLn("[dbg] sysmem: mem ptrs set");
 	}
 
 	Console.WriteLn("[dbg] sysmem: memReset");

@@ -38,6 +38,7 @@ int sceKernelAvailableFlexibleMemorySize(unsigned long long* size);
 #ifndef ORBIS_PS4
 int sceKernelJitCreateSharedMemory(int flags, unsigned long long size, int protection, int* destinationHandle);
 int sceKernelJitMapSharedMemory(int handle, int protection, void** destination);
+int sceKernelClose(int handle);
 #endif
 }
 
@@ -49,36 +50,81 @@ constexpr int kProtCpuExec = 0x04;
 constexpr int kProtGpuRead = 0x10;
 constexpr int kProtGpuWrite = 0x20;
 constexpr int kMapFixed = 0x10;
-constexpr int kMemoryType = 12; // what the driver and pcsx2/Memory.cpp allocate
+#ifdef ORBIS_PS4
+constexpr int kMemoryType = 0; // production PS4 memory: WB_ONION (type 12 is refused)
+#else
+constexpr int kMemoryType = 12; // what the PS5 driver and pcsx2/Memory.cpp allocate
+#endif
 constexpr unsigned long long kPage = 0x4000;
 constexpr unsigned long long kTwoMiB = 0x200000;
 
 sigjmp_buf s_jump;
 volatile sig_atomic_t s_faults = 0;
+thread_local volatile sig_atomic_t s_probe_thread_active = 0;
+struct sigaction s_active_old_segv{};
+struct sigaction s_active_old_bus{};
 
-void on_fault(int, siginfo_t*, void*)
+void chain_fault(int sig, siginfo_t* info, void* context)
 {
-	s_faults = s_faults + 1;
-	siglongjmp(s_jump, 1);
+	struct sigaction* old = sig == SIGBUS ? &s_active_old_bus : &s_active_old_segv;
+	if ((old->sa_flags & SA_SIGINFO) && old->sa_sigaction)
+	{
+		old->sa_sigaction(sig, info, context);
+		return;
+	}
+	if (old->sa_handler == SIG_IGN)
+		return;
+	if (old->sa_handler && old->sa_handler != SIG_DFL)
+	{
+		old->sa_handler(sig);
+		return;
+	}
+	struct sigaction default_action{};
+	default_action.sa_handler = SIG_DFL;
+	sigemptyset(&default_action.sa_mask);
+	sigaction(sig, &default_action, nullptr);
+	raise(sig);
+}
+
+void on_fault(int sig, siginfo_t* info, void* context)
+{
+	if (s_probe_thread_active)
+	{
+		s_faults = s_faults + 1;
+		siglongjmp(s_jump, 1);
+	}
+	chain_fault(sig, info, context);
 }
 
 struct FaultGuard
 {
 	struct sigaction old_segv{}, old_bus{};
+	bool segv_installed = false;
+	bool bus_installed = false;
 	FaultGuard()
 	{
 		struct sigaction action{};
 		action.sa_sigaction = on_fault;
 		action.sa_flags = SA_SIGINFO;
 		sigemptyset(&action.sa_mask);
-		sigaction(SIGSEGV, &action, &old_segv);
-		sigaction(SIGBUS, &action, &old_bus);
+		segv_installed = sigaction(SIGSEGV, &action, &old_segv) == 0;
+		bus_installed = sigaction(SIGBUS, &action, &old_bus) == 0;
+		if (installed())
+		{
+			s_active_old_segv = old_segv;
+			s_active_old_bus = old_bus;
+			s_probe_thread_active = 1;
+		}
 	}
 	~FaultGuard()
 	{
-		sigaction(SIGSEGV, &old_segv, nullptr);
-		sigaction(SIGBUS, &old_bus, nullptr);
+		s_probe_thread_active = 0;
+		if (segv_installed)
+			sigaction(SIGSEGV, &old_segv, nullptr);
+		if (bus_installed)
+			sigaction(SIGBUS, &old_bus, nullptr);
 	}
+	bool installed() const { return segv_installed && bus_installed; }
 };
 
 unsigned long long flexible_free()
@@ -101,9 +147,13 @@ int run_code(void* write_view, void* exec_view)
 {
 	static const unsigned char code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
 	FaultGuard guard;
+	if (!guard.installed())
+		return -3;
 	if (sigsetjmp(s_jump, 1) != 0)
 		return -2;
-	std::memcpy(write_view, code, sizeof(code));
+	auto* dst = static_cast<volatile unsigned char*>(write_view);
+	for (size_t i = 0; i < sizeof(code); i++)
+		dst[i] = code[i];
 	__builtin___clear_cache(static_cast<char*>(exec_view), static_cast<char*>(exec_view) + sizeof(code));
 	if (sigsetjmp(s_jump, 1) != 0)
 		return -1;
@@ -160,6 +210,10 @@ void test_jit_accounting()
 	std::printf("[memprobe] jit shm 16 MiB: create rc=%d map rc=%d at %p; flexible free %llu -> %llu KiB "
 				"(%lld KiB)\n",
 		rc, rm, view, before >> 10, after >> 10, static_cast<long long>(before >> 10) - static_cast<long long>(after >> 10));
+	if (rm == 0 && view)
+		sceKernelMunmap(view, 16ull << 20);
+	if (rc == 0)
+		sceKernelClose(handle);
 #endif
 }
 
@@ -183,7 +237,7 @@ void test_direct_exec()
 		const int ran = rm == 0 ? run_code(addr, addr) : 0;
 		std::printf("[memprobe] direct %s: alloc rc=%d map rc=0x%x at %p, code %s (%d)\n", map.name, direct.rc,
 			static_cast<unsigned>(rm), addr,
-			rm != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : "faulted on write", ran);
+			rm != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : ran == -3 ? "guard unavailable" : "faulted on write", ran);
 		if (rm == 0)
 			sceKernelMunmap(addr, kTwoMiB);
 	}
@@ -197,7 +251,7 @@ void test_direct_exec()
 		const int ran = rm == 0 ? run_code(addr, addr) : 0;
 		std::printf("[memprobe] direct RW then sceKernelMprotect RWX rc=0x%x, mprotect RWX rc=%d errno=%d: code %s (%d)\n",
 			static_cast<unsigned>(rp), rp2, e2,
-			rm != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : "faulted on write", ran);
+			rm != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : ran == -3 ? "guard unavailable" : "faulted on write", ran);
 		if (rm == 0)
 			sceKernelMunmap(addr, kTwoMiB);
 	}
@@ -211,7 +265,7 @@ void test_direct_exec()
 		const int ran = r1 == 0 && r2 == 0 ? run_code(rw, rx) : 0;
 		std::printf("[memprobe] direct RW view + RX view: map rc=0x%x/0x%x at %p/%p, code %s (%d)\n",
 			static_cast<unsigned>(r1), static_cast<unsigned>(r2), rw, rx,
-			r1 != 0 || r2 != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : "faulted on write", ran);
+			r1 != 0 || r2 != 0 ? "not run" : ran == 42 ? "RAN" : ran == -1 ? "faulted on execute" : ran == -3 ? "guard unavailable" : "faulted on write", ran);
 		if (r1 == 0)
 			sceKernelMunmap(rw, kTwoMiB);
 		if (r2 == 0)
@@ -233,7 +287,7 @@ void test_aliasing()
 	if (r1 == 0 && r2 == 0)
 	{
 		FaultGuard guard;
-		if (sigsetjmp(s_jump, 1) == 0)
+		if (guard.installed() && sigsetjmp(s_jump, 1) == 0)
 		{
 			static_cast<volatile uint32_t*>(a)[100] = 0x5053535au;
 			same = static_cast<volatile uint32_t*>(b)[100] == 0x5053535au;
@@ -255,7 +309,7 @@ void test_aliasing()
 	if (rf == 0 && got == at)
 	{
 		FaultGuard guard;
-		if (sigsetjmp(s_jump, 1) == 0)
+		if (guard.installed() && sigsetjmp(s_jump, 1) == 0)
 		{
 			static_cast<volatile uint32_t*>(got)[7] = 7;
 			readable = static_cast<volatile uint32_t*>(got)[7] == 7;
@@ -293,6 +347,8 @@ void test_aliasing()
 		std::printf("[memprobe] fixed 16 KiB pages: %d maps %.2f us each, %d unmaps %.2f us each, %d failures\n",
 			count, (t1 - t0) / count, count, (t2 - t1) / count, failures);
 	}
+	if (rr == 0)
+		sceKernelMunmap(base, 64ull << 20);
 }
 
 // Where the kernel puts GPU-visible direct memory with no address given, and
