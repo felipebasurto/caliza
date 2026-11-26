@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstring>
 
+static_assert(CDVD_MODE_2448 == 5, "SCECdSecS2448 needs a distinct internal read mode");
+
 int main()
 {
 	const unsigned char input[] = "123456789";
