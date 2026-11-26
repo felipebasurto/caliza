@@ -302,6 +302,10 @@ protected:
 	// if set to false, nothing is actually written to the file system while flushing, and data is discarded instead
 	bool m_performFileWrites;
 
+	// host write failure state for the page currently being flushed
+	bool m_fileWriteFailed = false;
+	bool m_fileWriteErrorReported = false;
+
 	// currently active filter settings
 	bool m_filteringEnabled;
 	std::string m_filteringString;
@@ -473,6 +477,7 @@ protected:
 
 
 	bool ReadFromFile(u8* dest, u32 adr, u32 dataLength);
+	void NoteFileWriteFailure();
 	bool WriteToFile(const u8* src, u32 adr, u32 dataLength);
 
 

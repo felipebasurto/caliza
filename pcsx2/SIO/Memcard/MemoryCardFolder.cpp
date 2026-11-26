@@ -136,6 +136,8 @@ void FolderMemoryCard::InitializeInternalData()
 	m_performFileWrites = true;
 	m_filteringEnabled = false;
 	m_filteringString = {};
+	m_fileWriteFailed = false;
+	m_fileWriteErrorReported = false;
 }
 
 bool FolderMemoryCard::HasPlausibleGeometry() const
@@ -1258,7 +1260,11 @@ bool FolderMemoryCard::FlushPage(const u32 page)
 	auto it = m_cache.find(page);
 	if (it != m_cache.end())
 	{
+		m_fileWriteFailed = false;
 		WriteWithoutCache(&it->second.raw[0], page * PageSizeRaw, PageSize);
+		if (m_fileWriteFailed)
+			return false;
+
 		m_cache.erase(it);
 		return true;
 	}
@@ -1618,6 +1624,16 @@ s32 FolderMemoryCard::WriteWithoutCache(const u8* src, u32 adr, int size)
 	return 1;
 }
 
+void FolderMemoryCard::NoteFileWriteFailure()
+{
+	m_fileWriteFailed = true;
+	if (!m_fileWriteErrorReported)
+	{
+		Console.Error("FolderMcd: host file write failed; dirty memory-card pages are kept for retry");
+		m_fileWriteErrorReported = true;
+	}
+}
+
 bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 {
 	const u32 cluster = adr / ClusterSizeRaw;
@@ -1654,25 +1670,37 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 				u32 actualFileSize = static_cast<u32>(std::clamp<s64>(FileSystem::FSize64(file), 0, std::numeric_limits<u32>::max()));
 				if (actualFileSize < fileOffsetStart)
 				{
-					FileSystem::FSeek64(file, actualFileSize, SEEK_SET);
+					if (FileSystem::FSeek64(file, actualFileSize, SEEK_SET) != 0)
+					{
+						NoteFileWriteFailure();
+						return false;
+					}
 					const u32 diff = fileOffsetStart - actualFileSize;
 					u8 temp = 0xFF;
 					for (u32 i = 0; i < diff; ++i)
 					{
-						std::fwrite(&temp, 1, 1, file);
+						if (std::fwrite(&temp, 1, 1, file) != 1)
+						{
+							NoteFileWriteFailure();
+							return false;
+						}
 					}
 				}
 
-				if (FileSystem::FTell64(file) == fileOffsetStart || FileSystem::FSeek64(file, fileOffsetStart, SEEK_SET) == 0)
+				if (FileSystem::FTell64(file) != fileOffsetStart && FileSystem::FSeek64(file, fileOffsetStart, SEEK_SET) != 0)
 				{
-					if (bytesToWrite > 0)
-					{
-						std::fwrite(src, bytesToWrite, 1, file);
-					}
+					NoteFileWriteFailure();
+					return false;
+				}
+				if (bytesToWrite > 0 && std::fwrite(src, bytesToWrite, 1, file) != 1)
+				{
+					NoteFileWriteFailure();
+					return false;
 				}
 			}
 			else
 			{
+				NoteFileWriteFailure();
 				return false;
 			}
 		}

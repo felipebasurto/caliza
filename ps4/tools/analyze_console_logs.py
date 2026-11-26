@@ -142,6 +142,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.failures.append(f"memory-card cache write failure evidence present in {mcd_write_failures} line(s); guest saves are at risk")
     if ev.has("[Folder] backing allocation failed"):
         ev.failures.append("folder memory-card backing allocation failed; a configured folder card is unavailable and guest saves cannot be trusted in this run")
+    if ev.has("FolderMcd: host file write failed"):
+        ev.failures.append("folder memory-card host write failure evidence present; dirty pages were retained but guest saves are at risk")
     if ev.has("Failed to save NVRAM"):
         ev.warnings.append("NVRAM save failure evidence present; settings may be lost on exit")
     if ev.has("Failed to write MEC") or ev.has("Failed to replace MEC"):
