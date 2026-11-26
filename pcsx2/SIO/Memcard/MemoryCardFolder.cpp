@@ -1459,9 +1459,15 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 							}
 						}
 
-						MemoryCardFileMetadataReference* dirRef = AddDirEntryToMetadataQuickAccess(entry, parent);
-
-						FlushFileEntries(entry->entry.data.cluster, entry->entry.data.length, subDirPath, dirRef, directoryDepth + 1);
+						// A malicious shared-cluster DAG alias must not overwrite the
+						// first directory's parent metadata or recurse a second time.
+						// Its host directory/index handling above is still harmless.
+						const u32 subDirCluster = entry->entry.data.cluster;
+						if (subDirCluster < MaxImplementedFatClusters && !m_directoryTraversalMarks.test(subDirCluster))
+						{
+							MemoryCardFileMetadataReference* dirRef = AddDirEntryToMetadataQuickAccess(entry, parent);
+							FlushFileEntries(subDirCluster, entry->entry.data.length, subDirPath, dirRef, directoryDepth + 1);
+						}
 					}
 				}
 				else if (entry->IsFile())
