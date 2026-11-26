@@ -127,6 +127,7 @@ void FolderMemoryCard::InitializeInternalData()
 	const u32 closeFailures = m_lastAccessedFile.CloseAll();
 	if (closeFailures != 0)
 		Console.Error("FolderMcd: %u file handle(s) failed to close on slot %u", closeFailures, m_slot);
+	m_lastAccessedFile.ClearMetadataWriteState();
 	m_fileMetadataQuickAccess.clear();
 	m_timeLastWritten = 0;
 	m_isEnabled = false;
@@ -276,7 +277,10 @@ void FolderMemoryCard::Close(bool flush)
 
 	m_cache.clear();
 	m_oldDataCache.clear();
-	m_lastAccessedFile.CloseAll();
+	const u32 closeFailures = m_lastAccessedFile.CloseAll();
+	if (closeFailures != 0)
+		Console.Error("FolderMcd: %u file handle(s) failed to close on slot %u", closeFailures, m_slot);
+	m_lastAccessedFile.ClearMetadataWriteState();
 	m_fileMetadataQuickAccess.clear();
 	m_isEnabled = false;
 }
@@ -1549,7 +1553,9 @@ void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const st
 				FileAccessHelper::CleanMemcardFilename(cleanName);
 				const std::string fullDirPath(Path::Combine(m_folderName, dirPath));
 				const std::string filePath(Path::Combine(fullDirPath, cleanName));
-				m_lastAccessedFile.CloseMatching(filePath);
+				const u32 closeFailures = m_lastAccessedFile.CloseMatching(filePath);
+				if (closeFailures != 0)
+					Console.Error("FolderMcd: %u file handle(s) failed to close for deleted file on slot %u", closeFailures, m_slot);
 				const std::string newFilePath(Path::Combine(Path::Combine(m_folderName, dirPath), fmt::format("_pcsx2_deleted_{}", cleanName)));
 				if (FileSystem::DirectoryExists(newFilePath.c_str()))
 				{

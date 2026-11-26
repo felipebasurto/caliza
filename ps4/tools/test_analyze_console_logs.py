@@ -121,6 +121,12 @@ def main() -> int:
         ok &= expect("memory-card close failure is fatal", mcdclosefail, (), 1,
                      "memory-card cache write failure evidence")
 
+        folderclosefail = root / "folderclosefail.log"
+        folderclosefail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                   "FolderMcd: 1 file handle(s) failed to close on slot 0\n")
+        ok &= expect("folder memory-card close failure is fatal", folderclosefail, (), 1,
+                     "folder memory-card close failure evidence")
+
         mtvu = root / "mtvu.log"
         mtvu.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                         "[mtvu] per s: kicks=10 coalesced=0 ringstalls=2 laps ee/vu=1/1 wakeups=3 spin/sleep=1/0 | backlog hwm 1792 KB\n")

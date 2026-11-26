@@ -149,6 +149,9 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
             ev.warnings.append("folder memory-card host write failure occurred but a later retry succeeded; inspect storage reliability")
         else:
             ev.failures.append("folder memory-card host write failure evidence present without later recovery; dirty pages were retained but guest saves are at risk")
+    folder_close_failures = sum("FolderMcd:" in line and "failed to close" in line for line in ev.lines)
+    if folder_close_failures:
+        ev.failures.append(f"folder memory-card close failure evidence present in {folder_close_failures} line(s); flushed save data may not have reached storage")
     if ev.has("Failed to save NVRAM"):
         ev.warnings.append("NVRAM save failure evidence present; settings may be lost on exit")
     if ev.has("Failed to write MEC") or ev.has("Failed to replace MEC"):
