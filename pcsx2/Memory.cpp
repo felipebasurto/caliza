@@ -382,13 +382,30 @@ bool SysMemory::AllocateMemoryMap()
 				}
 				else if (rcc == 0 && mapped)
 				{
-					code = static_cast<u8*>(mapped);
-					rcc2 = 0;
-					used_code_phys = phys2;
-					used_code_map_size = code_size;
-					used_code_alloc_size = code_size;
-					used_code_direct = true;
-					s_code_memory_executable = false;
+					// The probe may have failed after execute permission was granted (or even on a mapping
+					// created RWX). Do not keep such a mapping while calling it non-executable: demote it
+					// back to RW first, and fail cleanly if the kernel cannot enforce that invariant.
+					const int demote = sceKernelMprotect(mapped, code_size, 0x03);
+					printf("[dbg] memmap: non-executable fallback demote rc=0x%x\n", (unsigned)demote);
+					fflush(stdout);
+					if (demote == 0)
+					{
+						code = static_cast<u8*>(mapped);
+						rcc2 = 0;
+						used_code_phys = phys2;
+						used_code_map_size = code_size;
+						used_code_alloc_size = code_size;
+						used_code_direct = true;
+						s_code_memory_executable = false;
+					}
+					else
+					{
+						sceKernelMunmap(mapped, code_size);
+						sceKernelReleaseDirectMemory(phys2, code_size);
+						phys2_owned = false;
+						rcc = -1;
+						code = nullptr;
+					}
 				}
 				else if (rcc == 0)
 				{
