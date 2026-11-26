@@ -156,8 +156,12 @@ bool FolderMemoryCard::HasPlausibleGeometry() const
 	if (blockCount == 0 || sb.backup_block1 >= blockCount || sb.backup_block2 >= blockCount ||
 		sb.backup_block1 == sb.backup_block2)
 		return false;
-	for (u32 cluster : sb.ifc_list)
+	// Only the first indirect-FAT-cluster slot is implemented. Later superblock
+	// entries are outside this implementation's indexing model and may differ in
+	// unused-value convention, so they must not decide whether a card can load.
+	for (int i = 0; i < IndirectFatClusterCount; ++i)
 	{
+		const u32 cluster = sb.ifc_list[i];
 		if (cluster != IndirectFatUnused && (cluster == 0 || cluster >= sb.alloc_offset))
 			return false;
 	}
