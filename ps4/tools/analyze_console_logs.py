@@ -161,6 +161,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("sampling profiler backing allocation failed; CPU-profiling telemetry is unavailable but emulation is unaffected")
     if ev.has("[osd] backing allocation failed"):
         ev.warnings.append("OSD composition backing allocation failed; overlay telemetry is unavailable but rendering is unaffected")
+    if ev.has("PGIF GP0 FIFO backing allocation failed"):
+        ev.failures.append("PGIF GP0 FIFO backing allocation failed; PS1-mode GPU FIFO data is dropped in this run")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(

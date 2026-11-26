@@ -8,6 +8,8 @@
 #include "IopDma.h"
 #include "Common.h"
 
+#include <new>
+
 //NOTES (TODO):
 /*
 - 8 and 16 bit access to the PGPU regs is not emulated... is it ever used? Emulating it would be tricky.
@@ -47,8 +49,39 @@ void drainPgpuDmaLl(void);
 void drainPgpuDmaNrToGpu(void);
 void drainPgpuDmaNrToIop(void);
 
+#define PGIF_DAT_RB_SIZE 0x20000
+extern struct ringBuf_t rb_gp0;
+static u32* pgif_gp0_buffer = nullptr;
+static bool pgif_gp0_allocation_failed = false;
+
+// PS4 port: the oversized GP0 FIFO is only needed when PS1-mode PGIF traffic
+// actually writes data. Keep it out of static memory for ordinary PS2 sessions,
+// but preserve the always-visible FIFO size so DREQ/fullness semantics do not
+// change before the backing exists. Needs proper testing.
+static bool pgifEnsureGp0Buffer()
+{
+	if (pgif_gp0_buffer != nullptr)
+		return true;
+	if (pgif_gp0_allocation_failed)
+		return false;
+
+	pgif_gp0_buffer = new (std::nothrow) u32[PGIF_DAT_RB_SIZE];
+	if (pgif_gp0_buffer == nullptr)
+	{
+		pgif_gp0_allocation_failed = true;
+		Console.Error("PGIF GP0 FIFO backing allocation failed; dropping PS1 GPU FIFO data");
+		return false;
+	}
+
+	rb_gp0.buf = pgif_gp0_buffer;
+	return true;
+}
+
 void ringBufPut(struct ringBuf_t* rb, u32* data)
 {
+	if (rb == &rb_gp0 && rb->buf == nullptr && !pgifEnsureGp0Buffer())
+		return;
+
 	if (rb->count < rb->size)
 	{
 		//there is available space
@@ -106,9 +139,7 @@ u32 pgif_gp1_buffer[PGIF_CMD_RB_SIZE] = {0}; //Ring buffer data.
 //only when the PS1DRV gets data from it, which depends on IOP-EE sync, among other things.
 //The reson it works in the real hardware, is that the MDEC DMA would run in the pauses of GPU DMA,
 //thus the GPU DMA would never get data, MDEC hasn't yet written to RAM yet (too early).
-#define PGIF_DAT_RB_SIZE 0x20000
 struct ringBuf_t rb_gp0; //Ring buffer control variables.
-u32 pgif_gp0_buffer[PGIF_DAT_RB_SIZE] = {0}; //Ring buffer data.
 dma_t dma;
 
 
@@ -116,6 +147,7 @@ dma_t dma;
 //given that the PGIF is in the EE ASIC, on the other side of the SBUS.
 void pgifInit()
 {
+	pgif_gp0_allocation_failed = false;
 	rb_gp1.buf = pgif_gp1_buffer;
 	rb_gp1.size = PGIF_CMD_RB_SIZE;
 	ringBufferClear(&rb_gp1);

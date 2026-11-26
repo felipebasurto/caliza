@@ -187,6 +187,12 @@ def main() -> int:
         ok &= expect("OSD backing failure warns without failing", osdfail, (), 0,
                      "WARN OSD composition backing allocation failed")
 
+        pgiffail = root / "pgiffail.log"
+        pgiffail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                            "PGIF GP0 FIFO backing allocation failed; dropping PS1 GPU FIFO data\n")
+        ok &= expect("PGIF backing failure is fatal", pgiffail, (), 1,
+                     "FAIL PGIF GP0 FIFO backing allocation failed")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
