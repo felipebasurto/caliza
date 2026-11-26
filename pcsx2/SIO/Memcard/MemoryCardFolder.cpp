@@ -88,6 +88,23 @@ static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const cha
 	return true;
 }
 
+static bool WriteBinaryFileAtomically(const std::string& fileName, const void* data, const size_t size)
+{
+	const std::string tempFileName = fileName + ".tmp";
+	std::FILE* file = FileSystem::OpenCFile(tempFileName.c_str(), "wb");
+	bool ok = file != nullptr;
+	if (file)
+	{
+		ok = std::fwrite(data, size, 1, file) == 1;
+		if (std::fflush(file) != 0)
+			ok = false;
+		if (std::fclose(file) != 0)
+			ok = false;
+	}
+	return CommitAtomicMetadataWrite(tempFileName, fileName.c_str(), ok);
+}
+
+
 /// A helper function to write a YAML file
 static bool SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
 {
@@ -1385,10 +1402,8 @@ void FolderMemoryCard::FlushSuperBlock()
 	if (FlushBlock(0) && m_performFileWrites)
 	{
 		const std::string superBlockFileName(Path::Combine(m_folderName, "_pcsx2_superblock"));
-		if (auto superBlockFile = FileSystem::OpenManagedCFile(superBlockFileName.c_str(), "wb"); superBlockFile)
-		{
-			std::fwrite(&m_superBlock.raw, sizeof(m_superBlock.raw), 1, superBlockFile.get());
-		}
+		if (!WriteBinaryFileAtomically(superBlockFileName, &m_superBlock.raw, sizeof(m_superBlock.raw)))
+			Console.Warning("FolderMcd: metadata write failed for %s", superBlockFileName.c_str());
 	}
 }
 
@@ -1460,10 +1475,8 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 							// TODO: This logic doesn't make sense. If it's not a directory, create it, then open it as a file?!
 							if (filenameCleaned || entry->entry.data.mode != MemoryCardFileEntry::DefaultDirMode || entry->entry.data.attr != 0)
 							{
-								if (auto metaFile = FileSystem::OpenManagedCFile(metaFileName.c_str(), "wb"); metaFile)
-								{
-									std::fwrite(entry->entry.raw, sizeof(entry->entry.raw), 1, metaFile.get());
-								}
+								if (!WriteBinaryFileAtomically(metaFileName, entry->entry.raw, sizeof(entry->entry.raw)))
+									Console.Warning("FolderMcd: metadata write failed for %s", metaFileName.c_str());
 							}
 							else
 							{
