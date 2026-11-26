@@ -1338,6 +1338,20 @@ void FolderMemoryCard::Flush()
 {
 	if (m_cache.empty())
 	{
+		// A failed fsync can happen after the dirty pages were already consumed. Keep the
+		// bounded retry meaningful by re-fsyncing open backing files even when no page data remains.
+		if (m_fileWriteErrorReported)
+		{
+			if (m_lastAccessedFile.FlushAll() == 0)
+			{
+				Console.WriteLn("FolderMcd: host file write succeeded after retry");
+				m_fileWriteErrorReported = false;
+			}
+			else
+			{
+				m_framesUntilFlush = FramesAfterWriteFailureUntilFlush;
+			}
+		}
 		return;
 	}
 
