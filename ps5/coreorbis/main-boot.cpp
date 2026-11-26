@@ -1995,14 +1995,27 @@ void OrbisBackToMenuCpu()
   OrbisExitApp(status);
 }
 
+// vk-285-109: our own eboot again, into the shelf. The PS4 package has a different title id from the
+// PS5 homebrew tree; prefer its homebrew copy when one exists, otherwise the installed app's app0.
+static const char* orbis_menu_reexec_path()
+{
+#ifdef ORBIS_PS4
+  static const char* const candidates[] = {"/data/homebrew/PCSX00002/eboot.bin", "/app0/eboot.bin"};
+#else
+  static const char* const candidates[] = {"/data/homebrew/PPSA99203/eboot.bin", "/app0/eboot.bin"};
+#endif
+  struct stat st{};
+  for (const char* path : candidates)
+    if (stat(path, &st) == 0)
+      return path;
+  return candidates[sizeof(candidates) / sizeof(candidates[0]) - 1];
+}
+
 // vk-285-109: our own eboot again, into the shelf, after a start that failed (the VM never ran, so no memory
 // card or NVRAM to write back). Returns when LoadExec doesn't take.
 static void orbis_restart_to_menu()
 {
-  const char* path = "/data/homebrew/PPSA99203/eboot.bin";
-  struct stat st{};
-  if (stat(path, &st) != 0)
-    path = "/app0/eboot.bin";
+  const char* path = orbis_menu_reexec_path();
   printf("[menu] the game didn't start: re-executing %s\n", path);
   orbis_output_default();
   orbis_log_drain();
@@ -2032,10 +2045,7 @@ static void orbis_back_to_menu()
   // a notification says so when they don't make it. Returns at once when nothing is waiting.
   Achievements::OrbisFlushBeforeExit(5000);
 #endif
-  const char* path = "/data/homebrew/PPSA99203/eboot.bin";
-  struct stat st{};
-  if (stat(path, &st) != 0)
-    path = "/app0/eboot.bin";
+  const char* path = orbis_menu_reexec_path();
   printf("[menu] re-executing %s\n", path);
   orbis_output_default();
   fflush(stdout);
