@@ -651,6 +651,12 @@ s32 FileMemoryCard::Save(uint slot, const u8* src, u32 adr, int size)
 		return 1;
 	}
 
+	// Memory cards are fixed-size flash devices. In particular, the uncached
+	// path must not let an out-of-range guest sector extend the host image
+	// toward multi-gigabyte sparse files. Needs proper testing.
+	if (size < 0 || m_fileSize[slot] < 0 || static_cast<u64>(adr) + static_cast<u64>(size) > static_cast<u64>(m_fileSize[slot]))
+		return 0;
+
 	// vk-285-31: on the RAM image (loaded now if this card waited for its first write).
 	OrbisMcdTimer timer;
 	g_orbis_mcd_writes.fetch_add(1, std::memory_order_relaxed);
