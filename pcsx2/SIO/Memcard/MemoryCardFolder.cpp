@@ -31,6 +31,7 @@
 #else
 #include <unistd.h>
 #include <fcntl.h>
+#include <cerrno>
 #endif
 
 static constexpr u32 MaxFolderDirectoryDepth = 64;
@@ -127,11 +128,20 @@ static bool SyncFileData(std::FILE* file)
 
 static bool TruncateHostFileIfNeeded(const std::string& fileName, u32 expectedSize)
 {
+	errno = 0;
 	std::FILE* file = FileSystem::OpenCFile(fileName.c_str(), "r+b");
 	if (!file)
-		return true; // missing files are created/filled by the normal data-write path
+	{
+		// Missing files are created/filled by the normal data-write path. Permission or
+		// fd-exhaustion failures are real shrink failures and must not be silently dropped.
+		if (errno == ENOENT || errno == ENOTDIR)
+			return true;
+		Console.ErrorFmt("FolderMcd: could not open '{}' for shrink validation", fileName);
+		return false;
+	}
 	const s64 currentSize = FileSystem::FSize64(file);
 	bool ok = currentSize >= 0;
+	bool truncated = false;
 	if (ok && currentSize > static_cast<s64>(expectedSize))
 	{
 		if (std::fflush(file) != 0)
@@ -142,7 +152,13 @@ static bool TruncateHostFileIfNeeded(const std::string& fileName, u32 expectedSi
 		if (ftruncate(fileno(file), static_cast<off_t>(expectedSize)) != 0)
 #endif
 			ok = false;
+		else
+			truncated = true;
 	}
+	// A metadata-only shrink may have no dirty data pages and therefore no other fsync
+	// of this inode. Persist the size change before acknowledging the directory entry.
+	if (ok && truncated && !SyncFileData(file))
+		ok = false;
 	if (std::fclose(file) != 0)
 		ok = false;
 	return ok;
