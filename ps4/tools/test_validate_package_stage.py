@@ -46,9 +46,9 @@ def make_stage(root: pathlib.Path) -> pathlib.Path:
     return stage
 
 
-def run(stage: pathlib.Path) -> subprocess.CompletedProcess[str]:
+def run(stage: pathlib.Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(TOOL), str(stage)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+        [sys.executable, str(TOOL), str(stage), *extra], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
     )
 
 
@@ -72,6 +72,12 @@ def main() -> int:
         stage = make_stage(root / "dirty-provenance")
         (stage / "SOURCE.txt").write_text((stage / "SOURCE.txt").read_text().replace("Build commit: 0123456789ab", "Build commit: 0123456789ab + uncommitted changes"))
         ok &= expect("dirty build provenance is rejected", run(stage), 1, "exact clean build-commit")
+
+        stage = make_stage(root / "commit-match")
+        ok &= expect("matching expected commit passes", run(stage, "--expect-commit", "0123456789ab"), 0, "PASS (redistributable BIOS-free build")
+
+        stage = make_stage(root / "commit-mismatch")
+        ok &= expect("mismatched expected commit is rejected", run(stage, "--expect-commit", "fedcba987654"), 1, "does not match expected")
 
         stage = make_stage(root / "missing-license")
         (stage / "licenses/libnfs-LGPL-2.1.txt").unlink()

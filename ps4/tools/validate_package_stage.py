@@ -46,6 +46,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", type=pathlib.Path)
     parser.add_argument("--pkg", type=pathlib.Path)
+    parser.add_argument("--expect-commit", help="exact commit hash required in SOURCE.txt")
     args = parser.parse_args()
 
     stage = args.stage
@@ -68,8 +69,11 @@ def main() -> int:
             fail(errors, "SOURCE.txt lacks the PS4SX2 corresponding-source URL")
         if "https://github.com/PCSX2/pcsx2" not in text:
             fail(errors, "SOURCE.txt lacks the upstream PCSX2 source URL")
-        if not re.search(r"^Build commit: [0-9a-f]{12,40}$", text, re.MULTILINE):
+        commit_match = re.search(r"^Build commit: ([0-9a-f]{12,40})$", text, re.MULTILINE)
+        if not commit_match:
             fail(errors, "SOURCE.txt lacks an exact clean build-commit line")
+        elif args.expect_commit and commit_match.group(1) != args.expect_commit.lower():
+            fail(errors, f"SOURCE.txt commit {commit_match.group(1)} does not match expected {args.expect_commit.lower()}")
 
     bios_dir = stage / "bios"
     personal = bios_dir.is_dir()
