@@ -10,6 +10,7 @@ Last updated: 2026-11-26 after closing hostile GIF packet-span and USB asynchron
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
 - Current candidate code: **175 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
+- Note: HEAD now includes post-candidate metadata fsync hardening at `e6f6bc4`; the packaged artifact below is still exact `65c2d90` pending integration of pending reviews and a fresh exact rebuild.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
 ## Local checkpoint commits
