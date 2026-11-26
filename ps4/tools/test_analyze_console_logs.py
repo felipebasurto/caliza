@@ -145,6 +145,12 @@ def main() -> int:
         ok &= expect("CDVD cache backing failure warns without failing", cdvdcachefail, (), 0,
                      "WARN CDVD sector cache allocation failed")
 
+        vkringfail = root / "vkringfail.log"
+        vkringfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[vkhw] big draw ring allocation failed; using the small ring only\n")
+        ok &= expect("big Vulkan diagnostic ring failure warns without failing", vkringfail, (), 0,
+                     "WARN big Vulkan diagnostic ring allocation failed")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

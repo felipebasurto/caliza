@@ -135,6 +135,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.failures.append("MDEC backing allocation failed; PS1-mode FMV decode cannot be correct in this run")
     if ev.has("CDVD: sector cache allocation failed"):
         ev.warnings.append("CDVD sector cache allocation failed; direct reads remain correct but streaming performance may degrade")
+    if ev.has("[vkhw] big draw ring allocation failed"):
+        ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(
