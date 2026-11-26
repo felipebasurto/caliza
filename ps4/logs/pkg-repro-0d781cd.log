@@ -1,0 +1,9 @@
+Bit-for-bit package reproducibility check for exact commit 0d781cd6992b.
+
+pkg=cfa13b95caffc1f0b405fe31378be81779485b9d6936098fca097fcf9efa8b50 size=60751872
+elf=0cc9c11b0a4dd488ba4478355368237f7dce4a032d9bb9b16d7cdebe8a13afcc elfsize=149707824
+eboot=13cda11bccdfda19f904e7ca02e8aa2793861ed2ddccafca9ec502ae56aa45d7 ebootsize=41086800
+Build commit: 0d781cd6992b
+repro1=cfa13b95caffc1f0b405fe31378be81779485b9d6936098fca097fcf9efa8b50
+repro2=cfa13b95caffc1f0b405fe31378be81779485b9d6936098fca097fcf9efa8b50
+repro_rc=0
