@@ -4,7 +4,8 @@
 #
 #   PS4_HOST=192.168.1.20 bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs
 #
-# Optional: PS4_FTP_PORT=2121. Then analyze, for example:
+# Optional: PS4_FTP_PORT=2121, PS4_LOG_ROTATIONS=2 (rotated prior sessions per stream).
+# Then analyze, for example:
 #   python3 ps4/tools/analyze_console_logs.py --expect-input --expect-wsi --expect-audio \
 #     --expect-state --expect-gameplay /tmp/ps4-logs/*.log /tmp/ps4-logs/*.txt 2>/dev/null
 set -euo pipefail
@@ -18,27 +19,47 @@ mkdir -p "$out"
 ftp="ftp://${PS4_HOST}:${PS4_FTP_PORT:-2121}"
 
 fetch() {
-    local remote="$1" local_name="$2" required="$3"
+    local local_name="$1" required="$2"
+    shift 2
     local target="$out/$local_name"
     rm -f "$target"
-    if curl -fsS --connect-timeout 10 --max-time 30 "$ftp$remote" -o "$target"; then
-        echo "collected $remote -> $target"
-    else
-        rm -f "$target"
-        if [ "$required" = required ]; then
-            echo "missing required log $remote" >&2
-            return 1
+    local remote
+    for remote in "$@"; do
+        if curl -fsS --connect-timeout 10 --max-time 30 "$ftp$remote" -o "$target"; then
+            echo "collected $remote -> $target"
+            return 0
         fi
-        echo "optional log absent: $remote"
+    done
+    rm -f "$target"
+    if [ "$required" = required ]; then
+        echo "missing required log: $*" >&2
+        return 1
     fi
+    echo "optional log absent: $*"
+}
+
+fetch_pcsx2_log() {
+    local name="$1" required="$2" local_name="${3:-$1}"
+    fetch "$local_name" "$required" "/data/PCSX2/logs/$name" "/data/PCSX2/$name"
 }
 
 status=0
-fetch /data/PCSX2/boot.log boot.log required || status=1
-fetch /data/PCSX2/emulog.txt emulog.txt required || status=1
-fetch /data/PCSX2/settings.log settings.log optional || true
-fetch /data/Crema/boot-trace.log boot-trace.log optional || true
-fetch /data/Crema/crash.log crash.log optional || true
+fetch_pcsx2_log boot.log required || status=1
+fetch_pcsx2_log emulog.txt required || status=1
+fetch_pcsx2_log stderr.log optional || true
+fetch_pcsx2_log settings.log optional || true
+fetch boot-trace.log optional /data/Crema/boot-trace.log || true
+fetch crash.log optional /data/Crema/crash.log || true
+
+rotations="${PS4_LOG_ROTATIONS:-2}"
+case "$rotations" in ''|*[!0-9]*) rotations=2 ;; esac
+for stream in boot.log stderr.log emulog.txt; do
+    stem="${stream%.*}"
+    ext="${stream##*.}"
+    for i in $(seq 1 "$rotations"); do
+        fetch_pcsx2_log "$stem.$i.$ext" optional "$stem.$i.$ext" || true
+    done
+done
 
 echo "console log collection complete in $out (read-only)"
 exit "$status"
