@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after the WSI plane/dead-code cleanup; binary artifact validated at the WSI-plane/dead-code checkpoint.
+Last updated: 2026-11-26 after the lazy legacy-overlay memory optimization; binary artifact validated at that checkpoint.
 
 ## Current repository state
 
@@ -110,11 +110,11 @@ Last updated: 2026-11-26 after the WSI plane/dead-code cleanup; binary artifact 
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at the current WSI-plane/dead-code state (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
+Built in the Linux x86_64 OpenOrbis container at the lazy-overlay checkpoint (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,128,880 bytes**, SHA-256 `1006d4da70468f78243b72fb8f55b8263fed4f035f9f59a9054205695d2d4f26` (`size`: text 38,924,575, data 929,888, bss 99,733,824 after removing the dead 16 MiB worker stack).
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `89929bd01164ab96076347751f99388ac3cfbbeb8902358d27ba507711b1b2cb`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `64e157677835df7c0e36f87d169033774edad8572e9148d6af7b2c9a8034182f`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,131,480 bytes**, SHA-256 `bb2e578e0168300cc88824354b29875d27687f96bda3d72cd781b5619e1cb2ea` (`size`: text 38,922,839, data 929,888, bss 74,850,624; lazy legacy-overlay allocation removed 24,883,200 bytes of BSS versus the prior checkpoint, in addition to the dead 16 MiB worker-stack removal).
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `7690239bed286e349db406d3b62ff45850f718dc553f0ed4847eb1b16cf44af5`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `3150d66227a229f37fe23f71dd2ce2031a5fd317652a800aa13e59bf1258465d`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -126,11 +126,11 @@ Built in the Linux x86_64 OpenOrbis container at the current WSI-plane/dead-code
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate74-wsi-plane.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate75-lazy-overlay.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current WSI-plane package is `candidate74` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current lazy-overlay package is `candidate75` evidence |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -150,7 +150,7 @@ Built in the Linux x86_64 OpenOrbis container at the current WSI-plane/dead-code
 | P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 shares mount through CEMUPS4 `/net/shareN`; per-share boot checks now run concurrently (maximum four workers) with deterministic result logging; failed shares stay registered for explicit retry but are excluded from automatic scans; query options/ports unsupported; SMB remains deliberately unexposed |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
-| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured |
+| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured; host-measured static memory footprint reduced by 24,883,200 bytes of BSS through lazy legacy-overlay allocation plus 16 MiB of dead worker stack removal |
 
 ## Console smoke-test priority
 

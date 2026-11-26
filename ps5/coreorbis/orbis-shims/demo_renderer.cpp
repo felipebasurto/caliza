@@ -596,11 +596,22 @@ extern "C" void orbis_text_rgba(std::uint32_t *buf, unsigned w, unsigned h, unsi
 // drawn by the overlay (render thread).
 namespace
 {
-    std::uint32_t g_display[frame_width * frame_height];
+    // The Vulkan path never uses this legacy CPU-present copy. Allocate it lazily so
+    // normal hardware-renderer boots do not carry another 8 MiB of BSS. Needs proper testing.
+    std::uint32_t* g_display = nullptr;
+    std::once_flag g_display_once;
     std::mutex g_display_mutex;
     std::atomic<bool> g_display_valid{false};
     std::atomic<unsigned> g_display_w{0};
     std::atomic<unsigned> g_display_h{0};
+
+    std::uint32_t* display_buffer()
+    {
+        std::call_once(g_display_once, []() {
+            g_display = new (std::nothrow) std::uint32_t[frame_width * frame_height];
+        });
+        return g_display;
+    }
 }
 
 static std::atomic<unsigned long long> g_orbis_presents{0};
@@ -619,6 +630,9 @@ extern "C" void orbis_present_frame(const unsigned char* pixels, int w, int h, i
         fflush(stdout);
     }
     if (!pixels || w <= 0 || h <= 0 || w > frame_width || h > frame_height)
+        return;
+    std::uint32_t* const display = display_buffer();
+    if (!display)
         return;
     std::lock_guard<std::mutex> lock(g_display_mutex);
     static unsigned long long present_count = 0;
@@ -664,7 +678,7 @@ extern "C" void orbis_present_frame(const unsigned char* pixels, int w, int h, i
     for (unsigned y = 0; y < dst_h; y++)
     {
         const std::uint32_t* src_row = reinterpret_cast<const std::uint32_t*>(pixels + static_cast<size_t>(y) * pitch);
-        std::memcpy(&g_display[y * frame_width], src_row, static_cast<size_t>(dst_w) * sizeof(std::uint32_t));
+        std::memcpy(&display[y * frame_width], src_row, static_cast<size_t>(dst_w) * sizeof(std::uint32_t));
     }
     g_display_w.store(dst_w);
     g_display_h.store(dst_h);
@@ -680,9 +694,10 @@ extern "C" bool orbis_get_display(std::uint32_t** out, unsigned* w, unsigned* h)
         printf("[overlay] get_display: valid=%d\n", (int)g_display_valid.load());
         fflush(stdout);
     }
-    if (!g_display_valid.load())
+    std::uint32_t* const display = display_buffer();
+    if (!display || !g_display_valid.load())
         return false;
-    *out = g_display;
+    *out = display;
     *w = g_display_w.load();
     *h = g_display_h.load();
     return true;

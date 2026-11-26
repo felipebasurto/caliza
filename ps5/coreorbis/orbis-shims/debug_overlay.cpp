@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <thread>
 
 extern "C" unsigned long long orbis_present_count(void);
@@ -74,10 +75,10 @@ namespace ps5::debug
             unsigned dw = 0, dh = 0;
             // eerec-252: copy the emulated frame under the lock, blit (bilinear, slow-ish) outside it.
             // Holding g_display_mutex for the whole blit stalled PresentRect -> MTGS -> EE (stutters).
-            static std::uint32_t s_copy[1920 * 1080];
+            static std::uint32_t* const s_copy = new (std::nothrow) std::uint32_t[1920 * 1080];
             bool have = false;
             orbis_display_lock();
-            if (orbis_get_display(&disp, &dw, &dh) && dw && dh && dw <= 1920 && dh <= 1080)
+            if (s_copy && orbis_get_display(&disp, &dw, &dh) && dw && dh && dw <= 1920 && dh <= 1080)
             {
                 for (unsigned y = 0; y < dh; y++)
                     std::memcpy(&s_copy[y * 1920], &disp[y * 1920], dw * 4);
@@ -98,7 +99,13 @@ namespace ps5::debug
                 }();
                 if (s_k > 0 && dw >= 3 && dh >= 3)
                 {
-                    static std::uint32_t s_sharp[1920 * 1080];
+                    static std::uint32_t* const s_sharp = new (std::nothrow) std::uint32_t[1920 * 1080];
+                    if (!s_sharp)
+                    {
+                        canvas.blit(s_copy, dw, dh, 0, 0, 1920, 1080);
+                    }
+                    else
+                    {
                     const int k = s_k;
                     for (unsigned y = 0; y < dh; y++)
                     {
@@ -123,6 +130,7 @@ namespace ps5::debug
                         }
                     }
                     canvas.blit(s_sharp, dw, dh, 0, 0, 1920, 1080);
+                    }
                 }
                 else
                     canvas.blit(s_copy, dw, dh, 0, 0, 1920, 1080);
