@@ -130,7 +130,7 @@ Built in the Linux x86_64 OpenOrbis container at commit `364adfd` (includes the 
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current `364adfd` package is `candidate65/66` evidence |
-| Host tests | PASS | current validator/analyzer/WSI/shell suite passes in `ps4/logs/host-tests-latest.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-runner.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
