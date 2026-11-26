@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cstring>
 #include <atomic>
+#include <chrono>
+#include <memory>
 #include <thread>
 #include <cstdint>
 #include <unistd.h>
@@ -38,6 +40,21 @@ std::atomic<uint64_t> s_audio_underruns{0};
 std::atomic<uint64_t> s_audio_output_errors{0};
 std::atomic<int> s_audio_last_output_error{0};
 
+// State shared with the worker thread. The thread may be detached while still blocked inside
+// sceAudioOutOutput, so anything it touches after ~OrbisAudioStream must live here. owner_alive
+// and in_object form a lease (seq_cst on purpose): the destructor clears owner_alive, waits for
+// in_object to drain, and only then lets members be destroyed.
+struct OrbisAudioShared
+{
+  std::atomic<bool> quit{false};
+  std::atomic<bool> pause_requested{false};
+  std::atomic<int> in_read{0};
+  std::atomic<bool> owner_alive{true};
+  std::atomic<int> in_object{0};
+  std::atomic<bool> exited{false};
+  int handle = -1;
+};
+
 class OrbisAudioStream final : public AudioStream
 {
 public:
@@ -47,21 +64,58 @@ public:
   }
   ~OrbisAudioStream() override
   {
-    m_quit.store(true);
+    auto& sh = *m_shared;
+    sh.quit.store(true, std::memory_order_release);
+    sh.owner_alive.store(false, std::memory_order_seq_cst);
     if (m_thread.joinable())
-      m_thread.join();
-    if (m_handle >= 0)
-      sceAudioOutClose(m_handle);
+    {
+      // The lease is released before the blocking sceAudioOutOutput call, so in_object can
+      // only be nonzero while the worker runs userspace ring-buffer math. Draining it is
+      // therefore scheduler-bound, never syscall-bound, and must complete before object
+      // members are destroyed: giving up here would be a use-after-free.
+      int drain_ms = 0;
+      bool drain_warned = false;
+      while (sh.in_object.load(std::memory_order_seq_cst) != 0)
+      {
+        usleep(1000);
+        if (!drain_warned && ++drain_ms >= 250)
+        {
+          std::printf("[audio] teardown waiting for in-flight worker read to drain\n");
+          std::fflush(stdout);
+          drain_warned = true;
+        }
+      }
+      // sceAudioOutOutput can block indefinitely; teardown must stay bounded.
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+      while (!sh.exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        usleep(1000);
+      if (sh.exited.load(std::memory_order_acquire))
+      {
+        m_thread.join();
+        if (sh.handle >= 0)
+          sceAudioOutClose(sh.handle);
+        return;
+      }
+      // Stuck (almost certainly inside sceAudioOutOutput). Object access is already proven
+      // drained, so detach and deliberately abandon the port: the worker keeps the shared
+      // state alive and exits on its own once sceAudioOutOutput returns.
+      m_thread.detach();
+      std::printf("[audio] worker did not exit within 500ms; detached, leaving port %d open\n", sh.handle);
+      std::fflush(stdout);
+      return;
+    }
+    if (sh.handle >= 0)
+      sceAudioOutClose(sh.handle);
   }
   void SetPaused(bool paused) override
   {
     m_paused = paused;
-    m_pause_requested.store(paused, std::memory_order_release);
+    m_shared->pause_requested.store(paused, std::memory_order_release);
     if (!paused)
       return;
     // cubeb_stream_stop() waits for the callback before AudioStream reallocates its ring buffer.
     // Readers publish themselves before checking the request, so a zero count is a real quiescent point.
-    while (m_in_read.load(std::memory_order_acquire) != 0)
+    while (m_shared->in_read.load(std::memory_order_acquire) != 0)
       usleep(100);
   }
 
@@ -81,28 +135,51 @@ public:
       s_inited = true;
     }
     // userId 255 = system, port type 0 = main, param 4 = FLOAT_STEREO (2 = S16_8CH, 1 = S16_STEREO)
-    m_handle = sceAudioOutOpen(255, 0, 0, GRAIN, m_sample_rate, 4);
-    std::printf("[audio] sceAudioOutOpen rate=%u ch=%u -> %x\n", m_sample_rate, (unsigned)m_output_channels, m_handle);
+    m_shared->handle = sceAudioOutOpen(255, 0, 0, GRAIN, m_sample_rate, 4);
+    std::printf("[audio] sceAudioOutOpen rate=%u ch=%u -> %x\n", m_sample_rate, (unsigned)m_output_channels, m_shared->handle);
     std::fflush(stdout);
-    if (m_handle < 0)
+    if (m_shared->handle < 0)
     {
       Error::SetString(error, "sceAudioOutOpen failed");
       return false;
     }
     BaseInitialize(&StereoSampleReaderImpl, stretch_enabled);
-    m_thread = std::thread([this]() { Run(); });
+    m_thread = std::thread([this, shared = m_shared]() { Run(shared); });
     return true;
   }
 
 private:
   static constexpr u32 GRAIN = 256;
-  void Run()
+
+  // The worker may outlive the object (detached after a bounded teardown wait), so every
+  // access to `this` happens under this lease. The double-check closes the race where the
+  // destructor clears owner_alive between the first load and the in_object increment.
+  static bool AcquireObjectAccess(OrbisAudioShared* sh)
+  {
+    if (!sh->owner_alive.load(std::memory_order_seq_cst))
+      return false;
+    sh->in_object.fetch_add(1, std::memory_order_seq_cst);
+    if (!sh->owner_alive.load(std::memory_order_seq_cst))
+    {
+      sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
+      return false;
+    }
+    return true;
+  }
+  static void ReleaseObjectAccess(OrbisAudioShared* sh)
+  {
+    sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
+  }
+
+  void Run(const std::shared_ptr<OrbisAudioShared>& shared)
   {
     alignas(64) float buf[GRAIN * 2];
     bool refill_completed = false;
-    while (!m_quit.load(std::memory_order_relaxed))
+    while (!shared->quit.load(std::memory_order_relaxed))
     {
-      if (m_pause_requested.load(std::memory_order_acquire))
+      if (!AcquireObjectAccess(shared.get()))
+        break;
+      if (shared->pause_requested.load(std::memory_order_acquire))
       {
         std::memset(buf, 0, sizeof(buf));
       }
@@ -110,8 +187,8 @@ private:
       {
         // Count each transition into PCSX2's underrun-refill state, not every silent grain while it refills:
         // startup is intentionally filling and is not an emulation starvation event. Needs proper testing.
-        m_in_read.fetch_add(1, std::memory_order_acq_rel);
-        if (!m_pause_requested.load(std::memory_order_acquire))
+        shared->in_read.fetch_add(1, std::memory_order_acq_rel);
+        if (!shared->pause_requested.load(std::memory_order_acquire))
         {
           const bool was_filling = m_filling;
           ReadFrames(buf, GRAIN);
@@ -126,10 +203,11 @@ private:
           // uninitialized or repeated stack audio in that window. needs proper testing.
           std::memset(buf, 0, sizeof(buf));
         }
-        m_in_read.fetch_sub(1, std::memory_order_acq_rel);
+        shared->in_read.fetch_sub(1, std::memory_order_acq_rel);
       }
+      ReleaseObjectAccess(shared.get());
       s_audio_grains.fetch_add(1, std::memory_order_relaxed);
-      const int out_rc = sceAudioOutOutput(m_handle, buf); // blocks until the previous grain has been consumed
+      const int out_rc = sceAudioOutOutput(shared->handle, buf); // blocks until the previous grain has been consumed
       if (out_rc < 0)
       {
         const uint64_t errors = s_audio_output_errors.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -143,11 +221,9 @@ private:
         usleep(10000); // a persistent output failure must not spin a Jaguar core
       }
     }
+    shared->exited.store(true, std::memory_order_release);
   }
-  int m_handle = -1;
-  std::atomic<bool> m_quit{false};
-  std::atomic<bool> m_pause_requested{false};
-  std::atomic<int> m_in_read{0};
+  std::shared_ptr<OrbisAudioShared> m_shared = std::make_shared<OrbisAudioShared>();
   std::thread m_thread;
 };
 } // namespace
