@@ -204,6 +204,19 @@ def main() -> int:
         ok &= expect("ISO reader error warns without failing", isoerr, (), 0,
                      "WARN ISO reader error evidence")
 
+
+        audioinitfail = root / "audioinitfail.log"
+        audioinitfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                 "[audio] sceAudioOutInit=80260001\n")
+        ok &= expect("audio initialization failure warns", audioinitfail, (), 0,
+                     "WARN audio initialization failure evidence")
+
+        audioopenfail = root / "audioopenfail.log"
+        audioopenfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                 "[audio] sceAudioOutOpen rate=48000 ch=2 -> 80260002\n")
+        ok &= expect("audio open failure warns", audioopenfail, (), 0,
+                     "WARN audio output open failure evidence")
+
         vkringfail = root / "vkringfail.log"
         vkringfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                               "[vkhw] big draw ring allocation failed; using the small ring only\n")

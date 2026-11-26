@@ -171,6 +171,20 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("CDVD read retry exhaustion evidence present; the command now completes with an emulated-drive error, but image/storage integrity needs investigation")
     if ev.has("isoFile error"):
         ev.warnings.append("ISO reader error evidence present; inspect image truncation, filesystem corruption, or out-of-range guest reads")
+    audio_init_bad = 0
+    audio_open_bad = 0
+    for line in ev.lines:
+        init_match = re.search(r"\[audio\] sceAudioOutInit=([0-9a-fA-F]+)", line)
+        if init_match and int(init_match.group(1), 16) not in (0, 0x8026000E):
+            audio_init_bad += 1
+        open_match = re.search(r"\[audio\] sceAudioOutOpen .* -> ([0-9a-fA-F]+)", line)
+        if open_match and int(open_match.group(1), 16) >= 0x80000000:
+            audio_open_bad += 1
+    if audio_init_bad:
+        ev.warnings.append(f"audio initialization failure evidence present in {audio_init_bad} line(s); output may be unavailable")
+    if audio_open_bad:
+        ev.warnings.append(f"audio output open failure evidence present in {audio_open_bad} line(s); output is unavailable")
+
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
     if ev.has("DEV9: flash backing allocation failed"):
