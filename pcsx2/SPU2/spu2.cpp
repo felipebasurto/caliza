@@ -240,6 +240,12 @@ void SPU2::InternalReset(bool psxmode)
 		memset(_spu2mem + 0x2800, 7, 0x10); // from BIOS reversal. Locks the voices so they don't run free.
 		memset(_spu2mem + 0xe870, 7, 0x10); // Loop which gets left over by the BIOS, Megaman X7 relies on it being there.
 
+		// Decoded blocks are cache entries over SPU2 RAM contents, not independent
+		// truth. Once the RAM image is zeroed, every validated decode is stale;
+		// otherwise a reset game can briefly replay audio left by the previous one.
+		for (PcmCacheEntry& entry : pcm_cache_data)
+			entry.Validated = false;
+
 		memset(DCFilterIn, 0, sizeof(DCFilterIn));
 		memset(DCFilterOut, 0, sizeof(DCFilterOut));
 

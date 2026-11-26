@@ -603,7 +603,7 @@ namespace SPU2Savestate
 // --------------------------------------------------------------------------------------
 //  the cache data size is determined by taking the number of adpcm blocks
 //  (2MB / 16) and multiplying it by the decoded block size (28 samples).
-//  Thus: pcm_cache_data = 7,340,032 bytes (ouch!)
+//  Thus: pcm_cache_data = 8,126,464 bytes with the compacted entry layout.
 //  Expanded: 16 bytes expands to 56 bytes [3.5:1 ratio]
 //    Resulting in 2MB * 3.5.
 
