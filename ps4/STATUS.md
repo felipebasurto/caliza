@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `364adfd`; binary artifact validated at that commit.
+Last updated: 2026-11-26 after commit `be0a489`; binary artifact validated at `8ba9983` (the analyzer-only commit does not change the binary).
 
 ## Current repository state
 
@@ -110,7 +110,7 @@ Last updated: 2026-11-26 after commit `364adfd`; binary artifact validated at th
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at the current uncommitted storage-durability fix (includes the RW-only fallback invariant from `3882a5f`):
+Built in the Linux x86_64 OpenOrbis container at commit `8ba9983` (includes the RW-only fallback invariant from `3882a5f`; `be0a489` only changes host-side log analysis):
 
 - ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,110,480 bytes**, SHA-256 `9e91b5746e051d10227c17f573bd08d374e83255dcd3ece22d13447ab05e9a09`.
 - eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `f022ab09c227e7f697b67d18c72385b75c065188687f699fb0274965ce0fff96`.
@@ -130,7 +130,7 @@ Built in the Linux x86_64 OpenOrbis container at the current uncommitted storage
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current storage-durability package is `candidate71` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
