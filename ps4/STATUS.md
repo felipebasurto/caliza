@@ -207,6 +207,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `050ef65` (includes exa
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
 | WSI decision host test | PASS | round-robin/image availability, scanout reuse, FIFO/immediate mode, GPU-flip fallback, and final-flip sign semantics |
+| Full host runner at 050ef65 | PASS | preserved in `ps4/logs/host-tests-050ef65.log` |
 | Package validator negative/positive tests | PASS | same |
 | Savestate structural validator negative/positive tests | PASS | same; use `ps4/tools/validate_savestate.py` on states pulled from console |
 | Real console boot | NOT RUN | no confirmed console access in this session |
