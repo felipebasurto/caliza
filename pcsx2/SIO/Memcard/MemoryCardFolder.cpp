@@ -2323,7 +2323,10 @@ void FolderMemoryCardAggregator::Open()
 	m_allocationFailedMask = 0;
 	for (int i = 0; i < TotalCardSlots; ++i)
 	{
-		if (EmuConfig.Mcd[i].Enabled && EmuConfig.Mcd[i].Type == MemoryCardType::Folder)
+		// Disabled folder slots still answer SIO size/read/write commands through
+		// this implementation; allocate them too so their blank-card behavior matches
+		// the former always-resident objects. Empty/file slots remain free.
+		if (EmuConfig.Mcd[i].Type == MemoryCardType::Folder)
 		{
 			if (FolderMemoryCard* card = EnsureCard(i))
 				card->Open(m_enableFiltering, m_lastKnownFilter);
