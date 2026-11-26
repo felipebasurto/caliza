@@ -451,9 +451,13 @@ s32 DoCDVDreadSector(u8* buffer, u32 lsn, int mode)
 
 	if (ret == 0 && blockDumpFile.IsOpened())
 	{
-		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW && mode != CDVD_MODE_2352)
+		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW)
 		{
-			u8 blockDumpBuffer[CD_FRAMESIZE_RAW];
+			// CD block dumps are always 2448 bytes, while most callers provide only the
+			// requested mode size. Re-read into a zeroed raw-sized scratch buffer so the
+			// dump contains real subchannel bytes when present and zero padding otherwise,
+			// never stack garbage or bytes beyond the caller's buffer. needs proper testing.
+			u8 blockDumpBuffer[CD_FRAMESIZE_RAW] = {};
 			if (CDVD->readSector(blockDumpBuffer, lsn, CDVD_MODE_2352) == 0)
 				blockDumpFile.WriteSector(blockDumpBuffer, lsn);
 		}
@@ -519,9 +523,9 @@ s32 DoCDVDgetBuffer(u8* buffer)
 		if (lastLSN >= td.lsn)
 			return 0;
 
-		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW && lastReadSize != 2352)
+		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW)
 		{
-			u8 blockDumpBuffer[CD_FRAMESIZE_RAW];
+			u8 blockDumpBuffer[CD_FRAMESIZE_RAW] = {};
 			if (CDVD->readSector(blockDumpBuffer, lastLSN, CDVD_MODE_2352) == 0)
 				blockDumpFile.WriteSector(blockDumpBuffer, lastLSN);
 		}

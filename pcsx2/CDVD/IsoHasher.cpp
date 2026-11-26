@@ -3,6 +3,7 @@
 
 #include "CDVD/CDVDcommon.h"
 #include "CDVD/IsoHasher.h"
+#include "CDVD/IsoFileFormats.h"
 #include "Host.h"
 
 #include "common/Error.h"
@@ -155,7 +156,9 @@ bool IsoHasher::ComputeTrackHash(Track& track, ProgressCallback* callback)
 	// use 2048 byte reads for DVDs, otherwise 2352 raw.
 	const int read_mode = m_is_cd ? CDVD_MODE_2352 : CDVD_MODE_2048;
 	const u32 sector_size = m_is_cd ? 2352 : 2048;
-	std::vector<u8> sector_buffer(sector_size);
+	// A 2448-block RAWQ/CHD source may write its full backing block even for a 2352-byte
+	// read contract. Keep the hash input unchanged, but allocate enough backing storage.
+	std::vector<u8> sector_buffer(m_is_cd ? CD_FRAMESIZE_RAW : sector_size);
 
 	const u32 update_interval = std::max<u32>(track.sectors / 100u, 1u);
 	callback->SetStatusText(
