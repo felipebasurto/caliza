@@ -175,6 +175,12 @@ def main() -> int:
         ok &= expect("sampling profiler backing failure warns without failing", proffail, (), 0,
                      "WARN sampling profiler backing allocation failed")
 
+        osdfail = root / "osdfail.log"
+        osdfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                           "[osd] backing allocation failed: overlay composition disabled\n")
+        ok &= expect("OSD backing failure warns without failing", osdfail, (), 0,
+                     "WARN OSD composition backing allocation failed")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

@@ -41,6 +41,7 @@ extern "C" int sceKernelAvailableFlexibleMemorySize(unsigned long long* size); /
 #include <memory> // 2026-10-08: the panels' picture reads (std::shared_ptr)
 #include <thread>
 #include <mutex>
+#include <new>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -1953,7 +1954,21 @@ static void OrbisGLOSD(bool generated = false)
 	snprintf(key, sizeof(key), "%s|%s|%d", have_text ? text : "", text2, graph ? 1 : 0);
 	if (strcmp(key, s_last) != 0 || (graph && s_hist_dirty))
 	{
-		static u32 s_buf[TW * TH];
+		// The overlay composition backing is needed only when the optional OSD is
+		// visible and its contents change. Keep it out of BSS for normal gameplay.
+		static u32* s_buf = nullptr;
+		static bool s_buf_allocation_failed = false;
+		if (!s_buf && !s_buf_allocation_failed)
+		{
+			s_buf = new (std::nothrow) u32[TW * TH];
+			if (!s_buf)
+			{
+				s_buf_allocation_failed = true;
+				printf("[osd] backing allocation failed: overlay composition disabled\n");
+			}
+		}
+		if (!s_buf)
+			return;
 		const auto width = [](const char* str) {
 			int tw = 0;
 			for (const char* c = str; *c; c++)
@@ -1967,7 +1982,7 @@ static void OrbisGLOSD(bool generated = false)
 		const int text_h = !have_text ? 0 : (text2[0] ? TEXT_H : 50);
 		s_box_w = graph ? TW : std::min(TW, std::max(width(text), width(text2)) + 30 - SCALE);
 		s_box_h = text_h + (graph ? GRAPH_H : 0);
-		std::fill(std::begin(s_buf), std::end(s_buf), 0xFF202020u);
+		std::fill_n(s_buf, TW * TH, 0xFF202020u);
 		if (have_text)
 		{
 			orbis_text_rgba(s_buf, TW, TH, 15, 12, text, SCALE, 0xFF00FFFFu);

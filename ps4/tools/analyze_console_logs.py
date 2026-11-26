@@ -145,6 +145,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("GPU profiler backing allocation failed; gpu-profiling telemetry is unavailable but rendering is unaffected")
     if ev.has("[prof] backing allocation failed"):
         ev.warnings.append("sampling profiler backing allocation failed; CPU-profiling telemetry is unavailable but emulation is unaffected")
+    if ev.has("[osd] backing allocation failed"):
+        ev.warnings.append("OSD composition backing allocation failed; overlay telemetry is unavailable but rendering is unaffected")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(
