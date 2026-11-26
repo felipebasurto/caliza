@@ -26,6 +26,12 @@
 #include <chrono>
 #include <new>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 static constexpr u32 MaxFolderDirectoryDepth = 64;
 
 // A helper function to parse the YAML file
@@ -88,6 +94,16 @@ static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const cha
 	return true;
 }
 
+
+static bool SyncFileData(std::FILE* file)
+{
+#ifdef _WIN32
+	return _commit(_fileno(file)) == 0;
+#else
+	return fsync(fileno(file)) == 0;
+#endif
+}
+
 static bool WriteBinaryFileAtomically(const std::string& fileName, const void* data, const size_t size)
 {
 	const std::string tempFileName = MetadataTempFileName(fileName);
@@ -96,7 +112,7 @@ static bool WriteBinaryFileAtomically(const std::string& fileName, const void* d
 	if (file)
 	{
 		ok = std::fwrite(data, size, 1, file) == 1;
-		if (std::fflush(file) != 0)
+		if (std::fflush(file) != 0 || !SyncFileData(file))
 			ok = false;
 		if (std::fclose(file) != 0)
 			ok = false;
@@ -116,7 +132,7 @@ static bool SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
 		return false;
 	}
 	ryml::emit_yaml(node, file);
-	bool ok = std::fflush(file) == 0;
+	bool ok = std::fflush(file) == 0 && SyncFileData(file);
 	if (std::fclose(file) != 0)
 		ok = false;
 	return CommitAtomicMetadataWrite(tempFileName, filename, ok);
