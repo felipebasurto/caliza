@@ -38,6 +38,38 @@ int main()
 		std::printf("bad P/Q CRC or reserved bytes\n");
 		return 1;
 	}
+	u8 raw96[96] = {};
+	cdvdWriteSubQ96(raw96, q);
+	u8 decoded[12] = {};
+	for (int byte = 0; byte < 12; byte++)
+	{
+		for (int bit = 0; bit < 8; bit++)
+		{
+			decoded[byte] <<= 1;
+			if (raw96[byte * 8 + bit] & 0x40)
+				decoded[byte] |= 1;
+		}
+	}
+	if (std::memcmp(decoded, prefix, sizeof(prefix)) != 0)
+	{
+		std::printf("unexpected mode-2448 Q payload\n");
+		return 1;
+	}
+	const u16 raw_crc = static_cast<u16>((decoded[10] << 8) | decoded[11]);
+	if (raw_crc != static_cast<u16>(~crc))
+	{
+		std::printf("bad mode-2448 complemented Q CRC: %04x\n", raw_crc);
+		return 1;
+	}
+	for (int i = 0; i < 96; i++)
+	{
+		if (raw96[i] & 0xbf)
+		{
+			std::printf("unexpected mode-2448 non-Q bit at %d\n", i);
+			return 1;
+		}
+	}
+
 	std::printf("cdvd subq packing: PASS\n");
 	return 0;
 }

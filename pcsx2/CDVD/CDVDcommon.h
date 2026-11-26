@@ -89,6 +89,32 @@ static inline void cdvdWriteSubQ16(u8* dst, const cdvdSubQ& subq) noexcept
 	dst[11] = static_cast<u8>(crc);
 }
 
+// Writes the interleaved 96-byte P-W suffix used by raw 2448-byte CDDA sectors. Q is
+// MSB-first in bit 6 of each byte; raw Q CRC bytes are complemented on disc. P and R-W are
+// clear because pregap/index-0 and CD-TEXT are not modeled. needs proper testing.
+static inline void cdvdWriteSubQ96(u8* dst, const cdvdSubQ& subq) noexcept
+{
+	for (int i = 0; i < 96; i++)
+		dst[i] = 0;
+	u8 q[12] = {};
+	q[0] = static_cast<u8>((subq.ctrl << 4) | (subq.adr & 0x0f));
+	q[1] = subq.trackNum;
+	q[2] = subq.trackIndex;
+	q[3] = subq.trackM;
+	q[4] = subq.trackS;
+	q[5] = subq.trackF;
+	q[7] = subq.discM;
+	q[8] = subq.discS;
+	q[9] = subq.discF;
+	const u16 crc = static_cast<u16>(~cdvdSubQCrc(q, 10));
+	q[10] = static_cast<u8>(crc >> 8);
+	q[11] = static_cast<u8>(crc);
+	for (int byte = 0; byte < 12; byte++)
+		for (int bit = 0; bit < 8; bit++)
+			if (q[byte] & (0x80 >> bit))
+				dst[byte * 8 + bit] |= 0x40;
+}
+
 struct cdvdTD
 { // NOT bcd coded
 	u32 lsn;
