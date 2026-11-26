@@ -14,9 +14,9 @@
 2. Add actionable failure UI/log if no executable memory source exists; consider explicit interpreter fallback.
 3. Hardware-test opt-in USB keyboard/mouse using `/data/PCSX2/flags/usbkbm`; enable by default only if the console matrix proves it safe.
 4. Either port the NFS file wrapping layer to PS4 or hide/report NFS as unsupported.
-5. Implement cover download using PS4-supported libSceHttp or another legal network path.
+5. Console-validate the new mbedTLS cover-download path, including offline behavior and certificate failure handling.
 6. Use the new audio underrun/output telemetry on hardware; honor latency settings where possible.
-7. Review savestate allocation peaks and large-state memory behavior.
+7. Console-validate streamed savestate loading and then reduce the save path's large serialized buffer if flexible memory remains tight.
 8. Finish WSI lifetime hardening for multi-device aliasing and swapchain recreation assumptions.
 
 ## P2 compatibility

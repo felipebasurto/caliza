@@ -16,15 +16,15 @@
 
 ## Input/audio/filesystem
 
-1. Player-1 disconnect previously left inputs stuck; candidate fixes it, needs console verification.
+1. Player-1 disconnect stuck-input handling is improved, but the PS4 pad connected-byte layout is unverified; the candidate fails open and logs the byte window for first console validation.
 2. USB keyboard/mouse remains off by default on PS4. `/data/PCSX2/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
-3. Cover downloads are unimplemented on PS4 (`sceHttp2*` stubs fail by design).
+3. Cover downloads now use the mbedTLS HTTPS client on PS4, but DNS/TLS/redirect behavior is still console-unverified.
 4. NFS game shares are effectively dead on PS4 because the PS5 file-wrap layer is not linked in; either port or explicitly hide/report unsupported.
 5. NVRAM lives beside BIOS; read-only custom BIOS folders can break NVRAM persistence.
 
 ## Memory/robustness
 
-1. Savestate loading can transiently allocate about twice the state file size through normal heap containers.
+1. Savestate loading now streams entry payloads instead of buffering the whole state file; the save path still uses a large serialized buffer and needs console memory validation.
 2. Compiler warning count is 148 in baseline and not triaged.
 3. No automatic fallback to interpreter if executable memory cannot be validated; allocation now fails clearly instead of accepting non-executable memory.
 

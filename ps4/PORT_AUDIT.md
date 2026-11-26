@@ -11,7 +11,7 @@
 7. Fixed player-1 disconnected-controller input state handling.
 8. Wired existing PS4 WSI health counters into the once-per-second telemetry ticker.
 9. Ran host tests: frame pacing 911/911, keyboard map, pad map, texture roots all pass.
-10. Rebuilt candidate package; final dynamic import audit: 260 imports, 0 unresolved, no known PS5-only imports.
+10. Rebuilt candidate package; current dynamic import audit: 257 imports, 0 unresolved, no known PS5-only imports.
 11. Added executable-memory runtime probes before accepting direct recompiler memory; unexecutable mappings are rejected instead of crashing later.
 12. Fixed WSI semaphore lifetime tracking and debug-allocation wire layout; direct-memory failure paths now unmap/release correctly.
 13. Added opt-in USB keyboard/mouse hardware-test path, accurate audio starvation/output telemetry, complete third-party package notices, and explicit PS4 NFS disablement while libc wrapping is unavailable.
@@ -25,7 +25,7 @@
 | `ps5/coreorbis/main-boot.cpp` PS4 branches | mixed necessary adaptation plus inherited PS5 flow | Keep; PS5 jailbreak now skipped on PS4; pad disconnect fixed |
 | Memory/JIT code in `pcsx2/Memory.cpp`, `common/Linux/LnxHostSys.cpp` | critical platform adaptation | Direct-memory aliasing is required for fastmem; do not regress |
 | MTVU/thread pinning/settings changes | optimization/configurability | Keep but hardware measurements still absent |
-| PS5-only compatibility stubs (`sceHttp2`, VideoOut2, Prospero version) | necessary boot adaptation | Functionally limited; document rather than pretend support |
+| PS5-only compatibility stubs (VideoOut2, Prospero version) | necessary boot adaptation | Functionally limited; document rather than pretend support. `sceHttp2` is no longer used for covers |
 | implicit BIOS-in-PKG fallback | legal/distribution hazard | Removed; explicit opt-in only |
 | unmerged JIT branch | valid direction, needed manual conflict resolution | Integrated conservatively with `#ifdef ORBIS_PS4` |
 
@@ -33,7 +33,7 @@
 
 - Baseline compile/link/package: `ps4/logs/baseline-build-metrics.txt`.
 - Candidate rebuild: `ps4/logs/candidate1-rebuild-validation.log`.
-- Final candidate dynamic imports: 260; unresolved: 0; known PS5-only: none.
+- Current candidate dynamic imports: 257; unresolved: 0; known PS5-only: none.
 - Host tests: `ps4/logs/host-tests-candidate1.log`.
 - Final candidate package includes `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, and vendored licenses; no BIOS files.
 
