@@ -47,6 +47,8 @@
 #include <sys/mount.h> // statfs: the texture packs' free space
 #ifdef ORBIS_PS4
 #include <sys/statfs.h> // PS4 port (AI-assisted): OpenOrbis' struct statfs (unused there, see below)
+#include "pcsx2/VMManager.h"
+extern "C" uint64_t ps4_probe_frames();
 #endif
 #include <sys/time.h>
 #include <thread>
@@ -1195,6 +1197,9 @@ bool orbis_frontend_watermark(const char* line1, const char* line2, const char* 
 
 // vk-285-50: the settings page's server; it lives until the app ends.
 static fe::WebServer* g_web = nullptr;
+#ifdef ORBIS_PS4
+static std::atomic<uint64_t> g_probe_shelf_frames{0};
+#endif
 
 // vk-285-51: the settings log's clock, in the console's time zone (as Clock() above).
 static long long SettingsLogLocalTime(long long utc)
@@ -1402,6 +1407,11 @@ bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag)
 	cfg.covers_dir = paths.covers_dir;
 	cfg.cache_dir = paths.cache_dir;
 	cfg.build_tag = build_tag ? build_tag : "";
+#ifdef ORBIS_PS4
+	cfg.probe_frames = ps4_probe_frames;
+	cfg.probe_shelf_frames = [] { return g_probe_shelf_frames.load(std::memory_order_relaxed); };
+	cfg.probe_running = [] { return VMManager::GetState() == VMState::Running; };
+#endif
 	cfg.port = 8844;
 	cfg.presets.assign(reinterpret_cast<const char*>(fe_presets), static_cast<size_t>(fe_presets_end - fe_presets));
 	cfg.change_log = paths.settings_log;
@@ -1842,6 +1852,9 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 			ok = false;
 			break;
 		}
+#ifdef ORBIS_PS4
+		g_probe_shelf_frames.fetch_add(1, std::memory_order_relaxed);
+#endif
 		slot ^= 1;
 		frames++;
 		if (!first_shown)

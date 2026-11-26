@@ -33,9 +33,21 @@ echo "[build-ps4] compiling (NARROW=$narrow LTO=$lto ORBIS_ORDER=$order)"
 # paraLLEl-GS as a second renderer when ps4/build-pgs.sh has built its libraries.
 pgs=0
 [ -s "$PSB/pgs/libs.txt" ] && pgs=1 && echo "[build-ps4] with paraLLEl-GS"
+build_commit="$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+build_tag="caliza-$build_commit"
+if [ -n "$(git -C "$PCSX2" status --porcelain 2>/dev/null)" ]; then
+    build_commit="$build_commit + uncommitted changes"
+    build_tag="$build_tag-dirty"
+fi
+mkdir -p "$PSB/obj"
+tag_file="$PSB/obj/.build-tag"
+if [ ! -f "$tag_file" ] || [ "$(cat "$tag_file")" != "$build_tag" ]; then
+    printf '%s\n' "$build_tag" > "$tag_file.tmp"
+    mv "$tag_file.tmp" "$tag_file"
+fi
 objects_file="$PSB/objects.txt"
 rm -f "$objects_file"
-make -C "$HERE" -f Makefile.ps4 -j"${JOBS:-20}" OBJDIR="$PSB/obj" OBJECTS_FILE="$objects_file" PGS=$pgs NARROW="$narrow" LTO="$lto" all "$objects_file" > "$PSB/compile.log" 2>&1 \
+make -C "$HERE" -f Makefile.ps4 -j"${JOBS:-20}" OBJDIR="$PSB/obj" OBJECTS_FILE="$objects_file" PGS=$pgs ORBIS_BUILD_TAG="$build_tag" NARROW="$narrow" LTO="$lto" all "$objects_file" > "$PSB/compile.log" 2>&1 \
     || { grep -E "error" "$PSB/compile.log" | head -40; exit 1; }
 tail -1 "$PSB/compile.log"
 
@@ -120,10 +132,6 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     cp "$PCSX2/ps5/third_party/mbedtls/LICENSE" "$stage/licenses/mbedtls-LICENSE.txt"
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-LGPL-2.1.txt" "$stage/licenses/libnfs-LGPL-2.1.txt"
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-BSD.txt" "$stage/licenses/libnfs-BSD.txt"
-    build_commit="$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-    if [ -n "$(git -C "$PCSX2" status --porcelain 2>/dev/null)" ]; then
-        build_commit="$build_commit + uncommitted changes"
-    fi
     {
         echo "Zeruko is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
         echo "Corresponding source: https://github.com/felipebasurto/zeruko"

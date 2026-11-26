@@ -444,6 +444,14 @@ WebServer::~WebServer()
 bool WebServer::Start(const WebConfig& cfg)
 {
 	m_cfg = cfg;
+	if (m_cfg.probe_frames && m_cfg.probe_shelf_frames && m_cfg.probe_running)
+	{
+		const auto started = std::chrono::system_clock::now().time_since_epoch();
+		m_probe_session = std::to_string(getpid()) + "-" +
+			std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(started).count());
+	}
+	else
+		m_probe_session.clear();
 	for (int i = 0; i < 8 && m_listen < 0; i++)
 	{
 		const int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -534,6 +542,7 @@ void WebServer::SetNowPlaying(const std::string& image_path)
 {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	m_now_playing = image_path.substr(image_path.rfind('/') + 1);
+	++m_game_sequence;
 }
 
 bool WebServer::Address(std::string& url, std::string& shown) const
@@ -758,6 +767,8 @@ void WebServer::Route(const Request& req, Response& res)
 	}
 	if (req.path == "/api/state" && req.method == "GET")
 		ApiState(res);
+	else if (req.path == "/api/probe" && req.method == "GET" && !m_probe_session.empty())
+		ApiProbe(res);
 	else if (req.path == "/api/achievements" && req.method == "GET")
 		ApiAchievements(res);
 	else if (req.path == "/api/achievement-badge" && req.method == "GET")
@@ -862,6 +873,24 @@ void WebServer::ApiState(Response& res)
 	}
 	res.body = "{\"app\":\"Zeruko\",\"build\":" + Json(m_cfg.build_tag) + ",\"test\":" + std::to_string(m_cfg.test_build) +
 		       ",\"language\":" + Json(LanguageCode()) + ",\"strings\":" + strings + ",\"mode\":" + Json(playing.empty() ? "menu" : "game") + ",\"playing\":" + game + "}";
+}
+
+void WebServer::ApiProbe(Response& res)
+{
+	bool game;
+	uint64_t game_sequence;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		game = !m_now_playing.empty();
+		game_sequence = m_game_sequence;
+	}
+	res.cache = "no-store";
+	res.body = "{\"build\":" + Json(m_cfg.build_tag) + ",\"session\":" + Json(m_probe_session) +
+		",\"mode\":" + Json(game ? "game" : "menu") +
+		",\"vm_running\":" + (m_cfg.probe_running() ? "true" : "false") +
+		",\"game_sequence\":" + std::to_string(game_sequence) +
+		",\"frames\":" + std::to_string(m_cfg.probe_frames()) +
+		",\"shelf_frames\":" + std::to_string(m_cfg.probe_shelf_frames()) + "}";
 }
 
 void WebServer::ApiGames(Response& res)

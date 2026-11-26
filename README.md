@@ -71,7 +71,7 @@ You can change resolution, configure memory cards, and manage texture packs per 
 
 Version 0.1.0 is an experimental preview. The PS4 build, package, and host tests have passed. The compatibility matrix identifies what still needs testing on real hardware. Performance varies by game, console model, and settings. Heavy games can be CPU-limited on a base PS4. PS4 Pro performance is still unmeasured.
 
-When reporting a problem, include the app version, PS4 model, system software version, game serial, storage type, and steps to reproduce it. Attach `boot.log` and `emulog.txt` from `/data/zeruko/logs/`, or from `/data/zeruko/` if they are stored directly there. Share logs with personal information removed. See the [console test procedure](ps4/COMPATIBILITY.md#required-console-smoke-protocol) and [known issues](ps4/KNOWN_ISSUES.md).
+When reporting a problem, include the app version, PS4 model, system software version, game serial, storage type, and steps to reproduce it. Attach `boot.log` and `emulog.txt` from `/data/zeruko/logs/`, or from `/data/zeruko/` if they are stored directly there. Share logs with personal information removed. See the [hardware testing guide](ps4/CONSOLE-QA.md), the [console test procedure](ps4/COMPATIBILITY.md#required-console-smoke-protocol) and [known issues](ps4/KNOWN_ISSUES.md).
 
 ## Build from source
 

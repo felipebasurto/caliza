@@ -23,6 +23,7 @@ run_cpp test_statewrapper_bounds ps4/tests/test_statewrapper_bounds.cpp -std=c++
 run_py package_stage_validator ps4/tools/test_validate_package_stage.py
 run_py savestate_validator ps4/tools/test_validate_savestate.py
 run_py console_log_analyzer ps4/tools/test_analyze_console_logs.py
+run_py console_smoke_runner ps4/tools/test_smoke_console.py
 echo '== shell_tool_syntax =='
 bash -n "$ROOT/ps4/build-ps4.sh" "$ROOT/ps4/make-pkg.sh" "$ROOT/ps4/tools/collect-console-logs.sh"
 echo 'shell syntax: PASS'

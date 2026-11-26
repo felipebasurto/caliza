@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,9 @@ struct WebConfig
 	std::string cache_dir;              // downloaded covers: <serial>.jpg
 	std::string token_path;             // unused since vk-285-118 (no key); kept for the host harness's build of the 1.50 page
 	std::string build_tag;
+	std::function<uint64_t()> probe_frames;
+	std::function<uint64_t()> probe_shelf_frames;
+	std::function<bool()> probe_running;
 	uint16_t port = 8844;               // the first port tried; the next seven if it is taken
 	std::vector<WebAsset> assets;
 	// vk-285-51: the recommended settings (assets/presets.ini: "[@global]" and "[<serial>]"
@@ -136,6 +140,7 @@ private:
 	CoverFinder& Covers();
 
 	void ApiState(Response& res);
+	void ApiProbe(Response& res);
 	void ApiGames(Response& res);
 	void ApiAchievements(Response& res);
 	void ApiAchievementBadge(const Request& req, Response& res);
@@ -152,6 +157,7 @@ private:
 	void Log(const Request& req, const std::string& what);
 
 	WebConfig m_cfg;
+	std::string m_probe_session;
 	int m_listen = -1;
 	uint16_t m_port = 0;
 	std::string m_token;
@@ -167,6 +173,7 @@ private:
 
 	mutable std::mutex m_mutex; // the fields below
 	std::string m_now_playing;
+	uint64_t m_game_sequence = 0;
 	std::vector<GameInfo> m_games;
 	double m_games_time = -1e9;
 	std::map<std::string, std::pair<uint64_t, std::string>> m_serials; // path -> (size, serial): USB drives are slow

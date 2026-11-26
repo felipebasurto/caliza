@@ -3008,8 +3008,21 @@ void VMManager::Internal::EntryPointCompilingOnCPUThread()
 	R5900SymbolImporter.OnElfLoadedInMemory();
 }
 
+#ifdef ORBIS_PS4
+// Process-lifetime counter. Savestate loads and guest resets must not rewind it.
+static std::atomic<uint64_t> s_ps4_probe_frames{0};
+
+extern "C" uint64_t ps4_probe_frames()
+{
+	return s_ps4_probe_frames.load(std::memory_order_relaxed);
+}
+#endif
+
 void VMManager::Internal::VSyncOnCPUThread()
 {
+#ifdef ORBIS_PS4
+	s_ps4_probe_frames.fetch_add(1, std::memory_order_relaxed);
+#endif
 	Pad::UpdateMacroButtons();
 
 	Patch::ApplyVsyncPatches();

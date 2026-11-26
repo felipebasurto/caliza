@@ -490,7 +490,7 @@ endif
 # PS4 (AI-assisted): PS5SX2's entry point (link-vk.sh compiles it there), with this build's tags.
 ORBIS_BUILD_TAG ?= ps4-poc
 MAIN_OBJ := $(OBJDIR)/shim/main-boot.o
-$(MAIN_OBJ): $(CO)/main-boot.cpp
+$(MAIN_OBJ): $(CO)/main-boot.cpp $(wildcard $(OBJDIR)/.build-tag)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -DORBIS_BUILD_TAG=\"$(ORBIS_BUILD_TAG)\" -DORBIS_TEST_BUILD=0 -DORBIS_DRIVER_REV=\"radv-gnm\" \
 	  -DORBIS_PCSX2_REV=\"ps4\" -c $< -o $@
