@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backing, and SPU2 reset cache invalidation; binary artifact validated at `d1e1566`.
+Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backing, and SPU2 reset cache invalidation; binary artifact validated at `23f86b2`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **108 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **110 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -122,6 +122,8 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 106. `9c2c523` — lazily allocate oversized PGIF FIFO backing.
 107. `195bb94` — record lazy-PGIF final candidate evidence.
 108. `d1e1566` — invalidate SPU2 decode cache on reset.
+109. `04d4911` — record SPU2-reset final candidate evidence.
+110. `23f86b2` — invalidate SPU2 cache after wrapped DMA writes.
 
 ## Completed work
 
@@ -152,11 +154,11 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `d1e1566` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, lazy MDEC/CDVD backing, lazy DEV9 flash backing, lazy CPU/GPU profiler backing, lazy folder-card/OSD backing, DEV9 flash bounds fixes, SPU2 PCM cache compaction, the PS4 2048 KiB MTVU backing cap, folder memory-card geometry/bounds hardening, cycle-safe metadata traversal, lazy PGIF backing, and SPU2 reset cache invalidation):
+Built in the Linux x86_64 OpenOrbis container at exactly `23f86b2` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, lazy MDEC/CDVD backing, lazy DEV9 flash backing, lazy CPU/GPU profiler backing, lazy folder-card/OSD backing, DEV9 flash bounds fixes, SPU2 PCM cache compaction, the PS4 2048 KiB MTVU backing cap, folder memory-card geometry/bounds hardening, cycle-safe metadata traversal, lazy PGIF backing, SPU2 reset cache invalidation, and wrapped-DMA cache invalidation):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,152,680 bytes**, SHA-256 `7d3244991beee1989406febdcdf034fc9bc5b6595cd1cb3a9438a8afc47296b8` (`readelf`: `.bss` **23,921,664 bytes**, down **524,288 bytes** from the prior artifact and **75,812,160 bytes** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `7437e5a124c1220bd9b7ed023b8d3b734c935d7c8919375660153c6073debd1c`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `78baacd280a7d59dd5d22e8a091c1c68418c30c704fb10e6201b4b364bb5d857`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,152,680 bytes**, SHA-256 `3653f102f26bba925ae995a63006988d46c9780b265bdb4bfe5b0ed6fd62dac9` (`readelf`: `.bss` **23,921,664 bytes**, down **524,288 bytes** from the prior artifact and **75,812,160 bytes** from the original 99,733,824-byte reference).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `87562ede2ab4bd4d8dc570f7df84828fcd7d44b4998c498bae64303adf9731fc`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `ed003e2501ec645ad36f96cc7d0a4155fd7faa65050db27982885f71ce4f242f`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -168,11 +170,11 @@ Built in the Linux x86_64 OpenOrbis container at exactly `d1e1566` (includes sto
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-spu2-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-spu2-wrap-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current memory-card-review package is `candidate77` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, and SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, and wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -221,7 +223,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `d1e1566` (includes sto
 
 - **PGIF backing:** the oversized 512 KiB PS1 GPU FIFO backing is no longer static BSS. It is allocated lazily on the first actual GP0 FIFO write, retries after VM reset if allocation failed, keeps FIFO size/DREQ semantics visible before allocation, and is surfaced as a fatal analyzer condition if allocation fails.
 
-- **SPU2 reset correctness:** resetting SPU2 RAM now invalidates every validated ADPCM decode-cache entry. This closes a stale-audio edge case where a freshly reset game could hit decode cache left by the previous session; the compacted cache layout itself was independently reviewed as lossless.
+- **SPU2 reset correctness:** resetting SPU2 RAM now invalidates every validated ADPCM decode-cache entry. This closes a stale-audio edge case where a freshly reset game could hit decode cache left by the previous session; the compacted cache layout itself was independently reviewed as lossless. Wrapped DMA writes that pass the dynamic/register region now invalidate the wrapped cacheable prefix too.
 
 - **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.
 - **Hot-order file:** exact symbol coverage in the current non-LTO candidate is 362/397. Most missing entries are stale PS5 recorder symbols (`ps5vk_record_*`) or STL hash-table instantiations whose mangled names changed when Orbis node allocators/libc++ details changed; `V_VolumeSlide::Update` is now `UpdateSlide`, and `__emutls_get_address` is absent. The order file still must not be treated as Jaguar-tuned.
