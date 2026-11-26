@@ -1455,6 +1455,14 @@ bool SaveStateBase::handleFreeze()
 	size_t handleCount = EmuConfig.HostFs ? R3000A::handles.size() : 0;
 	Freeze(handleCount);
 
+	// HostFS can only have maxfds live handles. Without this bound a crafted
+	// state can turn the load into a huge host-open/allocation loop.
+	if (IsLoading() && handleCount > static_cast<size_t>(R3000A::ioman::maxfds))
+	{
+		m_error = true;
+		return false;
+	}
+
 	if (!EmuConfig.HostFs) //if hostfs isn't enabled, skip loading/saving file handles
 		return IsOkay();
 

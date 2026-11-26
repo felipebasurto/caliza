@@ -346,12 +346,21 @@ void USB::DoPacketState(USBPacket* p, StateWrapper& sw, const std::array<bool, 2
 	{
 		p->ep = nullptr;
 
-		if (dev_index >= 0 && ep_index >= 0 && valid_devices[static_cast<u32>(dev_index)])
+		// A crafted state otherwise controls both the port index used for
+		// valid_devices/s_usb_device and the amount of data device handlers may
+		// copy through the fixed 8 KiB usb_buf staging buffer. Needs proper testing.
+		const bool validState = p->state >= USB_PACKET_UNDEFINED && p->state <= USB_PACKET_CANCELED;
+		const bool validPid = p->pid == USB_TOKEN_SETUP || p->pid == USB_TOKEN_IN || p->pid == USB_TOKEN_OUT;
+		const bool validBuffer = p->buffer_size <= sizeof(s_qemu_ohci->usb_buf) &&
+			p->actual_length >= 0 && static_cast<unsigned int>(p->actual_length) <= p->buffer_size;
+		const bool validQueued = !queued || p->state == USB_PACKET_QUEUED || p->state == USB_PACKET_ASYNC;
+		const bool validTarget = dev_index >= 0 && dev_index < static_cast<s32>(NUM_PORTS) &&
+			ep_index >= 0 && valid_devices[static_cast<u32>(dev_index)];
+
+		if (validTarget && validState && validPid && validBuffer && validQueued)
 		{
 			USBDevice* dev = s_usb_device[static_cast<u32>(dev_index)];
 			pxAssert(dev);
-
-			p->buffer_ptr = (p->buffer_size > 0) ? s_qemu_ohci->usb_buf : nullptr;
 
 			if (ep_index == 0)
 				p->ep = &dev->ep_ctl;
@@ -360,13 +369,21 @@ void USB::DoPacketState(USBPacket* p, StateWrapper& sw, const std::array<bool, 2
 			else if (ep_index < (1 + USB_MAX_ENDPOINTS + USB_MAX_ENDPOINTS))
 				p->ep = &dev->ep_out[ep_index - 1 - USB_MAX_ENDPOINTS];
 
-			if (p->ep && queued)
-				QTAILQ_INSERT_TAIL(&p->ep->queue, p, queue);
+			if (p->ep)
+			{
+				p->buffer_ptr = (p->buffer_size > 0) ? s_qemu_ohci->usb_buf : nullptr;
+				if (queued)
+					QTAILQ_INSERT_TAIL(&p->ep->queue, p, queue);
+			}
 		}
-		else
+
+		if (!p->ep)
 		{
 			p->buffer_ptr = nullptr;
 			p->buffer_size = 0;
+			p->actual_length = 0;
+			p->status = USB_RET_SUCCESS;
+			p->state = USB_PACKET_UNDEFINED;
 		}
 	}
 }
