@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `bb0d1ad`.
+Last updated: 2026-11-26 after commit `3159626`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **30 local commits** on top of the baseline.
+- Current candidate: **34 local commits** on top of the baseline.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -44,6 +44,10 @@ Last updated: 2026-11-26 after commit `bb0d1ad`.
 28. `b128266` — stream synchronous savestate writes.
 29. `9b5fb08` — integrate robustness review fixes.
 30. `bb0d1ad` — arm executable probe only after sigsetjmp.
+31. `8300eb8` — polish streaming savestate failure behavior.
+32. `ac6ebed` — expose NFS shares through CEMUPS4 netfs.
+33. `385df24` — add savestate validation tooling and PS4Mount folder integration.
+34. `3159626` — harden executable memory probing and release tracking.
 
 ## Completed work
 
@@ -54,7 +58,7 @@ Last updated: 2026-11-26 after commit `bb0d1ad`.
 | P0-HOSTTESTS | Repeatable host validation | done/pass | frame pacing 911/911, kbm, padmap, texture roots, package validator all pass |
 | P0-IMPORTS | Correct dynamic import audit | done/pass | current candidate: **257 dynamic imports, 0 unresolved, 0 known PS5-only** |
 | P1-JIT | Remove unsafe PS5-only JIT imports on PS4 | implemented, console-unverified | no `sceKernelJitCreate/MapSharedMemory` dynamic imports remain |
-| P1-MEMPROBE | Runtime executable-memory validation | implemented, console-unverified | direct-memory paths execute a guarded `ret` probe before use; probe faults are thread-isolated |
+| P1-MEMPROBE | Runtime executable-memory validation | implemented, console-unverified | PS4-scoped guarded `ret` probes cover first/middle/last pages; both direct-memory permission transitions are tried; release tracking no longer uses the null shared-mapping path |
 | P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
 | P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
@@ -68,11 +72,11 @@ Last updated: 2026-11-26 after commit `bb0d1ad`.
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container after commit `bb0d1ad`:
+Built in the Linux x86_64 OpenOrbis container after commit `3159626`:
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,831,608 bytes**, SHA-256 `f5b06b178a493776682aa33f5de4c4af54239e04b1466e990a8d474c975f5610`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,004,240 bytes**, SHA-256 `d090accd3b4cceb4ebffbcd21b6aac34d84a4a79ae80be8ea861171d9ff99cf9`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `29f0dc0c85b03d7949e7bb2c3c6c9e7b12974fed14fac501cb844cdb50cf7bdf`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,877,864 bytes**, SHA-256 `5f9f6762de08ec2696767de33cad7432cfa6166a8a3bd9fda2b2b96964e3d73f`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,004,240 bytes**, SHA-256 `adf3ef04beb18a335a0c4d364829d64bb3d42d05d68775042fa21c2882f3b608`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `8f2303a23ed31f5f73deabaa18c5d962c8bdeafd9de53a22a1083036165ce656`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -83,14 +87,15 @@ Built in the Linux x86_64 OpenOrbis container after commit `bb0d1ad`:
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate27-final-probe.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate31-memrelease.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Host tests | PASS | `ps4/logs/host-tests-integrate.log` |
+| Host tests | PASS | `ps4/logs/host-tests-memrelease.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
 | Package validator negative/positive tests | PASS | same |
+| Savestate structural validator negative/positive tests | PASS | same; use `ps4/tools/validate_savestate.py` on states pulled from console |
 | Real console boot | NOT RUN | no confirmed console access in this session |
 | Real game compatibility/performance | NOT RUN | no confirmed console access in this session |
 
@@ -113,7 +118,9 @@ Built in the Linux x86_64 OpenOrbis container after commit `bb0d1ad`:
 3. Confirm `[dbg] memmap`, `[jitprobe]`/memprobe messages, `[ps4wsi]`, `[audio]`, `[pad]`, `[threads]`, `[copies]`, and `[readbacks]`.
 4. Test boot to shelf, BIOS detection, one legal user-owned game, controller disconnect/reconnect, memory card, savestate, and one minutes-long gameplay sample.
 5. Test cover download both online and offline; preserve `[covers]`/`[https]` lines.
-6. Optional USB keyboard/mouse test: create empty flag file `/data/PCSX2/flags/usbkbm`, restart, and preserve `[kbm]` lines.
+6. Test a plain NFSv3 share with `PS5SX2/NfsShares=nfs://<server>/<export>`; preserve `[boot] ... network share` lines, scan one ISO, and note throughput/stutter.
+7. After a pad-combo savestate, pull the `.p2s` and run `python3 ps4/tools/validate_savestate.py --require-current-version <file>` on the host.
+8. Optional USB keyboard/mouse test: create empty flag file `/data/PCSX2/flags/usbkbm`, restart, and preserve `[kbm]` lines.
 
 ## Compatibility preservation rules for this session
 
