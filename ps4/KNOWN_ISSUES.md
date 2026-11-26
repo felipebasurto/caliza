@@ -18,7 +18,7 @@
 ## Storage correctness hardening status
 
 1. ISO and physical-disc sector reads now propagate device failures instead of returning stale static sector-buffer contents. Physical discs remain unsupported/unreachable on Orbis, but the ISO path is live and now converts corrupt/truncated image reads into retryable errors rather than silent corruption. Emulated retry exhaustion behavior is still an upstream-design gap and needs hardware/homebrew validation.
-2. Folder-card metadata/index writes now detect open/write/flush/close failures and surface them to console-log analysis as warnings. Save ordering/timestamps can still be incomplete if storage fails; metadata writes are not yet atomic tmp+rename transactions.
+2. Folder-card metadata/index writes now detect open/write/flush/close failures and surface them to console-log analysis as warnings. Save ordering/timestamps can still be incomplete if storage fails; metadata/index writes now use scanner-excluded temporary siblings plus rename; fsync-level crash durability is still not proven.
 3. Folder-card empty files can no longer claim stale shared FAT chains during the bounded flush rebuild. Malformed cards remain best-effort input, not fully benign hostile input.
 
 ## Input/audio/filesystem
