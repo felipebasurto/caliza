@@ -42,5 +42,12 @@ else
     echo "FAIL: console_log_analyzer" >&2
     status=1
 fi
+echo "== shell_tool_syntax =="
+if bash -n "$here/tools/collect-console-logs.sh" && bash -n "$here/build-ps4.sh"; then
+    echo "PASS: shell_tool_syntax"
+else
+    echo "FAIL: shell_tool_syntax" >&2
+    status=1
+fi
 echo "host test binaries: $out"
 exit "$status"
