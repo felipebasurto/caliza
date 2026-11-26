@@ -39,7 +39,7 @@ def make_stage(root: pathlib.Path) -> pathlib.Path:
     (stage / "SOURCE.txt").write_text(
         "Corresponding source: https://github.com/felipebasurto/PS4SX2\n"
         "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2\n"
-        "Build commit: test\n"
+        "Build commit: 0123456789ab\n"
     )
     (stage / "sce_module").mkdir(parents=True, exist_ok=True)
     (stage / "sce_module" / "libSceFios2.prx").write_bytes(b"x")
@@ -68,6 +68,10 @@ def main() -> int:
 
         stage = make_stage(root / "good")
         ok &= expect("valid redistributable stage", run(stage), 0, "PASS (redistributable BIOS-free build")
+
+        stage = make_stage(root / "dirty-provenance")
+        (stage / "SOURCE.txt").write_text((stage / "SOURCE.txt").read_text().replace("Build commit: 0123456789ab", "Build commit: 0123456789ab + uncommitted changes"))
+        ok &= expect("dirty build provenance is rejected", run(stage), 1, "exact clean build-commit")
 
         stage = make_stage(root / "missing-license")
         (stage / "licenses/libnfs-LGPL-2.1.txt").unlink()

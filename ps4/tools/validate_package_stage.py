@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sys
 
 REQUIRED_FILES = [
@@ -67,8 +68,8 @@ def main() -> int:
             fail(errors, "SOURCE.txt lacks the PS4SX2 corresponding-source URL")
         if "https://github.com/PCSX2/pcsx2" not in text:
             fail(errors, "SOURCE.txt lacks the upstream PCSX2 source URL")
-        if "Build commit:" not in text:
-            fail(errors, "SOURCE.txt lacks a build-commit line")
+        if not re.search(r"^Build commit: [0-9a-f]{12,40}$", text, re.MULTILINE):
+            fail(errors, "SOURCE.txt lacks an exact clean build-commit line")
 
     bios_dir = stage / "bios"
     personal = bios_dir.is_dir()
