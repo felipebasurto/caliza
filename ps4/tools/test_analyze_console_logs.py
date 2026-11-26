@@ -70,6 +70,11 @@ def main() -> int:
         audio.write_text(BAD_AUDIO)
         ok &= expect("audio errors warn without failing", audio, ("--expect-audio",), 0, "WARN audio counters")
 
+        nfsfail = root / "nfsfail.log"
+        nfsfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                           "[boot] boot: network share nfs://192.168.1.2/ps2 at /net/share1: doesn't answer (not added to scan)\n")
+        ok &= expect("unchecked NFS share fails expectation", nfsfail, ("--expect-nfs",), 1, "missing required evidence for NFS share")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

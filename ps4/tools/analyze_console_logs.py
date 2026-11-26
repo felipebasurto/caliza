@@ -103,7 +103,9 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("savestate write did not use the streaming path (expected only for threaded/non-pad saves)")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
-    nfs_left_out = ev.count("network share left out") + sum(" (left out)" in line for line in ev.matching("network share "))
+    nfs_left_out = ev.count("network share left out") + sum(
+        (" (left out)" in line or " (not added to scan)" in line) for line in ev.matching("network share ")
+    )
     require(ev, args.expect_nfs, "NFS share", nfs_connected and nfs_left_out == 0, "connected /net/shareN line and no left-out share")
     if args.expect_nfs and nfs_left_out:
         ev.warnings.append(f"{nfs_left_out} network share(s) were left out")
