@@ -658,12 +658,16 @@ struct OrbisPadPort
   // vk-285-116: what each PS2 input was last set to (released at the start) and the sticks; only changes are sent.
   float last_value[orbis_padmap::T_COUNT] = {};
   uint8_t last_stick[4] = {128, 128, 128, 128};
+  bool force_full_update = true;
 };
 
 static void orbis_pad_reset_cache(OrbisPadPort &p)
 {
   std::fill(std::begin(p.last_value), std::end(p.last_value), 0.0f);
   p.last_stick[0] = p.last_stick[1] = p.last_stick[2] = p.last_stick[3] = 128;
+  // Recreated PCSX2 pad objects start neutral. Neutrality must be republished too;
+  // merely matching the host cache would leave a physically held input invisible.
+  p.force_full_update = true;
 }
 
 // vk-285-109: whether the controller behind a handle is connected: the byte 76 bytes into the pad data (after
@@ -734,18 +738,19 @@ static void orbis_pad_apply(OrbisPadPort &p, const OrbisPadData &d)
   const Out o = Apply(cfg, st);
   for (int t = 0; t < T_COUNT; t++)
   {
-    if (o.value[t] != p.last_value[t])
+    if (p.force_full_update || o.value[t] != p.last_value[t])
     {
       Pad::SetControllerState(p.port, bind[t], o.value[t]);
       p.last_value[t] = o.value[t];
     }
   }
   uint8_t *const last = p.last_stick;
-  if (o.lx != last[0]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_L_RIGHT, PadDualshock2::Inputs::PAD_L_LEFT, o.lx, 128);
-  if (o.ly != last[1]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_L_DOWN, PadDualshock2::Inputs::PAD_L_UP, o.ly, 128);
-  if (o.rx != last[2]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_R_RIGHT, PadDualshock2::Inputs::PAD_R_LEFT, o.rx, 128);
-  if (o.ry != last[3]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_R_DOWN, PadDualshock2::Inputs::PAD_R_UP, o.ry, 128);
+  if (p.force_full_update || o.lx != last[0]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_L_RIGHT, PadDualshock2::Inputs::PAD_L_LEFT, o.lx, 128);
+  if (p.force_full_update || o.ly != last[1]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_L_DOWN, PadDualshock2::Inputs::PAD_L_UP, o.ly, 128);
+  if (p.force_full_update || o.rx != last[2]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_R_RIGHT, PadDualshock2::Inputs::PAD_R_LEFT, o.rx, 128);
+  if (p.force_full_update || o.ry != last[3]) orbis_pad_axis(p.port, PadDualshock2::Inputs::PAD_R_DOWN, PadDualshock2::Inputs::PAD_R_UP, o.ry, 128);
   last[0] = o.lx; last[1] = o.ly; last[2] = o.rx; last[3] = o.ry;
+  p.force_full_update = false;
 }
 
 // vk-285-113: one controller's rumble: what the game last asked for (or nothing: Rumble off, or leaving for the menu),
