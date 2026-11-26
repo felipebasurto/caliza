@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after shared folder-card file-chain bounding, production StateWrapper regression tests, and package reproducibility validation; binary artifact validated at `72ec0be`.
+Last updated: 2026-11-26 after hostile GIF/USB savestate hardening, collision-safe atomic folder metadata writes, CDVD diagnostics, rumble retry correction, pause-race audio correction, and package reproducibility validation; binary artifact validated at `b3c6e4d`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **137 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **162 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -181,13 +181,13 @@ Last updated: 2026-11-26 after shared folder-card file-chain bounding, productio
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `474b844` (includes hostile-savestate hardening with element-size-scaled container bounds, bounded folder-card shared file chains plus the reviewed empty-file ownership fix, exact fixed-memory savestate validator checks, atomic folder-card metadata/index writes, stale-metadata deletion diagnostics, CDVD/ISO read-failure propagation, bounded mode-2368 transfers, retry-exhaustion error completion, and partial asynchronous ISO-read rejection):
+Built in the Linux x86_64 OpenOrbis container at exactly `b3c6e4d` (includes hostile-savestate hardening with element-size-scaled container bounds, GIF packet-queue validation, USB OHCI/control-transfer/packet-queue hardening, bounded folder-card shared file chains plus collision-safe atomic metadata writes, CDVD/ISO read-failure propagation, bounded mode-2368 transfers, retry-exhaustion error completion, partial asynchronous ISO-read rejection, bounded rumble retry, and pause-race audio silence):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,240,744 bytes**, SHA-256 `c1851f1ab085735e916388aa83653063e1d15bd69e463a6f10fe5904c7b17296` (`readelf`: `.bss` remains approximately **23.9 MiB**, down about **75.8 MiB** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `9bbf3d1a0da54e52a721755c9ca2cf10a9a1cf5c7d6acd3020c5ccbe9016a9cb`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `1dd1fb0d30a9d70e6853db272ffe15f9b08f331b8c7d0e9ef6c442b399ee4d30`.
+- ELF `/root/pcsx2ps4-build/build/link/pcsx2`: **148,251,776 bytes**, SHA-256 `17115a89470b497f8d06a4372740b80d577aab22df5960d6aae55ef580fe6e34` (`.bss` remains approximately **23.9 MiB**, down about **75.8 MiB** from the original 99,733,824-byte reference).
+- eboot `/root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `d2a6f7e0421afefd7a45705d3169046428b49659da235f14c03baf46299aeb6a`.
+- PKG `/root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `88d569d8a292595804c567728946a8bedf6ffebc2fe7335d69a65ff892750a60`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
-- Embedded package provenance in staged `SOURCE.txt`: `Build commit: 474b844ef876`.
+- Embedded package provenance in staged `SOURCE.txt`: `Build commit: b3c6e4dabd02`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
@@ -198,10 +198,10 @@ Built in the Linux x86_64 OpenOrbis container at exactly `474b844` (includes hos
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate474b844.log` |
+| Candidate compile/link/package at final documented commit | PASS | container log `/tmp/ps4-package-b3c6.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `1dd1fb0d...4d30` in `ps4/logs/pkg-repro-474b844.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `88d569d8...0a60` in the container reproducibility check |
 | Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`, and hostile-savestate/memory-card close hardening in `ps4/logs/host-tests-cd5da76.log`, and hostile-handle hardening in `ps4/logs/host-tests-2bb0446.log`, and shared file-chain/StateWrapper regression coverage in `ps4/logs/host-tests-72ec0be.log`, and exact-size savestate/folder-metadata diagnostics plus CDVD hardening in `ps4/logs/host-tests-474b844.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
