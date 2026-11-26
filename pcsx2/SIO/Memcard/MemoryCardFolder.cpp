@@ -2018,9 +2018,7 @@ void FolderMemoryCard::AttemptToRecreateIndexFile(const std::string& directory) 
 
 	root["$ROOT"]["timeModified"] << currTime;
 
-	auto file = FileSystem::OpenManagedCFile(Path::Combine(directory, "_pcsx2_index").c_str(), "w");
-	if (file)
-		ryml::emit_yaml(tree, file.get());
+	(void)SaveYAMLToFile(Path::Combine(directory, "_pcsx2_index").c_str(), root);
 }
 
 std::string FolderMemoryCard::GetDisabledMessage(uint slot) const
