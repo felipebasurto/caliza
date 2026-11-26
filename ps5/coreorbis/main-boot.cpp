@@ -518,7 +518,7 @@ static void* orbis_browser_thread(void*)
   double age = 0.0;
   orbis_web_request_stats(base, age);
   const double t0 = orbis_mono_seconds();
-  printf("[browser] opening http://%s/ in the PS5's browser\n", shown.c_str());
+  printf("[browser] opening http://%s/ in the system browser\n", shown.c_str());
   fflush(stdout);
   const int rc = sceSystemServiceLaunchWebBrowser(url.c_str(), nullptr);
   printf("[browser] sceSystemServiceLaunchWebBrowser returned 0x%x after %.0f ms\n", static_cast<unsigned>(rc),
@@ -1180,9 +1180,9 @@ static void *orbis_pad_thread(void *)
             }
             else if (!g_orbis_browser_busy.exchange(true))
             {
-              printf("[pad] L2 + D-pad down held for 2 s: opening the settings page in the PS5's browser\n");
+              printf("[pad] L2 + D-pad down held for 2 s: opening the settings page in the system browser\n");
               fflush(stdout);
-              orbis_eventf("settings page: opening it in the PS5's browser (L2 + D-pad down held for 2 s)");
+              orbis_eventf("settings page: opening it in the system browser (L2 + D-pad down held for 2 s)");
               orbis_open_settings_browser();
             }
           }
@@ -2020,7 +2020,7 @@ std::string OrbisUserAgentProduct()
     fw = s_console_info.substr(at + 9);
     fw = fw.substr(0, fw.find(' '));
   }
-  return std::string("Caliza/") + ORBIS_BUILD_TAG + " (PS5 " + fw + ")";
+  return std::string("Caliza/") + ORBIS_BUILD_TAG + " (PS4 " + fw + ")";
 }
 
 static std::string orbis_console_survey()
@@ -3386,7 +3386,7 @@ int main()
 #else
   // PS4 port (AI-assisted): GoldHEN/the loader already provides the process privileges this port needs;
   // the etaHEN broker and legacy CMD ports are PS5-specific. Avoid their imports and the boot delay here.
-  ORBIS_PS4_STEP("PS5 jailbreak probe skipped");
+  ORBIS_PS4_STEP("Orbis exploit probe skipped");
 #endif
   // A PS5 can keep /data hidden until the jailbreak; this is that build's first chance at the rebrand copy. On PS4 it
   // already ran above and returns at once. It must precede the flags, the frontend and EmuFolders below.
@@ -3925,8 +3925,8 @@ int main()
     const int set = s_base_si.GetIntValue("Caliza", "GameLanguage", -1);
     const bool fixed = set >= 0 && set <= 7;
     g_orbis_ps2_language = fixed ? set : fe::Ps2LanguageFor(ps5);
-    printf("[boot] game language: %s (%s; PS5 language %d)\n", fe::Ps2LanguageName(g_orbis_ps2_language),
-      fixed ? "Caliza/GameLanguage" : "the PS5's", ps5);
+    printf("[boot] game language: %s (%s; console language %d)\n", fe::Ps2LanguageName(g_orbis_ps2_language),
+      fixed ? "Caliza/GameLanguage" : "the console's", ps5);
   }
 
   {

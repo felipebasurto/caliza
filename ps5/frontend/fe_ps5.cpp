@@ -947,7 +947,7 @@ bool SystemKeyboardReady()
 			std::printf("[ime] libSceImeDialog: a function is missing\n");
 	}
 #endif
-	std::printf("[ime] the PS5's keyboard is %s\n", k.init ? "available" : "not available: the panel's own keyboard is used");
+	std::printf("[ime] the system keyboard is %s\n", k.init ? "available" : "not available: the panel's own keyboard is used");
 	std::fflush(stdout);
 	return k.init != nullptr;
 }
