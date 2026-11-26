@@ -1151,6 +1151,14 @@ bool SaveStateBase::cdvdFreeze()
 		// If cdvd.Readed is cleared it means we need to load the SeekToSector (ie, a
 		// seek is in progress!)
 
+		// The 2368/2448 staging buffer is deliberately outside the frozen layout, so a
+		// sector that was fetched but not yet DMA'd when the state was saved no longer
+		// exists on load. Refetch it through the normal read path; the completion
+		// interrupt then retries the pending DMA against real data. Modes staging through
+		// the frozen cdr.Transfer keep their serialized bytes. needs proper testing.
+		if (cdvd.WaitingDMA && !cdvd.Reading && cdvd.BlockSize > static_cast<int>(sizeof(cdr.Transfer)))
+			cdvd.Reading = true;
+
 		if (cdvd.Reading)
 			cdvd.ReadErr = DoCDVDreadTrack(cdvd.SeekCompleted ? cdvd.CurrentSector : cdvd.SeekToSector, cdvd.ReadMode);
 	}
