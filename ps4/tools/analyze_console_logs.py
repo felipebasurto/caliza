@@ -45,6 +45,20 @@ def last_int(pattern: str, lines: list[str], group: str) -> int | None:
     return found
 
 
+def max_int(pattern: str, lines: list[str], group: str) -> int | None:
+    found = None
+    rx = re.compile(pattern)
+    for line in lines:
+        match = rx.search(line)
+        if match:
+            try:
+                value = int(match.group(group))
+            except (ValueError, IndexError):
+                continue
+            found = value if found is None else max(found, value)
+    return found
+
+
 def require(ev: Evidence, enabled: bool, name: str, ok: bool, detail: str) -> None:
     if ok:
         ev.notes.append(f"PASS {name}: {detail}")
@@ -158,6 +172,15 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
 
     kbm = ev.count("[kbm]") > 0
     require(ev, args.expect_kbm, "USB keyboard/mouse", kbm, "at least one [kbm] line")
+
+    mtvu_hwm = max_int(r"\[mtvu\].*backlog hwm (\d+) KB", ev.lines, 1)
+    mtvu_stalls = max_int(r"\[mtvu\].*ringstalls=(\d+)", ev.lines, 1)
+    if mtvu_hwm is not None:
+        ev.notes.append(f"INFO MTVU ring: maximum observed backlog high-water mark {mtvu_hwm} KB")
+        if mtvu_hwm >= 1536 and (mtvu_stalls or 0) > 0:
+            ev.warnings.append(
+                f"MTVU ring backlog reached {mtvu_hwm} KB with ring stalls; the fixed 2048 KiB PS4 cap may be pressuring this scene"
+            )
 
     gameplay = ev.count("[threads]") > 0 or ev.count("[copies]") > 0 or ev.count("[readbacks]") > 0
     require(ev, args.expect_gameplay, "gameplay telemetry", gameplay, "[threads], [copies], or [readbacks] lines after gameplay")

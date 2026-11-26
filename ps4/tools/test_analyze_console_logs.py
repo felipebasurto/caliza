@@ -121,6 +121,12 @@ def main() -> int:
         ok &= expect("memory-card close failure is fatal", mcdclosefail, (), 1,
                      "memory-card cache write failure evidence")
 
+        mtvu = root / "mtvu.log"
+        mtvu.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                        "[mtvu] per s: kicks=10 coalesced=0 ringstalls=2 laps ee/vu=1/1 wakeups=3 spin/sleep=1/0 | backlog hwm 1792 KB\n")
+        ok &= expect("MTVU cap pressure warns without failing", mtvu, (), 0,
+                     "fixed 2048 KiB PS4 cap may be pressuring this scene")
+
         nvramfail = root / "nvramfail.log"
         nvramfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                              "Failed to save NVRAM to scph10000.nvm: read-only file system\n")
