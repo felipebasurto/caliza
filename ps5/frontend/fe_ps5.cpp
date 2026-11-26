@@ -30,6 +30,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <memory>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -166,41 +168,91 @@ public:
 	bool Start(Mixer* mixer)
 	{
 		const int init = sceAudioOutInit(); // PCSX2's output calls it again later and ignores the error
-		m_handle = sceAudioOutOpen(255, 0, 0, kGrain, SoundBank::kRate, 4);
-		std::printf("[frontend] sound: sceAudioOutInit %x, port %x\n", static_cast<unsigned>(init), static_cast<unsigned>(m_handle));
-		if (m_handle < 0)
+		m_shared->handle = sceAudioOutOpen(255, 0, 0, kGrain, SoundBank::kRate, 4);
+		std::printf("[frontend] sound: sceAudioOutInit %x, port %x\n", static_cast<unsigned>(init), static_cast<unsigned>(m_shared->handle));
+		if (m_shared->handle < 0)
 			return false;
 		m_mixer = mixer;
-		m_thread = std::thread([this]() { Run(); });
+		m_thread = std::thread([this, shared = m_shared]() { Run(shared); });
 		return true;
 	}
 
 	void Stop()
 	{
-		m_quit.store(true);
+		auto& sh = *m_shared;
+		sh.quit.store(true, std::memory_order_release);
+		sh.owner_alive.store(false, std::memory_order_seq_cst);
 		if (m_thread.joinable())
-			m_thread.join();
-		if (m_handle >= 0)
-			sceAudioOutClose(m_handle);
-		m_handle = -1;
+		{
+			// The lease is released before the blocking sceAudioOutOutput call, so in_object can
+			// only be nonzero during userspace mixing. Draining it is scheduler-bound and must
+			// finish before the mixer is destroyed by the caller. needs proper testing.
+			while (sh.in_object.load(std::memory_order_seq_cst) != 0)
+				usleep(1000);
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+			while (!sh.exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+				usleep(1000);
+			if (sh.exited.load(std::memory_order_acquire))
+			{
+				m_thread.join();
+				if (sh.handle >= 0)
+					sceAudioOutClose(sh.handle);
+			}
+			else
+			{
+				// sceAudioOutOutput appears stuck. Detach and deliberately abandon the port:
+				// the worker only touches shared state afterwards and exits on its own.
+				m_thread.detach();
+				std::printf("[frontend] sound worker stuck in output; detached, leaving port %d open\n", sh.handle);
+			}
+		}
+		else if (sh.handle >= 0)
+			sceAudioOutClose(sh.handle);
+		sh.handle = -1;
 	}
 
 private:
 	static constexpr unsigned kGrain = 256;
 
-	void Run()
+	// Shared with the worker, which may outlive this object after a stuck-output detach.
+	struct Shared
+	{
+		std::atomic<bool> quit{false};
+		std::atomic<bool> owner_alive{true};
+		std::atomic<int> in_object{0};
+		std::atomic<bool> exited{false};
+		int handle = -1;
+	};
+
+	static bool AcquireMixAccess(Shared* sh)
+	{
+		if (!sh->owner_alive.load(std::memory_order_seq_cst))
+			return false;
+		sh->in_object.fetch_add(1, std::memory_order_seq_cst);
+		if (!sh->owner_alive.load(std::memory_order_seq_cst))
+		{
+			sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
+			return false;
+		}
+		return true;
+	}
+
+	void Run(std::shared_ptr<Shared> sh)
 	{
 		alignas(64) float buf[kGrain * 2];
-		while (!m_quit.load(std::memory_order_relaxed))
+		while (!sh->quit.load(std::memory_order_relaxed))
 		{
+			if (!AcquireMixAccess(sh.get()))
+				break;
 			m_mixer->Mix(buf, static_cast<int>(kGrain));
-			sceAudioOutOutput(m_handle, buf);
+			sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
+			sceAudioOutOutput(sh->handle, buf);
 		}
+		sh->exited.store(true, std::memory_order_release);
 	}
 
 	Mixer* m_mixer = nullptr;
-	int m_handle = -1;
-	std::atomic<bool> m_quit{false};
+	std::shared_ptr<Shared> m_shared = std::make_shared<Shared>();
 	std::thread m_thread;
 };
 
