@@ -181,13 +181,13 @@ Last updated: 2026-11-26 after shared folder-card file-chain bounding, productio
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `8b254c8` (includes hostile-savestate hardening, bounded folder-card shared file chains plus the reviewed empty-file ownership fix, exact fixed-memory savestate validator checks, folder-card metadata write-failure diagnostics, and CDVD/ISO read-failure propagation):
+Built in the Linux x86_64 OpenOrbis container at exactly `32c3ce0` (includes hostile-savestate hardening with element-size-scaled container bounds, bounded folder-card shared file chains plus the reviewed empty-file ownership fix, exact fixed-memory savestate validator checks, folder-card metadata write-failure diagnostics, and CDVD/ISO read-failure propagation):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,229,512 bytes**, SHA-256 `32d4ff238a03394f32ad85fa4b021413abd0bf4a69c7a905cb26ab552183738f` (`readelf`: `.bss` remains approximately **23.9 MiB**, down about **75.8 MiB** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `dd0177c0cfbc7f6e3b5f4518197c88b0d733dd7dea93b15c8508d16e1a631147`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `f26fa0ec9c41de9ea0a6ac2118019a8ca7fc3cc9b8464c4b24d3ccfe226b3af0`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,229,616 bytes**, SHA-256 `656c4bb6c19194f73624559c43eecc45d2210599315dc8b67cb11687014b2473` (`readelf`: `.bss` remains approximately **23.9 MiB**, down about **75.8 MiB** from the original 99,733,824-byte reference).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `55086a20de0addf6082ef84574e128489d4fa76ea7c0a9c53e1d82a8fe06cc20`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `8373d8c532b96d56969e22eea8b7d0631e9974499c2bd7f1437754ecda1e70b8`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
-- Embedded package provenance in staged `SOURCE.txt`: `Build commit: 8b254c8de6f6`.
+- Embedded package provenance in staged `SOURCE.txt`: `Build commit: 32c3ce05117d`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
@@ -198,7 +198,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `8b254c8` (includes hos
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate8b254c8.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate32c3ce0.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `f26fa0ec...b3af0` in `ps4/logs/pkg-repro-8b254c8.log` |
