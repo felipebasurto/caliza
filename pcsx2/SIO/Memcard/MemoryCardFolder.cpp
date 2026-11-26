@@ -104,6 +104,29 @@ static bool SyncFileData(std::FILE* file)
 #endif
 }
 
+static bool TruncateHostFileIfNeeded(const std::string& fileName, u32 expectedSize)
+{
+	std::FILE* file = FileSystem::OpenCFile(fileName.c_str(), "r+b");
+	if (!file)
+		return true; // missing files are created/filled by the normal data-write path
+	const s64 currentSize = FileSystem::FSize64(file);
+	bool ok = currentSize >= 0;
+	if (ok && currentSize > static_cast<s64>(expectedSize))
+	{
+		if (std::fflush(file) != 0)
+			ok = false;
+#ifdef _WIN32
+		if (_chsize_s(_fileno(file), expectedSize) != 0)
+#else
+		if (ftruncate(fileno(file), static_cast<off_t>(expectedSize)) != 0)
+#endif
+			ok = false;
+	}
+	if (std::fclose(file) != 0)
+		ok = false;
+	return ok;
+}
+
 static bool WriteBinaryFileAtomically(const std::string& fileName, const void* data, const size_t size)
 {
 	const std::string tempFileName = MetadataTempFileName(fileName);
@@ -2444,6 +2467,13 @@ void FileAccessHelper::WriteIndex(const std::string& baseFolderName, MemoryCardF
 		// Write out the changes
 		SaveYAMLToFile(indexFileName.c_str(), index);
 	}
+
+	// A guest shrink is recorded in the directory entry/index, not by writing file data.
+	// Keep the backing host file at the same logical length or the stale tail will be
+	// rediscovered as file data on the next card load. needs proper testing.
+	const std::string hostFileName(Path::Combine(folderName, cleanName));
+	if (!TruncateHostFileIfNeeded(hostFileName, entry->entry.data.length))
+		Console.ErrorFmt("FolderMcd: could not truncate '{}' to {} bytes", hostFileName, entry->entry.data.length);
 }
 
 std::FILE* FileAccessHelper::ReOpen(const std::string_view folderName, MemoryCardFileMetadataReference* fileRef, bool writeMetadata /* = false */)
