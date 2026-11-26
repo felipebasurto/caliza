@@ -358,12 +358,19 @@ u8* cdvdGetSector(u32 sector, s32 mode)
 {
 	static u8 buffer[2352 * sectors_per_read];
 
+	if (src == nullptr)
+		return nullptr;
+
 	// Align to cache block
 	u32 sector_block = sector & ~(sectors_per_read - 1);
 
 	if (!cdvdCacheFetch(sector_block, buffer))
+	{
 		if (cdvdReadBlockOfSectors(sector_block, buffer))
 			cdvdCacheUpdate(sector_block, buffer);
+		else
+			return nullptr;
+	}
 
 	if (src->GetMediaType() >= 0)
 	{
@@ -404,6 +411,8 @@ s32 cdvdDirectReadSector(u32 sector, s32 mode, u8* buffer)
 	{
 		if (cdvdReadBlockOfSectors(sector_block, data))
 			cdvdCacheUpdate(sector_block, data);
+		else
+			return -1;
 	}
 
 	if (src->GetMediaType() >= 0)

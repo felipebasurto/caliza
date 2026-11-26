@@ -324,12 +324,10 @@ static s32 ISOreadSector(u8* tempbuffer, u32 lsn, int mode)
 		return -1;
 
 	if (mode == CDVD_MODE_2352)
-	{
-		iso.ReadSync(tempbuffer, lsn);
-		return 0;
-	}
+		return iso.ReadSync(tempbuffer, lsn) < 0 ? -1 : 0;
 
-	iso.ReadSync(cdbuffer, lsn);
+	if (iso.ReadSync(cdbuffer, lsn) < 0)
+		return -1;
 
 
 	u8* pbuffer = cdbuffer;

@@ -260,7 +260,10 @@ static s32 DISCgetBuffer(u8* dest)
 		return 0;
 	}
 
-	memcpy(dest, cdvdGetSector(csector, cmode), csize);
+	u8* sector_data = cdvdGetSector(csector, cmode);
+	if (sector_data == nullptr)
+		return -1;
+	memcpy(dest, sector_data, csize);
 
 	return 0;
 }

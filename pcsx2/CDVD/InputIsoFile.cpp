@@ -67,7 +67,11 @@ int InputIsoFile::ReadSync(u8* dst, uint lsn)
 		return -1;
 	}
 
-	return m_reader->ReadSync(dst + m_blockofs, lsn, 1);
+	const int result = m_reader->ReadSync(dst + m_blockofs, lsn, 1);
+	// Partial compressed/flat reads otherwise look successful while leaving stale bytes in the
+	// caller's sector buffer. All InputIsoFile callers treat negative as failure and never use
+	// the positive byte count. needs proper testing with truncated/corrupt compressed images.
+	return result == static_cast<int>(m_blocksize) ? result : -1;
 }
 
 void InputIsoFile::BeginRead2(uint lsn)
