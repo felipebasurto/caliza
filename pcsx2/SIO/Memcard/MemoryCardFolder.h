@@ -4,6 +4,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -533,7 +534,8 @@ class FolderMemoryCardAggregator
 {
 protected:
 	static const int TotalCardSlots = 8;
-	FolderMemoryCard m_cards[TotalCardSlots];
+	std::unique_ptr<FolderMemoryCard> m_cards[TotalCardSlots];
+	u32 m_allocationFailedMask = 0;
 
 	// stores the specifics of the current filtering settings, so they can be
 	// re-applied automatically when memory cards are reloaded
@@ -543,6 +545,12 @@ protected:
 public:
 	FolderMemoryCardAggregator();
 	virtual ~FolderMemoryCardAggregator() = default;
+
+protected:
+	FolderMemoryCard* GetCard(uint slot);
+	FolderMemoryCard* EnsureCard(uint slot);
+
+public:
 
 	void Open();
 	void Close();

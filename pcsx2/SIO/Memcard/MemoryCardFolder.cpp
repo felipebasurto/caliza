@@ -23,6 +23,7 @@
 
 #include <optional>
 #include <chrono>
+#include <new>
 
 // A helper function to parse the YAML file
 static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
@@ -2281,18 +2282,52 @@ FolderMemoryCardAggregator::FolderMemoryCardAggregator()
 	// Unix platforms seem to use 1024 by default.
 	_setmaxstdio(1024);
 #endif
+}
 
-	for (uint i = 0; i < TotalCardSlots; ++i)
+FolderMemoryCard* FolderMemoryCardAggregator::GetCard(uint slot)
+{
+	if (slot >= static_cast<uint>(TotalCardSlots))
+		return nullptr;
+	return m_cards[slot].get();
+}
+
+FolderMemoryCard* FolderMemoryCardAggregator::EnsureCard(uint slot)
+{
+	if (FolderMemoryCard* existing = GetCard(slot))
+		return existing;
+	if (slot >= static_cast<uint>(TotalCardSlots))
+		return nullptr;
+
+	const u32 bit = 1u << slot;
+	if (m_allocationFailedMask & bit)
+		return nullptr;
+
+	std::unique_ptr<FolderMemoryCard> card(new (std::nothrow) FolderMemoryCard());
+	if (!card)
 	{
-		m_cards[i].SetSlot(i);
+		m_allocationFailedMask |= bit;
+		Console.Error("McdSlot %u: [Folder] backing allocation failed; folder memory card unavailable", slot);
+		return nullptr;
 	}
+
+	card->SetSlot(slot);
+	m_cards[slot] = std::move(card);
+	return m_cards[slot].get();
 }
 
 void FolderMemoryCardAggregator::Open()
 {
+	// Folder cards are optional and each one carries FAT/superblock backing of its
+	// own. Allocate backing only for slots currently configured as folder cards;
+	// file-card slots must not pay that memory merely because the aggregator exists.
+	m_allocationFailedMask = 0;
 	for (int i = 0; i < TotalCardSlots; ++i)
 	{
-		m_cards[i].Open(m_enableFiltering, m_lastKnownFilter);
+		if (EmuConfig.Mcd[i].Enabled && EmuConfig.Mcd[i].Type == MemoryCardType::Folder)
+		{
+			if (FolderMemoryCard* card = EnsureCard(i))
+				card->Open(m_enableFiltering, m_lastKnownFilter);
+		}
 	}
 }
 
@@ -2300,7 +2335,14 @@ void FolderMemoryCardAggregator::Close()
 {
 	for (int i = 0; i < TotalCardSlots; ++i)
 	{
-		m_cards[i].Close();
+		if (m_cards[i])
+		{
+			m_cards[i]->Close();
+			// A closed folder card reloads its FAT/superblock state from the host
+			// folder on the next Open. Release the backing instead of keeping all
+			// eight optional cards resident for the process lifetime.
+			m_cards[i].reset();
+		}
 	}
 }
 
@@ -2311,33 +2353,41 @@ void FolderMemoryCardAggregator::SetFiltering(const bool enableFiltering)
 
 s32 FolderMemoryCardAggregator::IsPresent(uint slot)
 {
-	return m_cards[slot].IsPresent();
+	FolderMemoryCard* card = GetCard(slot);
+	return card ? card->IsPresent() : false;
 }
 
 void FolderMemoryCardAggregator::GetSizeInfo(uint slot, McdSizeInfo& outways)
 {
-	m_cards[slot].GetSizeInfo(outways);
+	if (FolderMemoryCard* card = GetCard(slot))
+		card->GetSizeInfo(outways);
 }
 
 bool FolderMemoryCardAggregator::IsPSX(uint slot)
 {
-	return m_cards[slot].IsPSX();
+	FolderMemoryCard* card = GetCard(slot);
+	return card ? card->IsPSX() : false;
 }
 
 s32 FolderMemoryCardAggregator::Read(uint slot, u8* dest, u32 adr, int size)
 {
-	return m_cards[slot].Read(dest, adr, size);
+	FolderMemoryCard* card = GetCard(slot);
+	return card ? card->Read(dest, adr, size) : 0;
 }
 
 s32 FolderMemoryCardAggregator::Save(uint slot, const u8* src, u32 adr, int size)
 {
-	const s32 saveResult = m_cards[slot].Save(src, adr, size);
+	FolderMemoryCard* card = GetCard(slot);
+	if (!card)
+		return 0;
+
+	const s32 saveResult = card->Save(src, adr, size);
 	if (saveResult)
 	{
 		std::chrono::duration<float> elapsed = std::chrono::system_clock::now() - last;
 		if (elapsed > std::chrono::seconds(5))
 		{
-			const std::string_view filename = Path::GetFileName(m_cards[slot].GetFolderName());
+			const std::string_view filename = Path::GetFileName(card->GetFolderName());
 			Host::AddIconOSDMessage(fmt::format("MemoryCardSave{}", slot), ICON_PF_MEMORY_CARD,
 				fmt::format(TRANSLATE_FS("MemoryCard", "Memory Card '{}' was saved to storage."), filename),
 				Host::OSD_INFO_DURATION);
@@ -2351,22 +2401,26 @@ s32 FolderMemoryCardAggregator::Save(uint slot, const u8* src, u32 adr, int size
 
 s32 FolderMemoryCardAggregator::EraseBlock(uint slot, u32 adr)
 {
-	return m_cards[slot].EraseBlock(adr);
+	FolderMemoryCard* card = GetCard(slot);
+	return card ? card->EraseBlock(adr) : 0;
 }
 
 u64 FolderMemoryCardAggregator::GetCRC(uint slot)
 {
-	return m_cards[slot].GetCRC();
+	FolderMemoryCard* card = GetCard(slot);
+	return card ? card->GetCRC() : 0;
 }
 
 void FolderMemoryCardAggregator::NextFrame(uint slot)
 {
-	m_cards[slot].NextFrame();
+	if (FolderMemoryCard* card = GetCard(slot))
+		card->NextFrame();
 }
 
 bool FolderMemoryCardAggregator::ReIndex(uint slot, const bool enableFiltering, const std::string& filter)
 {
-	if (m_cards[slot].ReIndex(enableFiltering, filter))
+	FolderMemoryCard* card = GetCard(slot);
+	if (card && card->ReIndex(enableFiltering, filter))
 	{
 		SetFiltering(enableFiltering);
 		m_lastKnownFilter = filter;

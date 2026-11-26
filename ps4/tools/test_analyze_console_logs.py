@@ -133,6 +133,12 @@ def main() -> int:
         ok &= expect("savestate corruption is fatal", statecorrupt, (), 1,
                      "savestate corruption evidence present")
 
+        folderbackfail = root / "folderbackfail.log"
+        folderbackfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                  "McdSlot 0: [Folder] backing allocation failed; folder memory card unavailable\n")
+        ok &= expect("folder memory-card backing failure is fatal", folderbackfail, (), 1,
+                     "FAIL folder memory-card backing allocation failed")
+
         mdecfail = root / "mdecfail.log"
         mdecfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                             "MDEC backing allocation failed; MDEC DMAs will complete without decoded data\n")
