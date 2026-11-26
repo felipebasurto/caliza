@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validated at the current uncommitted warning-fix state.
+Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validated at commit `12ec337`.
 
 ## Current repository state
 
@@ -110,7 +110,7 @@ Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validat
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at the current warning-triage state (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
+Built in the Linux x86_64 OpenOrbis container at commit `12ec337` (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
 
 - ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,110,424 bytes**, SHA-256 `b2216fdc373824db5a4e5116793e18bca26f771441e801e852c1c750314734dd`.
 - eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `8c96edfe3f595cc0eee9488efe3e3443ead2945a5b9799044e0d037768eadd0a`.
