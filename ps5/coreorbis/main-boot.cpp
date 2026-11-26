@@ -3761,8 +3761,8 @@ int main()
   // (vtlb init + RAM/ROM mappings + handlers) up front, before any recompile.
   printf("[boot] SysMemory::Reset (pre-initialize)\n");
   fflush(stdout);
-  SysMemory::Reset();
-  printf("[boot] SysMemory::Reset done\n");
+  const bool pre_memory_reset = SysMemory::Reset();
+  printf("[boot] SysMemory::Reset %s\n", pre_memory_reset ? "done" : "FAILED");
   fflush(stdout);
   orbis_wait_for_game_file(params.filename); // vk-285-134
   const VMBootResult res = VMManager::Initialize(params, &err);

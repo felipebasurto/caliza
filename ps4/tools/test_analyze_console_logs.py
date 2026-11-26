@@ -62,6 +62,10 @@ def main() -> int:
         bad.write_text(BAD_MEM)
         ok &= expect("direct-memory failure is fatal", bad, (), 1, "direct memory allocation failed")
 
+        reset = root / "badreset.log"
+        reset.write_text("[boot] SysMemory::Reset FAILED\n")
+        ok &= expect("memory reset failure is fatal", reset, (), 1, "VM memory initialization failed")
+
         audio = root / "audio.log"
         audio.write_text(BAD_AUDIO)
         ok &= expect("audio errors warn without failing", audio, ("--expect-audio",), 0, "WARN audio counters")

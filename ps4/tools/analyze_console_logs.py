@@ -69,6 +69,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     require(ev, True, "memory map", memmap_ok, "successful direct data/code mapping line")
     if ev.has("[dbg] memmap: direct alloc failed"):
         ev.failures.append("direct memory allocation failed; fastmem/JIT memory map is not valid")
+    if ev.has("[boot] SysMemory::Reset FAILED") or ev.has("[dbg] sysmem: AllocateMemoryMap failed") or ev.has("[dbg] sysmem: vtlb_Core_Alloc failed"):
+        ev.failures.append("VM memory initialization failed; boot should stop rather than reset invalid memory")
     rejected = ev.count("did not execute; rejecting")
     if rejected:
         ev.warnings.append(f"executable-memory probe rejected a candidate mapping {rejected} time(s); inspect firmware/loader behavior")
