@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `a6fbbf6`; binary artifact validated at that commit.
+Last updated: 2026-11-26 after commit `1846c3b`; binary artifact validated at that commit. The subsequent commit is documentation-only.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **62 local commits** on top of the baseline after this documentation checkpoint.
+- Current candidate: **64 local commits** on top of the baseline after this documentation checkpoint.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -76,6 +76,8 @@ Last updated: 2026-11-26 after commit `a6fbbf6`; binary artifact validated at th
 60. `6b4129d` — use the PS4 title path when re-executing into the menu.
 61. `8506f16` — write NVRAM atomically.
 62. `a6fbbf6` — fall back to the backup savestate when slot one is unusable.
+63. `3882a5f` — enforce RW-only memory in the interpreter fallback.
+64. `1846c3b` — record robustness review and candidate evidence.
 
 ## Completed work
 
@@ -106,11 +108,11 @@ Last updated: 2026-11-26 after commit `a6fbbf6`; binary artifact validated at th
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at commit `a6fbbf6`:
+Built in the Linux x86_64 OpenOrbis container at commit `1846c3b` (includes the RW-only fallback invariant from `3882a5f`):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,095,896 bytes**, SHA-256 `05acaa12eb7d9f687c5bcd74e973cd2d9ff10a9f9ebc35f4eb8cf0774be6bed1`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `da7037680abdc61d9a56d7796b0552afeab7bd087c8acc3345609d4bc665b7ce`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `fd1c01a74a878fba3d693595bad45bf331ae9418edd4b92ca0a0ac66ebc6077a`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,095,672 bytes**, SHA-256 `5bcf0ded417dc3985d4499fabbb4141377f36fc99a75c0b58308c5ee30de7c02`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `6d5e083dbf512cc30688439291556fff2d96fd914beb8432f8aac867723f4bc3`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `e70d618f633bf568e1bcf72ec77553b6ecf3246fc41ce994c91a94c41b89b15f`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -122,10 +124,10 @@ Built in the Linux x86_64 OpenOrbis container at commit `a6fbbf6`:
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate62-pre-docfinal.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate64-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `a6fbbf6` produced identical PKG SHA-256 `fd1c01a7...c6077a`; `candidate62-pre-docfinal.log` plus repeat command output |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; `candidate64-final.log` plus repeat command output |
 | Host tests | PASS | current validator/analyzer/WSI/shell suite passes in `ps4/logs/host-tests-latest.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
@@ -166,7 +168,7 @@ Built in the Linux x86_64 OpenOrbis container at commit `a6fbbf6`:
 - **Boot failure contract:** `CPUThreadInitialize` and pre-initialize `SysMemory::Reset` failures now terminate the boot cleanly after persistent boot-trace milestones. The analyzer reports the latest persistent `[pcsx2]` milestone and warns when it is a failure milestone.
 - **Memory-probe review integration:** the production probe no longer faults inside libc `memcpy`, disarms before handler restoration, and the PS4 fallback tracks the exact successful in/out mapping pointer rather than relying on failed kernel calls to preserve hints. The diagnostic memprobe now uses PS4 direct-memory type 0, fails closed if its guard cannot install, confines longjmp to the probing thread, chains unrelated faults, and releases JIT/alias test reservations.
 - **WSI decision extraction:** pure helpers now pin the existing acquire/reuse and flip-fallback semantics. No behavior change is intended; the extraction is host-tested and the PS4 package still builds with 257 dynamic imports, 0 unresolved, and no known PS5-only imports.
-- **Interpreter resilience:** adversarial review of commit `852de7f` found the runtime memory-truth gating sound: settings cannot re-enable JIT when code memory is nonexecutable, generated VIF/scanline paths are forced to C, and ordering selects interpreters before use. One residual VU0 raw-config check was fixed in `9277d24`.
+- **Interpreter resilience:** adversarial review of commit `852de7f` found the runtime memory-truth gating sound: settings cannot re-enable JIT when code memory is nonexecutable, generated VIF/scanline paths are forced to C, and ordering selects interpreters before use. One residual VU0 raw-config check was fixed in `9277d24`; the retained fallback mapping is explicitly demoted back to RW in `3882a5f` so the non-executable invariant is real rather than nominal.
 - **Storage/input/WSI review integration:** savestate validation now matches loader-required entries (`GS.bin` required, `USB.bin` optional); extra controllers retry hotplug; rumble state resets on handle changes; guest power-off routes back to menu; retired swapchains are destroyed on failed recreation; NVRAM persistence is periodic and atomic; backup savestates are reachable if slot one is missing or unusable.
 
 - **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.

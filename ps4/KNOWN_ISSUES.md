@@ -30,6 +30,11 @@
 4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
 5. JIT shared-memory ownership remains incomplete on the PS5-only opt-in path because the kernel handle is lost; do not reintroduce those imports on PS4.
 
+## User-data layout
+
+1. `OrbisDir()` still uses a flat `/data/PCSX2` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files.
+2. Forced interpreter configuration is a runtime execution gate, not a durable user-visible configuration policy. `CHECK_*JITMEM` prevents generated code execution even if settings are later edited, but some non-fatal decisions may still read raw config values; audit them before adding new JIT consumers.
+
 ## Documentation/evidence gaps
 
 1. README game compatibility is inherited and not backed by logs in this repository.
