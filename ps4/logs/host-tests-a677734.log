@@ -1,0 +1,99 @@
+== test_fg_pacing ==
+PASS: 911 of 911 checks passed (frame generation's pacing)
+== test_kbm_map ==
+kbm map: PASS
+== test_pad_map ==
+test_pad_map: all checks passed
+== test_texture_roots ==
+  ok    the drives with anything on them: 4
+  ok    the first is usb0
+  ok    an empty drive slot is not a drive
+  ok    PS5SX2/textures on a drive: a texture folder on /tmp/texroots-QspIxf/mnt/usb0
+  ok    textures at the drive's top: a texture folder on /tmp/texroots-QspIxf/mnt/usb0
+  ok    names in other cases, path as on the drive: a texture folder on /tmp/texroots-QspIxf/mnt/usb1
+  ok    PCSX2/textures: a texture folder on /tmp/texroots-QspIxf/mnt/usb2
+  ok    a pack copied to the drive's top: a texture pack on /tmp/texroots-QspIxf/mnt/usb2
+  ok    a pack in PS5SX2/: a texture pack on /tmp/texroots-QspIxf/mnt/usb2
+  ok    a serial folder without a replacements folder is no pack
+  ok    a game with no pack
+  ok    no serial
+  ok    the setting wins over a drive: the PS5SX2/TexturesDir setting
+  ok    the setting without this game: the drives are still looked at
+  ok    the setting alone, no drives
+  ok    no drives, no setting
+  ok    folders that aren't there
+all passed
+== test_wsi_decision ==
+wsi decision tests: PASS
+== test_spu2_pcm_cache ==
+spu2 pcm cache invariants: PASS
+== test_cdvd_subq ==
+cdvd subq packing: PASS
+== test_statewrapper_bounds ==
+statewrapper bounds: PASS
+== package_stage_validator ==
+PASS: valid redistributable stage
+PASS: dirty build provenance is rejected
+PASS: matching expected commit passes
+PASS: mismatched expected commit is rejected
+PASS: missing LGPL license is rejected
+PASS: BIOS without personal warning is rejected
+PASS: SPRX in redistributable stage is rejected
+PASS: BIOS outside bios directory is rejected
+PASS: explicit personal BIOS stage passes
+package-stage validator tests: PASS
+== savestate_validator ==
+PASS: valid savestate
+PASS: bad magic
+PASS: trailing bytes are tolerated like the loader
+PASS: missing required entry
+PASS: duplicate entries are tolerated like the loader
+PASS: missing GS entry is fatal
+PASS: missing USB entry is optional
+PASS: short fixed memory entry is fatal
+PASS: expanded IOP memory size is accepted
+PASS: oversized internal structures are fatal
+PASS: truncated payload
+savestate validator tests: PASS
+== console_log_analyzer ==
+PASS: complete smoke evidence passes
+PASS: missing optional evidence fails when requested
+PASS: direct-memory failure is fatal
+PASS: memory reset failure is fatal
+PASS: audio errors warn without failing
+PASS: unchecked NFS share fails expectation
+PASS: latest boot-trace milestone is reported
+PASS: missing boot-trace milestones are informational
+PASS: failure boot-trace milestone is fatal
+PASS: CPUThreadInitialize failure is fatal
+PASS: canonical SysMemory allocation failure is fatal
+PASS: nonexecutable fallback warns without failing
+PASS: memory-card write failure is fatal
+PASS: memory-card close failure is fatal
+PASS: folder memory-card close failure is fatal
+PASS: folder memory-card close pending-write loss is fatal
+PASS: folder memory-card metadata write failure warns
+PASS: MTVU cap pressure warns without failing
+PASS: NVRAM save failure warns without failing
+PASS: savestate corruption is fatal
+PASS: folder memory-card backing failure is fatal
+PASS: folder memory-card write failure is fatal
+PASS: recovered folder memory-card write failure warns
+PASS: post-recovery folder memory-card write failure is fatal
+PASS: MDEC backing failure is fatal
+PASS: CDVD cache backing failure warns without failing
+PASS: CDVD retry exhaustion warns without failing
+PASS: ISO reader error warns without failing
+PASS: NFS boot-check timeout warns
+PASS: audio initialization failure warns
+PASS: audio open failure warns
+PASS: big Vulkan diagnostic ring failure warns without failing
+PASS: DEV9 flash backing failure warns without failing
+PASS: GPU profiler backing failure warns without failing
+PASS: sampling profiler backing failure warns without failing
+PASS: OSD backing failure warns without failing
+PASS: PGIF backing failure is fatal
+console-log analyzer tests: PASS
+== shell_tool_syntax ==
+shell syntax: PASS
+host test binaries: /tmp/ps4sx2-host-tests.gB27N7
