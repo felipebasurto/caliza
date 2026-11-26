@@ -1,4 +1,4 @@
-// Caliza PS4 schema inventory tests. Self-contained: build settings_schema.cpp and catalog_model.cpp with this file.
+// Caliza schema inventory tests. Self-contained: build settings_schema.cpp and catalog_model.cpp with this file.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../../caliza/core/settings_schema.h"
@@ -263,9 +263,9 @@ void TestInventory()
 	CHECK(kSchemaVersion == 1);
 	CHECK(Groups().size() == 21);
 	CHECK(Settings().size() == 116);
-	CHECK(Actions().size() == 48);
-	CheckHash(SettingsInventoryHash(), 0x1018ad1133192469ull, "settings");
-	CheckHash(ActionsInventoryHash(), 0x8578c0967cd24a83ull, "actions");
+	CHECK(Actions().size() == 49);
+	CheckHash(SettingsInventoryHash(), 0x6212791117f35040ull, "settings");
+	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
 	std::set<std::string> ids, keys, pinned;

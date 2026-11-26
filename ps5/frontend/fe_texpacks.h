@@ -1,18 +1,18 @@
-// PS5 port frontend: HD texture packs from archive.org (2026-10-05, AI-assisted).
+// Orbis frontend: HD texture packs from a community catalog (2026-10-05, AI-assisted; catalog switch 2026-11-26).
 //
-// swordpdf: "i wanna be able to press square on a game and download the texture pack, unzip it if needed and place it on
-// the appropriate folder, automatically", archive.org first. archive.org's "PCSX2 HD Texture Packs" item
-// (pcsx2-hd-texture-packs) holds one RAR 5 file a game, named "<title> (<region>) [<serial>] <edition>.rar", with
-// "<pack>/<serial>/replacements/..." inside (some also have the maker's dumps/ beside replacements/). Its file list
-// (archive.org's metadata API) gives each file's size and MD5.
+// The catalog is EmuCoreX-Textures' textures.json (kTexturePackCatalogUrl): one entry a pack, with its name, game,
+// serials, authors, credits, source page, licence note, the ZIP's size and SHA-256, and for a ZIP of 2 GiB or more its
+// ordered parts (each with its own size and SHA-256; concatenated they are the ZIP). Each pack belongs to its creator; the
+// catalog keeps the original source and credits, and Caliza shows them beside the pack.
 //
-// On the sheet's "HD texture pack" row (Square on a game): Cross downloads the game's pack while the shelf is up, in
-// 32 MB ranges that pick up where they stopped (a game starts the app over, so a download goes on at the next shelf),
-// checks it against archive.org's MD5, unpacks it with libarchive (ps5/third_party/libarchive) into
-// textures/.caliza-unpack, moves <serial>/ into the textures folder, writes a marker file there and turns on Texture
-// replacements in the game's settings file. Triangle twice cancels a download or removes a pack this app installed.
-// The platform (HTTP, free space, the popup) is behind TexturePackPlatform: fe_ps5.cpp on the console, fe_host.cpp
-// and host/texpacks_test.cpp on a PC. Needs proper testing on the console.
+// For a game: download the chosen pack in 32 MB ranges that pick up where they stopped (a game starts the app over, so a
+// download goes on at the next menu), check each part and the whole file against the catalog's SHA-256, unpack it with
+// libarchive (ps5/third_party/libarchive) into textures/.caliza-unpack, move <serial>/ into the textures folder, write a
+// marker file there and turn on Texture replacements in the game's settings file. A ZIP or RAR the user already has can be
+// installed the same way (Import): it is read where it is and never moved or deleted. Only a pack this app installed (its
+// marker) can be removed.
+// The platform (HTTP, free space, the popup) is behind TexturePackPlatform: fe_ps5.cpp on the console and
+// host/texpacks_test.cpp on a PC. Needs proper testing on the console.
 //
 // Copyright (C) 2026 swordpdf
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -32,50 +32,64 @@
 
 namespace fe
 {
-// The archive.org item and where its files are.
-constexpr const char* kTexturePackItem = "pcsx2-hd-texture-packs";
+// The community catalog (schema version 1).
+constexpr const char* kTexturePackCatalogUrl = "https://raw.githubusercontent.com/sashkinbro/EmuCoreX-Textures/main/textures.json";
+constexpr const char* kTexturePackCatalogPage = "https://github.com/sashkinbro/EmuCoreX-Textures";
+
+struct TexturePackPart
+{
+	std::string url;
+	uint64_t bytes = 0;
+	std::string sha256; // lowercase hex
+};
 
 struct TexturePack
 {
-	std::string name;                 // the file's name in the item
-	std::string title;                // the name without its serials and extension
-	std::string label;                // the edition ("HD Remaster Definitive Edition"); the title when there is none
-	std::vector<std::string> serials; // every "[SLUS-20776]" in the name (a two-disc pack names both)
-	uint64_t bytes = 0;
-	std::string md5; // lowercase hex, from the item's file list
-	uint32_t files = 0; // the archive's file count, from the list (0 when it doesn't say)
+	std::string id;                   // the catalog's id: what a job and the marker file name
+	std::string name;                 // "Prince of Persia: The Two Thrones HD Texture Pack"
+	std::string game;                 // the game's title
+	std::string version;
+	std::vector<std::string> authors;
+	std::string credits, description, source_url, license;
+	std::vector<std::string> serials; // every serial the pack is for
+	std::string url;                  // the ZIP (the first part's URL when it comes in parts)
+	uint64_t bytes = 0;               // the whole ZIP
+	std::string sha256;               // the whole ZIP, lowercase hex
+	uint32_t files = 0;               // the archive's file count (0 when the catalog doesn't say)
+	std::vector<TexturePackPart> parts; // empty for a one-file pack
 };
 
-// The item's file list (https://archive.org/metadata/<item>) -> its packs: original .rar and .zip files whose name holds
-// a serial. False (and `error`) when the text isn't that list.
+// textures.json -> its packs: entries with an id, a name, at least one well-formed serial, an https URL, a size and a
+// SHA-256 (and, when parts are listed, two or more that add up to the size). False (and `error`) when the text isn't that
+// catalog or holds no usable pack.
 bool ParseTexturePackCatalog(const std::string& json, std::vector<TexturePack>& out, std::string& error);
-std::string TexturePackMetadataUrl();
-std::string TexturePackUrl(const TexturePack& pack);
+// The pieces to download in order: `parts`, or the one file.
+std::vector<TexturePackPart> TexturePackPieces(const TexturePack& pack);
 std::string PercentEncode(const std::string& text);
 std::string PercentDecode(const std::string& text);
 // "SLUS-20776" for a well-formed serial (any case), else "".
 std::string NormalSerial(const std::string& text);
-// Where an archive entry goes, relative to the textures folder ("SLUS-20776/replacements/01/x.png"), or "" to leave it
-// out: the part from a serial folder on (not its dumps/), else from a replacements/ folder on (put under `serial`).
-// Paths with "..", absolute paths and control characters give "".
+// Where an archive entry goes within the textures folder. Rejects traversal, absolute paths and control characters.
 std::string TexturePackTarget(const std::string& entry, const std::string& serial);
 // "1.2 GB", "356 MB", "12 KB".
 std::string FormatBytes(uint64_t bytes);
-// The MD5 of `data`, lowercase hex (the check a download goes through; here for the tests).
-std::string TexturePackMd5(const void* data, size_t size);
+// The SHA-256 of `data`, lowercase hex (the check a download goes through; here for the tests).
+std::string TexturePackSha256(const void* data, size_t size);
+// "github.com" for "https://github.com/x/y".
+std::string UrlHost(const std::string& url);
 
 struct TexturePackStatus
 {
 	enum class State
 	{
-		Loading,     // the list from archive.org is on its way
-		Unavailable, // no list (offline, archive.org down): `message`; Cross tries again
-		None,        // archive.org has no pack for this serial
+		Loading,     // the catalog is on its way
+		Unavailable, // no catalog (offline, the host down): `message`; Retry fetches it again
+		None,        // the catalog has no pack for this serial
 		Available,   // `packs`
 		Queued,      // waiting behind another game's pack
 		Checking,    // reading back a part downloaded before
 		Downloading,
-		Verifying, // the MD5 of the whole file
+		Verifying, // the SHA-256 of the whole file
 		Unpacking,
 		Installing,
 		Installed, // `installed` names it
@@ -84,9 +98,13 @@ struct TexturePackStatus
 		NeedSpace, // `message` ("Needs 12.3 GB free")
 	};
 	State state = State::Loading;
-	std::vector<TexturePack> packs; // archive.org's packs for this serial
-	int job_pack = -1;              // the one being fetched, as an index into `packs` (-1 when it isn't there)
-	std::string installed;          // Installed: the pack's file name, "" for one this app didn't put there
+	bool catalog_loading = false;
+	bool catalog_ready = false;
+	std::string catalog_message;
+	std::vector<TexturePack> packs; // the catalog's packs for this serial
+	std::string job_name;           // the one being fetched or imported, by name
+	std::string installed;          // Installed: the pack's name, "" for one this app didn't put there
+	std::string installed_id;       // Installed: the catalog id ("file:<name>" for an imported archive)
 	std::string where;              // Installed: its folder
 	bool ours = false;              // Installed by this app (its marker file): Triangle can remove it
 	uint64_t done = 0, total = 0;   // bytes so far and in all (checking, downloading, verifying, unpacking)
@@ -109,8 +127,12 @@ struct TexturePackService
 {
 	std::function<TexturePackStatus(const std::string& serial)> status;
 	std::function<bool(const std::string& serial, int pack, const std::string& settings_path, const std::string& settings_header,
-		const std::string& title)>
+		const std::string& title, const std::string& id)>
 		begin;
+	// Installs a ZIP or RAR the user has (read in place, never moved or deleted).
+	std::function<bool(const std::string& serial, const std::string& archive_path, const std::string& settings_path,
+		const std::string& settings_header, const std::string& title)>
+		import;
 	std::function<bool(const std::string& serial)> cancel;
 	std::function<bool(const std::string& serial)> remove;
 	std::function<void()> retry; // fetch the list again
@@ -120,7 +142,7 @@ struct TexturePackService
 
 struct TexturePackPlatform
 {
-	// GET a small text (the item's file list): the HTTP status, or < 0 when the request failed.
+	// GET a small text (the catalog): the HTTP status, or < 0 when the request failed.
 	std::function<int(const std::string& url, std::string& body)> get_text;
 	// GET bytes [offset, offset + length) of `url`, each block to `sink` (false stops it): the HTTP status (206; 200 when
 	// the whole file came from 0), or < 0.
@@ -142,7 +164,7 @@ class TexturePackManager
 {
 public:
 	// textures_dir: the emulator's textures folder (<serial>/replacements); work_dir: downloads in progress and their
-	// job files; catalog_cache: the item's file list, used for a day.
+	// job files; catalog_cache: the catalog, used for a day (and when the network is down).
 	TexturePackManager(TexturePackPlatform platform, std::string textures_dir, std::string work_dir, std::string catalog_cache);
 	~TexturePackManager();
 	TexturePackManager(const TexturePackManager&) = delete;
@@ -156,7 +178,9 @@ public:
 
 	TexturePackStatus Status(const std::string& serial) const;
 	bool Begin(const std::string& serial, int pack, const std::string& settings_path, const std::string& settings_header,
-		const std::string& title);
+		const std::string& title, const std::string& id = {});
+	bool Import(const std::string& serial, const std::string& archive_path, const std::string& settings_path,
+		const std::string& settings_header, const std::string& title);
 	bool Cancel(const std::string& serial);
 	bool Remove(const std::string& serial);
 	void Retry();
@@ -171,8 +195,11 @@ public:
 private:
 	struct Job
 	{
-		std::string serial, name, md5, title, settings, header;
+		std::string serial, id, name, sha256, title, settings, header;
+		std::string source; // an imported archive's path ("" for a download)
+		std::string source_url; // the pack's page, for the marker
 		uint64_t bytes = 0;
+		std::vector<TexturePackPart> parts; // the pieces to download, in order
 	};
 	struct Progress
 	{
@@ -180,14 +207,14 @@ private:
 		uint64_t done = 0, total = 0;
 		double rate = 0;
 		std::string message;
-		std::string name; // the pack
+		std::string id, name; // the pack
 		std::string title;
 	};
 	struct Installed
 	{
 		double checked = -1;
 		bool present = false, ours = false;
-		std::string name, where;
+		std::string id, name, where;
 	};
 
 	void Run();
@@ -201,13 +228,16 @@ private:
 	void Process(const Job& job);
 	bool Download(const Job& job, const std::string& part, const std::string& full);
 	bool Unpack(const Job& job, const std::string& full, const std::string& staging, uint32_t& files, bool& no_space, std::string& error);
-	void Finish(const Job& job, uint32_t files);
+	bool WriteMarker(const Job& job, uint32_t files, const std::string& folder);
+	void Finish(const Job& job);
 	void SetState(const std::string& serial, TexturePackStatus::State state, uint64_t done = 0, uint64_t total = 0,
 		const std::string& message = {});
 	void SetProgress(const std::string& serial, uint64_t done);
 	bool Stopping(const std::string& serial) const;
 	void Log(const std::string& line) const;
 	void DeleteJobFiles(const Job& job);
+	void DeleteDownload(const std::string& serial, const std::string& id);
+	bool Queue(Job job);
 	bool WriteJob(const Job& job);
 	Installed LookAtFolder(const std::string& serial) const;
 	std::vector<TexturePack> PacksFor(const std::string& serial) const;

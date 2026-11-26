@@ -1,4 +1,4 @@
-// Caliza PS4: portable catalog identity and scan-model definitions.
+// Caliza: portable catalog identity and scan-model definitions.
 // This is a schema/model layer, not a scanner: host, PS4 and web adapters own filesystem IO.
 // SPDX-License-Identifier: GPL-3.0-or-later
 

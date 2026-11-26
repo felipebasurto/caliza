@@ -1,0 +1,13 @@
+# Caliza Estratos at the largest text size (200%), rendered for the top-level evidence images.
+wait 1500
+expect-screen home
+scale 200
+shot @OUT@/home-200.png
+press down
+press down
+press down
+press down
+press cross
+expect-screen accessibility
+scale 200
+shot @OUT@/accessibility-200.png

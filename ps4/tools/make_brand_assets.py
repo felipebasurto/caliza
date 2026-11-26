@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Generate the Caliza mark: a limestone block cut into three strata.
+
+One geometry definition feeds every output so the console icon, the companion-panel SVGs
+and the native interface (caliza/native/estratos_scene.cpp, Logo()) stay identical:
+
+  ps4/sce_sys/icon0.png             512x512 RGB, the PS4 home-screen icon
+  ps4/docs/caliza-icon-master.png   1024x1024 RGBA master on transparent background
+  caliza/web/assets/caliza-mark.svg       colour mark
+  caliza/web/assets/caliza-mark-mono.svg  single-colour mark
+
+Usage: python3 ps4/tools/make_brand_assets.py
+Requires Pillow and NumPy.
+"""
+import math
+import pathlib
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# Isometric block in unit space: top face corners, then three vertical strata.
+# The block is centred on (0, 0); it spans x in [-0.866, 0.866] and y in [-1, 1].
+COS30 = math.cos(math.radians(30))
+TOP = [(0.0, -1.0), (COS30, -0.5), (0.0, 0.0), (-COS30, -0.5)]
+# Each stratum: (start, end) down the vertical edges, and a sideways offset in unit space. The
+# offsets step the layers like weathered limestone, exposing a ledge of each lower stratum.
+U = (COS30, 0.5)  # along the left face, towards the viewer
+STRATA = [
+    (0.00, 0.27, (-0.10 * U[0], -0.10 * U[1])),
+    (0.33, 0.64, (0.0, 0.0)),
+    (0.70, 1.00, (0.08 * U[0], 0.08 * U[1])),
+]
+
+TOP_LIGHT, TOP_DARK = "#F4FBFF", "#9EDFFF"
+LEFT_LIGHT, LEFT_DARK = "#A3CBFA", "#5470D8"
+RIGHT_LIGHT, RIGHT_DARK = "#5163CF", "#27318D"
+EDGE = "#E4F7FF"
+MONO = "#EEF4FF"
+
+
+def shift(poly, dx, dy):
+    return [(x + dx, y + dy) for x, y in poly]
+
+
+def faces():
+    """Yield (kind, polygon) for every face, lowest stratum first so upper layers overlap it."""
+    left_top, front_top, right_top = TOP[3], TOP[2], TOP[1]
+    for t0, t1, (ox, oy) in reversed(STRATA):
+        yield "top", shift(TOP, ox, oy + t0)
+        yield "left", shift([
+            (left_top[0], left_top[1] + t0), (front_top[0], front_top[1] + t0),
+            (front_top[0], front_top[1] + t1), (left_top[0], left_top[1] + t1)], ox, oy)
+        yield "right", shift([
+            (front_top[0], front_top[1] + t0), (right_top[0], right_top[1] + t0),
+            (right_top[0], right_top[1] + t1), (front_top[0], front_top[1] + t1)], ox, oy)
+
+
+def front_edges():
+    """The vertical front edge of each stratum, highlighted."""
+    return [((ox, t0 + oy), (ox, t1 + oy)) for t0, t1, (ox, oy) in STRATA]
+
+
+def top_rim():
+    t0, _, (ox, oy) = STRATA[0]
+    return shift(TOP, ox, oy + t0)
+
+
+def centre_offset():
+    """Shift that centres the stepped block's bounding box on the origin."""
+    xs = [x for _, poly in faces() for x, _ in poly]
+    ys = [y for _, poly in faces() for _, y in poly]
+    return -(min(xs) + max(xs)) / 2, -(min(ys) + max(ys)) / 2
+
+
+def hex_rgb(value):
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def mix(a, b, t):
+    return tuple(round(x + (y - x) * t) for x, y in zip(hex_rgb(a), hex_rgb(b)))
+
+
+# Gradients run in unit space: (light colour at p0, dark colour at p1).
+GRADIENTS = {
+    "top": (TOP_LIGHT, TOP_DARK, (0.0, -1.0), (0.0, 0.0)),
+    "left": (LEFT_LIGHT, LEFT_DARK, (-COS30, -0.5), (0.0, 1.0)),
+    "right": (RIGHT_LIGHT, RIGHT_DARK, (0.0, 0.0), (COS30, 0.5)),
+}
+
+
+# ---------------------------------------------------------------- SVG
+
+def svg_point(p, scale, cx, cy):
+    return f"{cx + p[0] * scale:.2f} {cy + p[1] * scale:.2f}"
+
+
+def svg_path(poly, scale, cx, cy):
+    return "M" + " L".join(svg_point(p, scale, cx, cy) for p in poly) + " Z"
+
+
+def write_svgs():
+    size, scale = 120, 52.0
+    ox, oy = centre_offset()
+    cx, cy = size / 2 + ox * scale, size / 2 + oy * scale
+    defs, colour, mono = [], [], []
+    for kind, (light, dark, p0, p1) in GRADIENTS.items():
+        defs.append(
+            f'    <linearGradient id="caliza-{kind}" gradientUnits="userSpaceOnUse" '
+            f'x1="{cx + p0[0] * scale:.2f}" y1="{cy + p0[1] * scale:.2f}" '
+            f'x2="{cx + p1[0] * scale:.2f}" y2="{cy + p1[1] * scale:.2f}">\n'
+            f'      <stop offset="0" stop-color="{light}"/>\n'
+            f'      <stop offset="1" stop-color="{dark}"/>\n'
+            f'    </linearGradient>')
+    for kind, poly in faces():
+        d = svg_path(poly, scale, cx, cy)
+        colour.append(f'    <path d="{d}" fill="url(#caliza-{kind})"/>')
+        opacity = {"top": "1", "left": "0.78", "right": "0.52"}[kind]
+        mono.append(f'    <path d="{d}" opacity="{opacity}"/>')
+    edges = "".join(
+        f'    <path d="M{svg_point(a, scale, cx, cy)} L{svg_point(b, scale, cx, cy)}"/>\n' for a, b in front_edges())
+    rim = svg_path(top_rim(), scale, cx, cy)
+    head = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" role="img" aria-label="Caliza">\n'
+            '  <!-- Caliza mark: a limestone block cut into three strata. Generated by ps4/tools/make_brand_assets.py. -->\n')
+    colour_svg = (head + "  <defs>\n" + "\n".join(defs) + "\n  </defs>\n  <g>\n" + "\n".join(colour) + "\n  </g>\n"
+                  f'  <path d="{rim}" fill="none" stroke="{EDGE}" stroke-opacity="0.55" stroke-width="1.2" '
+                  'stroke-linejoin="round"/>\n'
+                  f'  <g stroke="{EDGE}" stroke-opacity="0.7" stroke-width="1.2" stroke-linecap="round">\n'
+                  + edges + "  </g>\n</svg>\n")
+    mono_svg = head + f'  <g fill="{MONO}">\n' + "\n".join(mono) + "\n  </g>\n</svg>\n"
+    assets = ROOT / "caliza/web/assets"
+    (assets / "caliza-mark.svg").write_text(colour_svg)
+    (assets / "caliza-mark-mono.svg").write_text(mono_svg)
+
+
+# ---------------------------------------------------------------- raster
+
+def ramp_image(t, light, dark, gamma=1.0):
+    """Map a float array of positions in [0, 1] to an RGB image between two colours."""
+    t = np.clip(t, 0.0, 1.0) ** gamma
+    a = np.array(hex_rgb(light), dtype=np.float32)
+    b = np.array(hex_rgb(dark), dtype=np.float32)
+    rgb = a + (b - a) * t[..., None]
+    return Image.fromarray(np.round(rgb).astype(np.uint8), "RGB")
+
+
+def linear_gradient(size, light, dark, p0, p1):
+    """Full-canvas RGB gradient from p0 (light) to p1 (dark), in pixel coordinates."""
+    w, h = size
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+    t = ((x - p0[0]) * dx + (y - p0[1]) * dy) / (dx * dx + dy * dy or 1.0)
+    return ramp_image(t, light, dark)
+
+
+def draw_mark(canvas, cx, cy, scale):
+    """Paint the mark onto an RGBA canvas (supersampled by the caller)."""
+    size = canvas.size
+    to_px = lambda p: (cx + p[0] * scale, cy + p[1] * scale)
+    grads = {kind: linear_gradient(size, light, dark, to_px(p0), to_px(p1))
+             for kind, (light, dark, p0, p1) in GRADIENTS.items()}
+    for kind, poly in faces():
+        mask = Image.new("L", size, 0)
+        ImageDraw.Draw(mask).polygon([to_px(p) for p in poly], fill=255)
+        canvas.paste(grads[kind], (0, 0), mask)
+    line = max(1, round(scale * 0.022))
+    rim = [to_px(p) for p in top_rim()]
+    edge = hex_rgb(EDGE) + (150,)
+    overlay = Image.new("RGBA", size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.line(rim + [rim[0]], fill=edge, width=line, joint="curve")
+    for a, b in front_edges():
+        od.line([to_px(a), to_px(b)], fill=hex_rgb(EDGE) + (185,), width=line)
+    canvas.alpha_composite(overlay)
+
+
+def radial(size, inner, outer, centre, radius):
+    w, h = size
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    return ramp_image(np.hypot(x - centre[0], y - centre[1]) / radius, inner, outer, 1.4)
+
+
+def icon(size, background):
+    ss = 3
+    big = size * ss
+    canvas = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    if background:
+        base = radial((big, big), "#1D2490", "#05061A", (big * 0.5, big * 0.46), big * 0.78).convert("RGBA")
+        # Soft light pooled behind and beneath the block.
+        glow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+        ImageDraw.Draw(glow).ellipse([big * 0.24, big * 0.22, big * 0.76, big * 0.80], fill=(80, 110, 255, 120))
+        glow = glow.filter(ImageFilter.GaussianBlur(big * 0.09))
+        base.alpha_composite(glow)
+        canvas = base
+    scale = big * 0.315
+    ox, oy = centre_offset()
+    draw_mark(canvas, big * 0.5 + ox * scale, big * 0.5 + oy * scale, scale)
+    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def main():
+    write_svgs()
+    icon(512, True).convert("RGB").save(ROOT / "ps4/sce_sys/icon0.png", optimize=True)
+    icon(1024, False).save(ROOT / "ps4/docs/caliza-icon-master.png", optimize=True)
+    print("wrote icon0.png, caliza-icon-master.png, caliza-mark.svg, caliza-mark-mono.svg")
+
+
+if __name__ == "__main__":
+    main()

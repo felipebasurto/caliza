@@ -105,6 +105,10 @@ struct FakeBackend : Backend
 						snap.accessibility.large_focus = command.number != 0;
 					Complete(command);
 					break;
+				case CommandType::SelectGame:
+					snap.selected_game_id = command.id;
+					Complete(command);
+					break;
 				case CommandType::SetSetting:
 					for (SettingCategory& category : snap.settings)
 						for (SettingItem& item : category.items)
@@ -158,7 +162,7 @@ struct FakeBackend : Backend
 		};
 		if (path == "/data/caliza")
 		{
-			listing.breadcrumbs = {"Internal Storage", "caliza"};
+			listing.breadcrumbs = {"Internal storage", "caliza"};
 			add_dir("Games", 3);
 			add_dir("BIOS", 0);
 			add_dir("A very long folder name that still has to remain readable", 1);
@@ -166,12 +170,21 @@ struct FakeBackend : Backend
 		else if (path == "/mnt/usb0")
 		{
 			listing.breadcrumbs = {"USB Storage"};
-			add_dir("PS2", 8);
+			add_dir("ps2", 8);
+			add_image("Ignore.iso");
+			listing.entries.push_back({"HD.ZIP", path + "/HD.ZIP", false, false, true, 0});
+		}
+		else if (path == "/mnt/usb0/ps2")
+		{
+			listing.parent = "/mnt/usb0";
+			listing.breadcrumbs = {"USB Storage", "ps2"};
+			add_image("Game.chd");
+			listing.contains_compatible = true;
 		}
 		else if (path == "/data/caliza/Games")
 		{
 			listing.parent = "/data/caliza";
-			listing.breadcrumbs = {"Internal Storage", "caliza", "Games"};
+			listing.breadcrumbs = {"Internal storage", "caliza", "Games"};
 			add_dir("Racing", 2);
 			add_image("Alpha One.iso");
 			add_image("Beta Field.chd");
@@ -180,7 +193,7 @@ struct FakeBackend : Backend
 		else if (path == "/data/caliza/BIOS")
 		{
 			listing.parent = "/data/caliza";
-			listing.breadcrumbs = {"Internal Storage", "caliza", "BIOS"};
+			listing.breadcrumbs = {"Internal storage", "caliza", "BIOS"};
 		}
 		else
 		{
@@ -262,7 +275,7 @@ Snapshot MakeSnapshot(int game_count = 8, bool bios = true)
 	VolumeInfo internal;
 	internal.id = "internal";
 	internal.root_path = "/data/caliza";
-	internal.label = "Internal Storage";
+	internal.label = "Internal storage";
 	internal.kind = VolumeKind::Internal;
 	internal.present = true;
 	internal.readable = true;
@@ -497,7 +510,7 @@ void TestFolderPickerPostsAddThenScan()
 	CHECK(ctx.model.FocusIdForTest() == "empty:add-folder");
 	Tap(ctx, &Input::cross);
 	CHECK(ctx.model.screen() == Screen::FolderPicker);
-	Tap(ctx, &Input::cross); // Internal Storage.
+	Tap(ctx, &Input::cross); // Internal storage.
 	CHECK(!ctx.backend.browsed.empty() && ctx.backend.browsed.back().find("/data/caliza") == 0);
 	CHECK(ctx.model.FocusIdForTest() == "picker:use-current");
 	Tap(ctx, &Input::cross);
@@ -506,6 +519,60 @@ void TestFolderPickerPostsAddThenScan()
 	ctx.backend.PumpAll();
 	Step(ctx);
 	CHECK(Posted(ctx, CommandType::ScanSource));
+}
+
+void TestUsbLibraryShowsGamesAfterAddingFolder()
+{
+	Ctx ctx;
+	auto& snapshot = ctx.backend.snap;
+	snapshot = MakeSnapshot(0, true);
+	snapshot.volumes[0].id.clear();
+	snapshot.volumes[1].id.clear();
+	SkipBoot(ctx);
+	OpenLibrary(ctx);
+	for (int i = 0; i < 6; i++)
+		Tap(ctx, &Input::down);
+	CHECK(ctx.model.FocusIdForTest() == "filter:add-folder");
+
+	Tap(ctx, &Input::cross);
+	Tap(ctx, &Input::down); // USB drive
+	Tap(ctx, &Input::cross);
+	Tap(ctx, &Input::down); // Parent
+	Tap(ctx, &Input::down); // ps2
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.FocusIdForTest() == "picker:use-current");
+	Tap(ctx, &Input::cross); // Use this folder
+	CHECK(ctx.backend.posted.back().path == "/mnt/usb0/ps2");
+	ctx.backend.PumpAll();
+	Step(ctx);
+	CHECK(Posted(ctx, CommandType::ScanSource));
+
+	for (int i = 0; i < 6; i++)
+	{
+		GameEntry game = MakeGame("usb" + std::to_string(i), "USB game", snapshot.sources.back().id.c_str());
+		game.path = "/mnt/usb0/ps2/" + game.id + ".chd";
+		snapshot.games.push_back(game);
+	}
+	Step(ctx);
+	CHECK(ctx.model.BuildView().tiles.size() == 6);
+	CHECK(ctx.model.FocusIdForTest() == "game:usb0");
+
+	Tap(ctx, &Input::r1); // Recent
+	Tap(ctx, &Input::r1); // Internal
+	CHECK(ctx.model.BuildView().tiles.empty());
+	Tap(ctx, &Input::r1); // USB, without a platform volume ID
+	CHECK(ctx.model.BuildView().tiles.size() == 6);
+
+	snapshot.games.front().hidden = true;
+	Step(ctx);
+	CHECK(ctx.model.BuildView().tiles.size() == 5);
+	SettingItem hidden;
+	hidden.id = "shelf-global.show-hidden-games";
+	hidden.value = "true";
+	snapshot.settings.push_back({"shelf-global", "Library", {hidden}});
+	Step(ctx);
+	const auto view = ctx.model.BuildView();
+	CHECK(view.tiles.size() == 6 && view.tiles.front().hidden);
 }
 
 void TestMemoryCardsReturnToGameDetail()
@@ -538,6 +605,62 @@ void TestMemoryCardsReturnToGameDetail()
 	Tap(ctx, &Input::circle);
 	CHECK(ctx.model.screen() == Screen::Library);
 	CHECK(ctx.model.FocusIdForTest() == "game:g0");
+}
+
+void TestTexturePacksUseStableIdsAndConfirmRemoval()
+{
+	Ctx ctx;
+	ctx.backend.snap = MakeSnapshot(2, true);
+	ctx.backend.snap.games[0].serial = "SLUS-20776";
+	auto& packs = ctx.backend.snap.texture_packs;
+	packs.catalog = TexturePacks::Catalog::Ready;
+	packs.entries = {{"standard", "Standard", "", "", "", 0}, {"high", "High resolution", "", "", "", 0}};
+	SkipBoot(ctx);
+	OpenLibrary(ctx);
+	Tap(ctx, &Input::right);
+	Tap(ctx, &Input::square);
+	for (int i = 0; i < 5; i++)
+		Tap(ctx, &Input::down);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.screen() == Screen::TexturePacks);
+	ctx.backend.PumpAll();
+	Step(ctx);
+	Tap(ctx, &Input::down);
+	Tap(ctx, &Input::down);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.BuildView().dialog.title == "High resolution");
+	std::swap(packs.entries[0], packs.entries[1]);
+	ctx.backend.Bump();
+	Step(ctx);
+	Tap(ctx, &Input::right);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.backend.posted.back().type == CommandType::DownloadTexturePack);
+	CHECK(ctx.backend.posted.back().value == "high");
+	Tap(ctx, &Input::up);
+	Tap(ctx, &Input::up);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.screen() == Screen::FolderPicker);
+	Tap(ctx, &Input::down);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.BuildView().picker.rows.size() == 3); // parent, folder and ZIP
+	Tap(ctx, &Input::down);
+	Tap(ctx, &Input::down);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.screen() == Screen::TexturePacks);
+	CHECK(ctx.backend.posted.back().type == CommandType::ImportTexturePack);
+	CHECK(ctx.backend.posted.back().path == "/mnt/usb0/HD.ZIP");
+	packs.installed = packs.removable = true;
+	packs.installed_name = "High resolution";
+	ctx.backend.Bump();
+	Step(ctx);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.model.FocusIdForTest() == "dialog:cancel");
+	Tap(ctx, &Input::cross);
+	CHECK(!Posted(ctx, CommandType::DeleteTexturePack));
+	Tap(ctx, &Input::cross);
+	Tap(ctx, &Input::right);
+	Tap(ctx, &Input::cross);
+	CHECK(ctx.backend.posted.back().type == CommandType::DeleteTexturePack);
 }
 
 void TestPauseReturnConfirmationDefaultsToCancel()
@@ -616,7 +739,9 @@ int main()
 	TestKeyboardSearchAndFocusRestore();
 	TestDestructiveResetDefaultsToCancel();
 	TestFolderPickerPostsAddThenScan();
+	TestUsbLibraryShowsGamesAfterAddingFolder();
 	TestMemoryCardsReturnToGameDetail();
+	TestTexturePacksUseStableIdsAndConfirmRemoval();
 	TestPauseReturnConfirmationDefaultsToCancel();
 	TestAccessibilityCommandsUseContractPayload();
 	TestSettingsChoiceAndNestedBack();

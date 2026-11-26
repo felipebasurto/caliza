@@ -14,8 +14,11 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 fe=$(cd -- "$here/.." && pwd)
 pcsx2=$(cd -- "$fe/../.." && pwd)
 la="$pcsx2/ps5/third_party/libarchive"
-CXX=${CXX:-clang++-18}
-CC=${CC:-clang-18}
+# The first clang on PATH unless CC/CXX say otherwise (the container has clang-21, older hosts clang-18).
+pick() { for c in "$@"; do command -v "$c" >/dev/null 2>&1 && { echo "$c"; return; }; done; echo "$1"; }
+CXX=${CXX:-$(pick clang++-18 clang++-21 clang++)}
+CC=${CC:-$(pick clang-18 clang-21 clang)}
+zl="$pcsx2/ps5/third_party/zlib"
 work=$(mktemp -d "${TMPDIR:-/tmp}/texpacks.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 san=(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
@@ -24,17 +27,22 @@ mkdir -p "$work/obj"
 objs=()
 for c in "$la"/libarchive/*.c; do
   o="$work/obj/$(basename "$c" .c).o"
-  "$CC" -O1 -g -w -DHAVE_CONFIG_H -I"$la" -I"$la/libarchive" "${san[@]}" -c "$c" -o "$o"
+  "$CC" -O1 -g -w -DHAVE_CONFIG_H -I"$la" -I"$la/libarchive" -I"$zl" "${san[@]}" -c "$c" -o "$o"
   objs+=("$o")
+done
+# The vendored zlib (inflate only, as on the console), so the test needs no system zlib headers.
+for c in adler32 crc32 inffast inflate inftrees zutil; do
+  "$CC" -O1 -g -w -I"$zl" -c "$zl/$c.c" -o "$work/obj/zlib-$c.o"
+  objs+=("$work/obj/zlib-$c.o")
 done
 # 2026-10-08: fe_settings.cpp's ManualFixSettings needs fe_games.cpp's GameDbHwFixes (vk-285-132), and fe_games.cpp what the
 # hardware fixes test links with it (the image readers' lz4 and the libchdr stand-in).
 "$CC" -O1 -g -c "$pcsx2/ps5/third_party/lz4/lz4.c" -o "$work/obj/lz4.o"
 "$CC" -O1 -g -I"$pcsx2/3rdparty/libchdr/include" -c "$here/chd_stub.c" -o "$work/obj/chd_stub.o"
 "$CXX" -std=c++20 -O1 -g -Wall -Wno-unused-function -I"$fe" -I"$pcsx2/pcsx2" -I"$la/libarchive" -I"$pcsx2/3rdparty/rapidjson/include" \
-  -I"$pcsx2/3rdparty/vulkan/include" -I"$pcsx2/3rdparty/libchdr/include" -I"$pcsx2/ps5/third_party/lz4" "${san[@]}" \
+  -I"$pcsx2/3rdparty/vulkan/include" -I"$pcsx2/3rdparty/libchdr/include" -I"$pcsx2/ps5/third_party/lz4" -I"$zl" "${san[@]}" \
   "$here/texpacks_test.cpp" "$fe/fe_texpacks.cpp" "$fe/fe_settings.cpp" "$fe/fe_games.cpp" "$fe/fe_covers.cpp" "$fe/fe_text.cpp" \
-  "$fe/fe_i18n.cpp" "${objs[@]}" "$work/obj/lz4.o" "$work/obj/chd_stub.o" -lz -lpthread -o "$work/texpacks_test"
+  "$fe/fe_i18n.cpp" "${objs[@]}" "$work/obj/lz4.o" "$work/obj/chd_stub.o" -lpthread -o "$work/texpacks_test"
 
 # The fixtures: a pack laid out as archive.org's are (with the maker's dumps/ and a readme beside it), and a two-disc one.
 mkdir -p "$work/fixtures" "$work/run"
@@ -46,7 +54,7 @@ def make(name, files):
     with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:
         for path, data in files:
             z.writestr(path, data)
-    return hashlib.md5(open(p, "rb").read()).hexdigest()
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
 pack = "Spider-Man 2 (USA) [SLUS-20776] HD Remaster"
 good = make(pack + ".zip", [
     (pack + "/SLUS-20776/replacements/a.dds", os.urandom(3 * 1024 * 1024)),
@@ -75,7 +83,7 @@ clash = make(clash_name + ".zip", [
     (clash_name + "/SLUS-22222/notes/e.txt", b"inside"),
     (clash_name + "/SLUS-22222/notes", b"a file where the folder is"),
 ])
-open(os.path.join(d, "md5.txt"), "w").write(" ".join([good, two, many, clash]) + "\n")
+open(os.path.join(d, "sha256.txt"), "w").write(" ".join([good, two, many, clash]) + "\n")
 EOF
 
 real=()

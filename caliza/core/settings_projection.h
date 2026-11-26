@@ -1,4 +1,4 @@
-// Caliza PS4: schema-to-contract projection shared by native and host backends.
+// Caliza: schema-to-contract projection shared by native and host backends.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

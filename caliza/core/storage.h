@@ -1,4 +1,4 @@
-// Caliza PS4 core: POSIX storage discovery, folder browsing and saved-source persistence.
+// Caliza core: POSIX storage discovery, folder browsing and saved-source persistence.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

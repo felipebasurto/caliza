@@ -1,4 +1,4 @@
-# ImageGen prompts (AI-assisted)
+# ImageGen prompts
 
 Generated with the built-in ImageGen tool. The supplied PS2UI image was used as a material and atmosphere reference.
 

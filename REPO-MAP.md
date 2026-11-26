@@ -1,4 +1,4 @@
-# Caliza PS4 repository map
+# Caliza repository map
 
 This map separates the active Caliza product from inherited compatibility code and unused upstream/desktop material. It is the cleanup authority for the interface rebuild; file moves happen after the running implementation agents finish so their work is not broken mid-flight.
 

@@ -1,4 +1,4 @@
-// Caliza PS4 core: deterministic in-memory backend for contract tests and host preview.
+// Caliza core: deterministic in-memory backend for contract tests and host preview.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

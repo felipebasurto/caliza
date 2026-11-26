@@ -61,7 +61,7 @@ if (!failures.length) {
       fetch(`http://127.0.0.1:${port}/api/discs`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/probe`).then((r) => r.json()),
     ]);
-    check(page.includes("Caliza PS4 Companion"), "harness did not serve index.html");
+    check(page.includes("Caliza Companion"), "harness did not serve index.html");
     check(state.mode === "game" && state.playing, "harness state fixture malformed");
     check(Array.isArray(games) && games.length >= 3, "harness games fixture malformed");
     check(settings.id === "@global" && settings.values, "harness settings fixture malformed");

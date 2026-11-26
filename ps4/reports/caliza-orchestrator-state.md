@@ -16,7 +16,7 @@ Do not poll; completion wakes.
 Baseline host tests passed in docker container caliza-dev: bash ps4/tools/run-host-tests.sh /tmp/caliza-host-baseline. Container caliza-dev mounts repo at /src, image ps4sx2-snap, has clang++-21 and PS4 toolchain. Existing ps4w container also exists. Need install/use glslang locally exists at /opt/homebrew/bin/glslangValidator. No macOS Vulkan. Container may need glslang/vulkan/lavapipe for host preview.
 
 Key existing facts:
-- PS4 build: ps4/build-ps4.sh package, Makefile.ps4 builds ps5/frontend files. PKG title already Caliza PS4 but content id/title id ZERU00001/LEGACYBRAND00 preserved.
+- PS4 build: ps4/build-ps4.sh package, Makefile.ps4 builds ps5/frontend files. PKG title already Caliza but content id/title id ZERU00001/LEGACYBRAND00 preserved.
 - frontend entry ps5/frontend/fe_ps5.cpp orbis_frontend_run, old cover-flow fe::App must be replaced so PS4 enters only new presentation.
 - reusable non-presentation services: fe_games.* scanning/serial, fe_settings.* atomic ini/cards, fe_options.* settings semantics, fe_covers.* cover location/decode, fe_web.* APIs, fe_text.* fonts.
 - current storage scan synchronous /mnt/usb0-7 /mnt/ext0-1; no known stable Orbis volume identity. Need fingerprint/relocation conservative.

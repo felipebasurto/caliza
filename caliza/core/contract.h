@@ -1,4 +1,4 @@
-// Caliza PS4 interface contract: snapshots in, commands out.
+// Caliza interface contract: snapshots in, commands out.
 // The native interface, host preview, tests and console adapter share this boundary.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -89,6 +89,7 @@ enum class CommandType
 	FetchOnlinePatches,
 	RetryTexturePackCatalog,
 	DownloadTexturePack,
+	ImportTexturePack,
 	CancelTexturePack,
 	DeleteTexturePack,
 	LaunchSmartTune,
@@ -275,6 +276,24 @@ struct OperationStatus
 	std::string message;
 };
 
+struct TexturePackEntry
+{
+	std::string id, name, authors, source, license;
+	uint64_t bytes = 0;
+};
+
+struct TexturePacks
+{
+	enum class Catalog { Unavailable, Loading, Ready };
+	Catalog catalog = Catalog::Unavailable;
+	std::string catalog_message;
+	std::vector<TexturePackEntry> entries;
+	OperationStatus operation;
+	std::string installed_name;
+	bool installed = false;
+	bool removable = false;
+};
+
 struct AchievementEntry
 {
 	std::string id;
@@ -300,7 +319,7 @@ struct AchievementsStatus
 struct Snapshot
 {
 	Revision revision = 0;
-	std::string product = "Caliza PS4";
+	std::string product = "Caliza";
 	std::string build_tag;
 	std::string data_root;
 	std::string legacy_data_root;
@@ -317,6 +336,7 @@ struct Snapshot
 	DiagnosticsStatus diagnostics;
 	AchievementsStatus achievements;
 	std::vector<OperationStatus> operations;
+	TexturePacks texture_packs; // for selected_game_id
 	std::string continue_game_id;
 	bool continue_valid = false;
 	std::string selected_game_id;

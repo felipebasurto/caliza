@@ -1,4 +1,4 @@
-// Caliza PS4 core: deterministic in-memory backend for contract tests and host preview.
+// Caliza core: deterministic in-memory backend for contract tests and host preview.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fake_backend.h"
@@ -203,7 +203,7 @@ public:
 	explicit Impl(const FakeBackendOptions& input_options)
 		: options(input_options)
 	{
-		snapshot.product = "Caliza PS4";
+		snapshot.product = "Caliza";
 		snapshot.build_tag = "caliza-fake";
 		snapshot.data_root = NormalizePath(options.data_root);
 		snapshot.legacy_data_root = NormalizePath(options.legacy_data_root);
@@ -288,7 +288,27 @@ public:
 	Snapshot GetSnapshot()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		return snapshot;
+		Snapshot out = snapshot;
+		if (!out.selected_game_id.empty())
+		{
+			auto& textures = out.texture_packs;
+			textures.catalog = TexturePacks::Catalog::Ready;
+			textures.entries = {
+				{"standard", "HD textures", "Demo creator", "", "", 160ull << 20},
+				{"high", "HD textures (high resolution)", "Demo creator", "", "", 380ull << 20},
+			};
+			const std::string prefix = "texture-pack:" + out.selected_game_id + ":";
+			for (const auto& operation : out.operations)
+				if (operation.id.compare(0, prefix.size(), prefix) == 0)
+				{
+					textures.operation = operation;
+					textures.installed = operation.state == OperationState::Succeeded;
+					textures.removable = textures.installed;
+					textures.installed_name = operation.message;
+					break;
+				}
+		}
+		return out;
 	}
 
 	CommandId Post(const Command& command)
@@ -769,6 +789,14 @@ private:
 		case CommandType::FetchOnlinePatches: return ExecuteFetchOnlinePatches(command);
 		case CommandType::RetryTexturePackCatalog: return ExecuteRetryTexturePackCatalog(command);
 		case CommandType::DownloadTexturePack: return ExecuteDownloadTexturePack(command);
+		case CommandType::ImportTexturePack:
+		{
+			const std::string path = LowerAscii(command.path);
+			const std::string ext = path.size() >= 4 ? path.substr(path.size() - 4) : "";
+			if (ext != ".zip" && ext != ".rar")
+				return {CommandStatus::Failed, "Choose a ZIP or RAR archive", false};
+			return ExecuteDownloadTexturePack(command);
+		}
 		case CommandType::CancelTexturePack: return ExecuteCancelTexturePack(command);
 		case CommandType::DeleteTexturePack: return ExecuteDeleteTexturePack(command);
 		case CommandType::LaunchSmartTune: return ExecuteLaunchSmartTune();
@@ -1397,7 +1425,7 @@ private:
 		if (!game)
 			return {CommandStatus::Failed, "game is not in the catalog", false};
 		UpsertOperationLocked("texture-catalog:" + game->id, "Texture pack catalog", game->id, OperationState::Succeeded, 1.0f,
-			false, "one fake texture pack is available");
+			false, "Two texture packs are available");
 		BumpRevisionLocked();
 		return {CommandStatus::Succeeded, "fake texture catalog refreshed", false};
 	}

@@ -1,4 +1,4 @@
-// Caliza PS4: the canonical user-facing settings and action schema.
+// Caliza: the canonical user-facing settings and action schema.
 // Native UI, host tests and the companion web UI should render from this registry instead of
 // keeping parallel hard-coded tables. Active compatibility ini keys are canonical Caliza/PCSX2 keys;
 // pre-transition brand keys exist only in the explicit migration map, never as active schema keys.

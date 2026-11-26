@@ -1,5 +1,5 @@
 "use strict";
-/* Caliza PS4 companion panel: original Estratos implementation (AI-assisted). */
+/* Caliza companion panel: original Estratos implementation. */
 (() => {
 const TEST_MODE = window.CALIZA_TEST_MODE === true;
 const $ = (id) => document.getElementById(id);
@@ -351,11 +351,11 @@ window.addEventListener("hashchange", () => {
 });
 
 function renderBoot() {
-  return '<section class="view"><div class="view-title"><h1 data-view-heading tabindex="-1">Caliza PS4</h1><p>Opening the companion panel.</p></div>' + loadingBlock("Contacting the console") + '</section>';
+  return '<section class="view"><div class="view-title"><h1 data-view-heading tabindex="-1">Caliza</h1><p>Opening the companion panel.</p></div>' + loadingBlock("Contacting the console") + '</section>';
 }
 function renderOffline() {
   const retry = '<button class="button primary" type="button" data-action="retry-connection" data-focus-id="retry-connection">' + icon("refresh") + 'Try again</button>';
-  return '<section class="view"><div class="view-title"><h1 data-view-heading tabindex="-1">Caliza PS4</h1><p>The panel is loaded, but the console API is not answering.</p></div>' +
+  return '<section class="view"><div class="view-title"><h1 data-view-heading tabindex="-1">Caliza</h1><p>The panel is loaded, but the console API is not answering.</p></div>' +
     notice("error", "Console not reachable", "Open this page from the console address while Caliza is running, check that both devices are on the same network, then try again.", retry) + '</section>';
 }
 function nowPlayingHtml() {

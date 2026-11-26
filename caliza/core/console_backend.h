@@ -1,4 +1,4 @@
-// Caliza PS4 core: console-facing backend adapter over storage, settings and platform seams.
+// Caliza core: console-facing backend adapter over storage, settings and platform seams.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once
@@ -34,7 +34,7 @@ struct ConsoleSettingsHooks
 	// request; completion is reported through ServiceOperations rather than pretending the command itself
 	// downloaded or installed anything.
 	using FetchOnlinePatches = std::function<bool(const GameEntry& game, std::string* error)>;
-	using DownloadTexturePack = std::function<bool(const GameEntry& game, int pack_index, std::string* error)>;
+	using DownloadTexturePack = std::function<bool(const GameEntry& game, int pack_index, const std::string& pack_id, std::string* error)>;
 	using CancelTexturePack = std::function<bool(const GameEntry& game, std::string* error)>;
 	using DeleteTexturePack = std::function<bool(const GameEntry& game, std::string* error)>;
 	using RetryTexturePackCatalog = std::function<bool(std::string* error)>;
@@ -53,6 +53,8 @@ struct ConsoleSettingsHooks
 	WebPanelUrl web_panel_url;
 	FetchOnlinePatches fetch_online_patches;
 	DownloadTexturePack download_texture_pack;
+	std::function<bool(const GameEntry&, const std::string&, std::string*)> import_texture_pack;
+	std::function<TexturePacks(const GameEntry&)> texture_packs;
 	CancelTexturePack cancel_texture_pack;
 	DeleteTexturePack delete_texture_pack;
 	RetryTexturePackCatalog retry_texture_pack_catalog;

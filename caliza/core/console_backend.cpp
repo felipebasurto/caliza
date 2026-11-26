@@ -1,4 +1,4 @@
-// Caliza PS4 core: console-facing backend adapter over storage, settings and platform seams.
+// Caliza core: console-facing backend adapter over storage, settings and platform seams.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "console_backend.h"
@@ -220,7 +220,7 @@ public:
 			std::lock_guard<std::mutex> lock(m_mutex);
 			overlay = m_overlay;
 		}
-		out.product = "Caliza PS4";
+		out.product = "Caliza";
 		if (!m_options.build_tag.empty())
 			out.build_tag = m_options.build_tag;
 		out.bios = overlay.bios;
@@ -233,6 +233,7 @@ public:
 		out.continue_valid = !overlay.continue_game_id.empty();
 		out.selected_game_id = overlay.selected_game_id;
 		out.operations = overlay.operations;
+		out.texture_packs = overlay.texture_packs;
 		if (!overlay.projection_problem.empty())
 			out.diagnostics.console_status = overlay.projection_problem;
 		else if (m_options.hooks.web_panel_url)
@@ -280,6 +281,7 @@ private:
 		std::string selected_game_id;
 		std::string projection_problem;
 		std::vector<OperationStatus> operations;
+		TexturePacks texture_packs;
 		uint64_t revision = 1;
 		bool valid = false;
 		std::chrono::steady_clock::time_point refreshed_at{};
@@ -500,6 +502,8 @@ private:
 				return RetryTextureCatalog(command);
 			case CommandType::DownloadTexturePack:
 				return DownloadTexturePack(command);
+			case CommandType::ImportTexturePack:
+				return ImportTexturePack(command);
 			case CommandType::CancelTexturePack:
 				return CancelTexturePack(command);
 			case CommandType::DeleteTexturePack:
@@ -597,7 +601,14 @@ private:
 		const std::string normalized = settings::SplitFolderList(command.path).empty() ? command.path : settings::SplitFolderList(command.path).front();
 		if (std::find(folders.begin(), folders.end(), normalized) == folders.end())
 			folders.push_back(normalized);
-		return WriteFolderList(folders, "library folder linked");
+		Execution saved = WriteFolderList(folders, "library folder linked");
+		if (!saved.succeeded)
+			return saved;
+		const Snapshot snapshot = m_storage->GetSnapshot();
+		const bool linked = std::any_of(snapshot.sources.begin(), snapshot.sources.end(), [&](const LibrarySource& source) {
+			return source.user_added && source.path == normalized;
+		});
+		return linked ? saved : Failure("Folder saved, but Caliza could not add it to the library: " + normalized);
 	}
 
 	std::string SourcePathForId(const std::string& id) const
@@ -1103,10 +1114,25 @@ private:
 		const GameEntry* game = RequireServiceGame(command, &snapshot, &error);
 		if (!game)
 			return Failure(error);
-		if (!m_options.hooks.download_texture_pack(*game, command.number, &error))
+		if (!m_options.hooks.download_texture_pack(*game, command.number, command.value, &error))
 			return Failure(error.empty() ? "the texture pack service could not start" : error);
 		RefreshProjection(true);
 		return Success("texture pack download queued");
+	}
+
+	Execution ImportTexturePack(const Command& command)
+	{
+		if (!m_options.hooks.import_texture_pack)
+			return Unsupported("texture pack imports");
+		Snapshot snapshot;
+		std::string error;
+		const GameEntry* game = RequireServiceGame(command, &snapshot, &error);
+		if (!game)
+			return Failure(error);
+		if (!m_options.hooks.import_texture_pack(*game, command.path, &error))
+			return Failure(error.empty() ? "Choose a readable ZIP or RAR archive" : error);
+		RefreshProjection(true);
+		return Success("texture pack import queued");
 	}
 
 	Execution CancelTexturePack(const Command& command)
@@ -1346,6 +1372,8 @@ private:
 				}
 				out.settings = std::move(scoped_settings);
 				out.selected_game_id = selected_game_key;
+				if (m_options.hooks.texture_packs)
+					out.texture_packs = m_options.hooks.texture_packs(*selected_game);
 			}
 		}
 

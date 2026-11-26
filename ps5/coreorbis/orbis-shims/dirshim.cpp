@@ -10,10 +10,12 @@
 // of textures/<serial>/replacements) were never found.
 // vk-285-135: folders under /nfs (games on NFS shares) are listed by OrbisNfs.cpp.
 #include <sys/dirent.h>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <fcntl.h>
 
+#include "OrbisDirent.h"
 #include "OrbisNfs.h"
 
 extern "C" int sceKernelOpen(const char*, int, int);
@@ -39,6 +41,12 @@ struct OrbisDIR
     void* nfs = nullptr; // vk-285-135: a folder on an NFS share (OrbisNfs.h), listed by OrbisNfs; fd is -1 then
 };
 
+static int KernelErrno(int result)
+{
+    const auto code = static_cast<unsigned>(result);
+    return (code & 0xffff0000u) == 0x80020000u ? static_cast<int>(code & 0xffffu) : EIO;
+}
+
 extern "C" DIR* opendir(const char* name)
 {
     if (OrbisNfs::IsPath(name)) // vk-285-135: /nfs/<host>/... is a share's folder, not the kernel's
@@ -57,7 +65,10 @@ extern "C" DIR* opendir(const char* name)
     const int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
     const int fd = sceKernelOpen(name, flags, 0);
     if (fd < 0)
+    {
+        errno = KernelErrno(fd);
         return nullptr;
+    }
     OrbisDIR* d = new OrbisDIR();
     d->fd = fd;
     d->offset = 0;
@@ -74,65 +85,37 @@ extern "C" struct dirent* readdir(DIR* dirp)
     if (d->nfs)
         return OrbisNfs::ReadDir(d->nfs, &d->entry) ? &d->entry : nullptr;
 
-    // Consume one record from the current buffer.
-    if (d->offset + 8 <= d->length)
+    for (;;)
     {
-        char* p = d->buffer + d->offset;
-        const size_t reclen = static_cast<unsigned char>(p[4]) | (static_cast<size_t>(static_cast<unsigned char>(p[5])) << 8);
-        const size_t namlen = static_cast<unsigned char>(p[7]);
-        if (reclen >= 12 && reclen % 4 == 0 && d->offset + reclen <= d->length && 8 + namlen < reclen)
+        const char* record = nullptr;
+        switch (OrbisDirent::Next(d->buffer, d->length, d->offset, record))
         {
-            // This directory's entry; valid until the next readdir on it or closedir.
-            dirent& entry = d->entry;
-            std::memset(&entry, 0, sizeof(entry));
-            entry.d_fileno = *reinterpret_cast<const u32*>(p);
-            entry.d_reclen = static_cast<u16>(reclen);
-            entry.d_type = static_cast<u8>(p[6]);
-            entry.d_namlen = static_cast<u8>(namlen);
-            std::memcpy(entry.d_name, p + 8, namlen);
-            entry.d_name[namlen] = '\0';
-            d->offset += reclen;
-            return &entry;
+            case OrbisDirent::Result::Entry:
+            {
+                dirent& entry = d->entry;
+                std::memset(&entry, 0, sizeof(entry));
+                std::memcpy(&entry, record, 8 + static_cast<unsigned char>(record[7]));
+                return &entry;
+            }
+            case OrbisDirent::Result::Invalid:
+                d->eof = true;
+                errno = EIO;
+                return nullptr;
+            case OrbisDirent::Result::Exhausted:
+                break;
         }
-        d->offset += reclen >= 4 ? (reclen + 3) & ~size_t{3} : 12;
-        // Fall through to refill if the record was malformed.
-    }
 
-    // Refill buffer.
-    const int n = sceKernelGetdents(d->fd, d->buffer, static_cast<int>(sizeof(d->buffer)));
-    if (n <= 0)
-    {
-        d->eof = true;
-        return nullptr;
-    }
-    d->length = static_cast<size_t>(n);
-    d->offset = 0;
-
-    // Consume the first record of the new buffer.
-    if (d->offset + 8 <= d->length)
-    {
-        char* p = d->buffer + d->offset;
-        const size_t reclen = static_cast<unsigned char>(p[4]) | (static_cast<size_t>(static_cast<unsigned char>(p[5])) << 8);
-        const size_t namlen = static_cast<unsigned char>(p[7]);
-        if (reclen >= 12 && reclen % 4 == 0 && d->offset + reclen <= d->length && 8 + namlen < reclen)
+        const int read = sceKernelGetdents(d->fd, d->buffer, static_cast<int>(sizeof(d->buffer)));
+        if (read <= 0 || static_cast<size_t>(read) > sizeof(d->buffer))
         {
-            dirent& entry = d->entry;
-            std::memset(&entry, 0, sizeof(entry));
-            entry.d_fileno = *reinterpret_cast<const u32*>(p);
-            entry.d_reclen = static_cast<u16>(reclen);
-            entry.d_type = static_cast<u8>(p[6]);
-            entry.d_namlen = static_cast<u8>(namlen);
-            std::memcpy(entry.d_name, p + 8, namlen);
-            entry.d_name[namlen] = '\0';
-            d->offset += reclen;
-            return &entry;
+            d->eof = true;
+            if (read != 0)
+                errno = read < 0 ? KernelErrno(read) : EIO;
+            return nullptr;
         }
-        d->eof = true;
-        return nullptr;
+        d->length = static_cast<size_t>(read);
+        d->offset = 0;
     }
-
-    d->eof = true;
-    return nullptr;
 }
 
 extern "C" int closedir(DIR* dirp)

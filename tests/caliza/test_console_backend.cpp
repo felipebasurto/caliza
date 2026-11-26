@@ -197,6 +197,57 @@ void TestLibraryFolderCommandUsesSettingsOwner()
 	CHECK_TRUE(written.find(folder) != std::string::npos);
 }
 
+void TestExternalPs2FolderDiscoveredAfterStartup()
+{
+	TempDir root, drive;
+	ConsoleBackendOptions options = TestOptions(root);
+	const std::string usb = drive.path + "/usb0";
+	const std::string folder = usb + "/ps2";
+	options.storage.discovery.usb_roots = {usb};
+	options.storage.discovery.extended_roots = {};
+	{
+		ConsoleBackend backend(options);
+		CHECK_TRUE(backend.GetSnapshot().games.empty());
+		std::set<std::string> images;
+		for (int i = 0; i < 6; i++)
+		{
+			const std::string image = folder + "/Game " + std::to_string(i) + ".CHD";
+			CHECK_TRUE(WriteFile(image, "MComprHD"));
+			images.insert(image);
+		}
+		const auto listing = backend.BrowseFolder(folder, {}, 0, 128);
+		CHECK_TRUE(listing.error.empty());
+		CHECK_TRUE(listing.contains_compatible);
+		CHECK_EQ(listing.entries.size(), 6u);
+
+		EventLog log;
+		const auto added = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::AddLibraryFolder, {}, folder)));
+		CHECK_EQ(static_cast<int>(added.status), static_cast<int>(CommandStatus::Succeeded));
+		const Snapshot linked = backend.GetSnapshot();
+		const auto source = std::find_if(linked.sources.begin(), linked.sources.end(), [&](const LibrarySource& item) {
+			return item.user_added && item.path == folder;
+		});
+		CHECK_TRUE(source != linked.sources.end());
+		if (source == linked.sources.end())
+			return;
+		const auto scanned = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::ScanSource, source->id)));
+		CHECK_EQ(static_cast<int>(scanned.status), static_cast<int>(CommandStatus::Succeeded));
+		const Snapshot library = backend.GetSnapshot();
+		CHECK_EQ(library.games.size(), 6u);
+		for (const auto& game : library.games)
+		{
+			CHECK_TRUE(images.count(game.path) != 0 && game.can_launch);
+			CHECK_EQ(ReadFile(game.path), std::string("MComprHD"));
+		}
+	}
+
+	ConsoleBackend reopened(options);
+	EventLog log;
+	const auto scanned = WaitTerminal(reopened, log, reopened.Post(MakeCommand(CommandType::RescanAll)));
+	CHECK_EQ(static_cast<int>(scanned.status), static_cast<int>(CommandStatus::Succeeded));
+	CHECK_EQ(reopened.GetSnapshot().games.size(), 6u);
+}
+
 void TestLaunchHandoffAndRuntimeHonesty()
 {
 	TempDir root;
@@ -243,14 +294,26 @@ void TestProductionServiceCommandHooks()
 	ConsoleBackendOptions options = TestOptions(root);
 	bool patch_started = false;
 	int texture_pack = -1;
+	std::string texture_pack_id, imported_archive;
 	bool texture_cancelled = false;
 	options.hooks.fetch_online_patches = [&patch_started](const GameEntry& game, std::string*) {
 		patch_started = game.serial == "SLUS-20010" || !game.serial.empty();
 		return patch_started;
 	};
-	options.hooks.download_texture_pack = [&texture_pack](const GameEntry& game, int pack_index, std::string*) {
+	options.hooks.download_texture_pack = [&](const GameEntry& game, int pack_index, const std::string& pack_id, std::string*) {
 		texture_pack = game.serial.empty() ? -2 : pack_index;
+		texture_pack_id = pack_id;
 		return true;
+	};
+	options.hooks.import_texture_pack = [&](const GameEntry&, const std::string& path, std::string*) {
+		imported_archive = path;
+		return true;
+	};
+	options.hooks.texture_packs = [](const GameEntry&) {
+		TexturePacks packs;
+		packs.catalog = TexturePacks::Catalog::Ready;
+		packs.entries.push_back({"high", "High resolution", "Demo creator", "", "", 10});
+		return packs;
 	};
 	options.hooks.cancel_texture_pack = [&texture_cancelled](const GameEntry&, std::string*) {
 		texture_cancelled = true;
@@ -279,9 +342,20 @@ void TestProductionServiceCommandHooks()
 	const CommandEvent patches = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::FetchOnlinePatches, game_id)));
 	CHECK_EQ(static_cast<int>(patches.status), static_cast<int>(CommandStatus::Succeeded));
 	CHECK_TRUE(patch_started);
-	const CommandEvent texture = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::DownloadTexturePack, game_id, {}, {}, 2)));
+	const CommandEvent texture = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::DownloadTexturePack, game_id, {}, "high", 2)));
 	CHECK_EQ(static_cast<int>(texture.status), static_cast<int>(CommandStatus::Succeeded));
 	CHECK_EQ(texture_pack, 2);
+	CHECK_EQ(texture_pack_id, std::string("high"));
+	const CommandEvent imported = WaitTerminal(backend, log,
+		backend.Post(MakeCommand(CommandType::ImportTexturePack, game_id, "/mnt/usb0/textures.zip")));
+	CHECK_EQ(static_cast<int>(imported.status), static_cast<int>(CommandStatus::Succeeded));
+	CHECK_EQ(imported_archive, std::string("/mnt/usb0/textures.zip"));
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, game_id)));
+	const Snapshot selected = backend.GetSnapshot();
+	CHECK_EQ(selected.selected_game_id, game_id);
+	CHECK_EQ(selected.texture_packs.entries.size(), 1u);
+	if (!selected.texture_packs.entries.empty())
+		CHECK_EQ(selected.texture_packs.entries.front().id, std::string("high"));
 	const CommandEvent cancel = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::CancelTexturePack, game_id)));
 	CHECK_EQ(static_cast<int>(cancel.status), static_cast<int>(CommandStatus::Succeeded));
 	CHECK_TRUE(texture_cancelled);
@@ -302,6 +376,7 @@ int main()
 	TestCompleteSchemaProjection();
 	TestSerializedSettingsAndAccessibilityMutation();
 	TestLibraryFolderCommandUsesSettingsOwner();
+	TestExternalPs2FolderDiscoveredAfterStartup();
 	TestLaunchHandoffAndRuntimeHonesty();
 	TestProductionServiceCommandHooks();
 	if (Failures() == 0)

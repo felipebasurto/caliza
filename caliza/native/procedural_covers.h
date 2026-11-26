@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: deterministic fictional cover art for host previews.
+// Caliza Estratos: deterministic fictional cover art for host previews.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

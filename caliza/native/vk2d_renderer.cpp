@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: small Vulkan 2D renderer for the native interface.
+// Caliza Estratos: small Vulkan 2D renderer for the native interface.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "vk2d_renderer.h"

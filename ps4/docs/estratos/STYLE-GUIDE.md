@@ -1,4 +1,4 @@
-# Caliza PS4 · Estratos (AI-assisted)
+# Caliza · Estratos
 
 **Diseño de interfaz original para televisión.** Una consola óptica imaginaria fabricada con basalto, láminas de cuarzo y luz fría. La referencia PS2UI aporta oscuridad, profundidad y contraste. El motivo propio son las capas minerales cortadas, con una única veta iluminada. El motivo vive en el arranque o en un espacio libre. En la biblioteca manda la colección.
 

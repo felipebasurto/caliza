@@ -1,4 +1,4 @@
-// PS5 port frontend: HD texture packs from archive.org (see fe_texpacks.h). 2026-10-05, AI-assisted; needs proper testing
+// Orbis frontend: HD texture packs from the community catalog (see fe_texpacks.h). 2026-10-05, AI-assisted; needs proper testing
 // on the console.
 //
 // Copyright (C) 2026 swordpdf
@@ -33,46 +33,44 @@ namespace
 {
 using State = TexturePackStatus::State;
 
-// ---- MD5 (RFC 1321), to check a download against archive.org's list.
-class Md5
+// ---- SHA-256 (FIPS 180-4), to check a download against the catalog's digests.
+class Sha256
 {
 public:
 	void Update(const void* data, size_t n)
 	{
 		const uint8_t* p = static_cast<const uint8_t*>(data);
-		m_length += n;
+		m_bytes += n;
 		while (n > 0)
 		{
-			const size_t take = std::min(n, sizeof(m_buffer) - m_used);
-			std::memcpy(m_buffer + m_used, p, take);
+			const size_t take = std::min(n, sizeof(m_block) - m_used);
+			std::memcpy(m_block + m_used, p, take);
 			m_used += take;
 			p += take;
 			n -= take;
-			if (m_used == sizeof(m_buffer))
+			if (m_used == sizeof(m_block))
 			{
-				Block(m_buffer);
+				Block(m_block);
 				m_used = 0;
 			}
 		}
 	}
 	std::string Hex() const
 	{
-		Md5 copy = *this;
-		const uint64_t bits = copy.m_length * 8;
-		const uint8_t pad = 0x80;
-		copy.Update(&pad, 1);
-		const uint8_t zero = 0;
+		Sha256 copy = *this;
+		const uint64_t bits = copy.m_bytes * 8;
+		const uint8_t one = 0x80, zero = 0;
+		copy.Update(&one, 1);
 		while (copy.m_used != 56)
 			copy.Update(&zero, 1);
 		uint8_t len[8];
 		for (int i = 0; i < 8; i++)
-			len[i] = static_cast<uint8_t>(bits >> (8 * i));
+			len[i] = static_cast<uint8_t>(bits >> (56 - 8 * i));
 		copy.Update(len, 8);
-		const uint32_t words[4] = {copy.m_a, copy.m_b, copy.m_c, copy.m_d};
 		static const char* const hex = "0123456789abcdef";
 		std::string out;
-		for (uint32_t w : words)
-			for (int i = 0; i < 4; i++)
+		for (uint32_t w : copy.m_h)
+			for (int i = 3; i >= 0; i--)
 			{
 				const uint8_t b = static_cast<uint8_t>(w >> (8 * i));
 				out += hex[b >> 4];
@@ -82,55 +80,72 @@ public:
 	}
 
 private:
-	static uint32_t Rol(uint32_t x, int c) { return (x << c) | (x >> (32 - c)); }
-	void Block(const uint8_t* p)
+	static uint32_t Rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+	void Block(const uint8_t* b)
 	{
-		static const uint32_t K[64] = {0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
-			0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340,
-			0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
-			0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9,
-			0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
-			0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0,
-			0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
-		static const int S[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14,
-			20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
-			6, 10, 15, 21};
-		uint32_t m[16];
+		static const uint32_t k[64] = {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+			0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+			0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+			0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb,
+			0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+			0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f,
+			0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+		uint32_t w[64];
 		for (int i = 0; i < 16; i++)
-			m[i] = static_cast<uint32_t>(p[i * 4]) | (static_cast<uint32_t>(p[i * 4 + 1]) << 8) | (static_cast<uint32_t>(p[i * 4 + 2]) << 16) |
-			       (static_cast<uint32_t>(p[i * 4 + 3]) << 24);
-		uint32_t a = m_a, b = m_b, c = m_c, d = m_d;
+			w[i] = (uint32_t(b[i * 4]) << 24) | (uint32_t(b[i * 4 + 1]) << 16) | (uint32_t(b[i * 4 + 2]) << 8) | uint32_t(b[i * 4 + 3]);
+		for (int i = 16; i < 64; i++)
+		{
+			const uint32_t s0 = Rotr(w[i - 15], 7) ^ Rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+			const uint32_t s1 = Rotr(w[i - 2], 17) ^ Rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+			w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+		}
+		uint32_t a = m_h[0], bb = m_h[1], c = m_h[2], d = m_h[3], e = m_h[4], f = m_h[5], g = m_h[6], h = m_h[7];
 		for (int i = 0; i < 64; i++)
 		{
-			uint32_t f;
-			int g;
-			if (i < 16)
-				f = (b & c) | (~b & d), g = i;
-			else if (i < 32)
-				f = (d & b) | (~d & c), g = (5 * i + 1) % 16;
-			else if (i < 48)
-				f = b ^ c ^ d, g = (3 * i + 5) % 16;
-			else
-				f = c ^ (b | ~d), g = (7 * i) % 16;
-			f += a + K[i] + m[g];
-			a = d;
+			const uint32_t t1 = h + (Rotr(e, 6) ^ Rotr(e, 11) ^ Rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i];
+			const uint32_t t2 = (Rotr(a, 2) ^ Rotr(a, 13) ^ Rotr(a, 22)) + ((a & bb) ^ (a & c) ^ (bb & c));
+			h = g;
+			g = f;
+			f = e;
+			e = d + t1;
 			d = c;
-			c = b;
-			b += Rol(f, S[i]);
+			c = bb;
+			bb = a;
+			a = t1 + t2;
 		}
-		m_a += a;
-		m_b += b;
-		m_c += c;
-		m_d += d;
+		m_h[0] += a;
+		m_h[1] += bb;
+		m_h[2] += c;
+		m_h[3] += d;
+		m_h[4] += e;
+		m_h[5] += f;
+		m_h[6] += g;
+		m_h[7] += h;
 	}
-
-	uint32_t m_a = 0x67452301, m_b = 0xefcdab89, m_c = 0x98badcfe, m_d = 0x10325476;
-	uint64_t m_length = 0;
-	uint8_t m_buffer[64] = {};
+	uint32_t m_h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+	uint8_t m_block[64] = {};
 	size_t m_used = 0;
+	uint64_t m_bytes = 0;
 };
 
 // ---- files
+
+bool LocalTextureArchive(const std::string& path, uint64_t& bytes)
+{
+	if (path.empty() || path.front() != '/' || path.find_first_of("\r\n") != std::string::npos || path.find('\0') != std::string::npos)
+		return false;
+	const size_t dot = path.rfind('.');
+	if (dot == std::string::npos)
+		return false;
+	std::string ext = path.substr(dot);
+	for (char& c : ext)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	struct stat info{};
+	if ((ext != ".zip" && ext != ".rar") || lstat(path.c_str(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size <= 0)
+		return false;
+	bytes = static_cast<uint64_t>(info.st_size);
+	return bytes <= UINT64_MAX / 4;
+}
 
 bool IsDir(const std::string& p)
 {
@@ -182,26 +197,6 @@ bool RemoveTree(const std::string& path)
 			ok = RemoveTree(path + "/" + n) && ok;
 	}
 	return rmdir(path.c_str()) == 0 && ok;
-}
-
-// Moves `from` to `to`; into a folder that is there already, file by file (a file of the same name is replaced).
-bool MoveTree(const std::string& from, const std::string& to)
-{
-	if (!Exists(to) || !IsDir(from) || !IsDir(to))
-		return rename(from.c_str(), to.c_str()) == 0;
-	bool ok = true;
-	if (DIR* d = opendir(from.c_str()))
-	{
-		std::vector<std::string> names;
-		while (dirent* e = readdir(d))
-			if (std::strcmp(e->d_name, ".") != 0 && std::strcmp(e->d_name, "..") != 0)
-				names.emplace_back(e->d_name);
-		closedir(d);
-		for (const std::string& n : names)
-			ok = MoveTree(from + "/" + n, to + "/" + n) && ok;
-	}
-	rmdir(from.c_str());
-	return ok;
 }
 
 // One whole file. `no_space` when the disk is full.
@@ -659,21 +654,37 @@ std::string PercentDecode(const std::string& text)
 	return out;
 }
 
-std::string TexturePackMd5(const void* data, size_t size)
+std::string TexturePackSha256(const void* data, size_t size)
 {
-	Md5 m;
-	m.Update(data, size);
-	return m.Hex();
+	Sha256 h;
+	h.Update(data, size);
+	return h.Hex();
 }
 
-std::string TexturePackMetadataUrl()
+std::vector<TexturePackPart> TexturePackPieces(const TexturePack& pack)
 {
-	return std::string("https://archive.org/metadata/") + kTexturePackItem;
+	if (!pack.parts.empty())
+		return pack.parts;
+	return {TexturePackPart{pack.url, pack.bytes, pack.sha256}};
 }
 
-std::string TexturePackUrl(const TexturePack& pack)
+std::string UrlHost(const std::string& url)
 {
-	return std::string("https://archive.org/download/") + kTexturePackItem + "/" + PercentEncode(pack.name);
+	const size_t scheme = url.find("://");
+	const size_t start = scheme == std::string::npos ? 0 : scheme + 3;
+	size_t end = url.find_first_of("/?#", start);
+	if (end == std::string::npos)
+		end = url.size();
+	std::string host = Lower(url.substr(start, end - start));
+	const size_t at = host.rfind('@');
+	if (at != std::string::npos)
+		host = host.substr(at + 1);
+	const size_t colon = host.find(':');
+	if (colon != std::string::npos)
+		host = host.substr(0, colon);
+	if (host.compare(0, 4, "www.") == 0)
+		host = host.substr(4);
+	return host;
 }
 
 std::string FormatBytes(uint64_t bytes)
@@ -688,6 +699,61 @@ std::string FormatBytes(uint64_t bytes)
 	return buf;
 }
 
+namespace
+{
+// Catalog text, kept to one line of printable characters and a sane length (it is shown on the TV as it is).
+std::string CatalogText(const rapidjson::Value& o, const char* key, size_t limit)
+{
+	const auto m = o.FindMember(key);
+	if (m == o.MemberEnd() || !m->value.IsString())
+		return {};
+	std::string out;
+	const char* p = m->value.GetString();
+	const size_t n = m->value.GetStringLength();
+	for (size_t i = 0; i < n && out.size() < limit; i++)
+	{
+		const unsigned char c = static_cast<unsigned char>(p[i]);
+		if (c == '\n' || c == '\r' || c == '\t')
+			out += ' ';
+		else if (c >= 0x20 && c != 0x7f)
+			out += static_cast<char>(c);
+	}
+	return Trim(out);
+}
+
+uint64_t CatalogNumber(const rapidjson::Value& o, const char* key)
+{
+	const auto m = o.FindMember(key);
+	if (m == o.MemberEnd())
+		return 0;
+	if (m->value.IsUint64())
+		return m->value.GetUint64();
+	if (m->value.IsString())
+		return std::strtoull(m->value.GetString(), nullptr, 10);
+	return 0;
+}
+
+bool IsSha256(const std::string& s)
+{
+	if (s.size() != 64)
+		return false;
+	for (char c : s)
+		if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+			return false;
+	return true;
+}
+
+bool IsHttps(const std::string& url)
+{
+	if (url.size() < 9 || url.size() > 2000 || Lower(url.substr(0, 8)) != "https://" || UrlHost(url).empty())
+		return false;
+	for (unsigned char c : url)
+		if (c <= 0x20 || c == 0x7f)
+			return false;
+	return true;
+}
+} // namespace
+
 bool ParseTexturePackCatalog(const std::string& json, std::vector<TexturePack>& out, std::string& error)
 {
 	out.clear();
@@ -695,77 +761,99 @@ bool ParseTexturePackCatalog(const std::string& json, std::vector<TexturePack>& 
 	doc.Parse(json.c_str(), json.size());
 	if (doc.HasParseError() || !doc.IsObject())
 	{
-		error = "archive.org's list isn't JSON";
+		error = "The texture catalog isn't readable";
 		return false;
 	}
-	const auto files = doc.FindMember("files");
-	if (files == doc.MemberEnd() || !files->value.IsArray())
+	const auto version = doc.FindMember("schemaVersion");
+	if (version != doc.MemberEnd() && (!version->value.IsInt() || version->value.GetInt() != 1))
 	{
-		error = doc.HasMember("error") ? "archive.org doesn't have the item" : "archive.org's list has no files";
+		error = "The texture catalog is a newer version: update Caliza";
 		return false;
 	}
-	auto text = [](const rapidjson::Value& o, const char* key) -> std::string {
-		const auto m = o.FindMember(key);
-		if (m == o.MemberEnd())
-			return {};
-		if (m->value.IsString())
-			return std::string(m->value.GetString(), m->value.GetStringLength());
-		if (m->value.IsUint64())
-			return std::to_string(m->value.GetUint64());
-		return {};
-	};
-	for (const rapidjson::Value& f : files->value.GetArray())
+	const auto entries = doc.FindMember("entries");
+	if (entries == doc.MemberEnd() || !entries->value.IsArray())
 	{
-		if (!f.IsObject())
+		error = "The texture catalog has no packs";
+		return false;
+	}
+	for (const rapidjson::Value& e : entries->value.GetArray())
+	{
+		if (!e.IsObject())
 			continue;
 		TexturePack p;
-		p.name = text(f, "name");
-		const std::string source = text(f, "source");
-		const std::string lower = Lower(p.name);
-		const bool archive = lower.size() > 4 && (lower.compare(lower.size() - 4, 4, ".rar") == 0 || lower.compare(lower.size() - 4, 4, ".zip") == 0);
-		if (p.name.empty() || (!source.empty() && source != "original") || !archive || p.name.find('/') != std::string::npos)
-			continue;
-		// The serials: every "[XXXX-00000]"; the title: the name without them and the extension; the label: what follows
-		// the last one ("HD Remaster", "HD Remaster Definitive Edition").
-		std::string title;
-		size_t last_close = std::string::npos;
-		const std::string stem = p.name.substr(0, p.name.size() - 4);
-		for (size_t i = 0; i < stem.size(); i++)
-		{
-			if (stem[i] == '[' && i + 11 < stem.size() && stem[i + 11] == ']')
-			{
-				const std::string serial = NormalSerial(stem.substr(i + 1, 10));
-				if (!serial.empty())
+		p.id = CatalogText(e, "id", 200);
+		p.name = CatalogText(e, "name", 200);
+		p.game = CatalogText(e, "gameTitle", 200);
+		p.version = CatalogText(e, "version", 120);
+		p.credits = CatalogText(e, "credits", 1200);
+		p.description = CatalogText(e, "description", 1200);
+		p.source_url = CatalogText(e, "sourceUrl", 2000);
+		p.license = CatalogText(e, "license", 200);
+		p.url = CatalogText(e, "downloadUrl", 2000);
+		p.bytes = CatalogNumber(e, "sizeBytes");
+		p.sha256 = Lower(CatalogText(e, "sha256", 64));
+		p.files = static_cast<uint32_t>(std::min<uint64_t>(CatalogNumber(e, "fileCount"), UINT32_MAX));
+		if (!IsHttps(p.source_url))
+			p.source_url.clear();
+		const auto authors = e.FindMember("authors");
+		if (authors != e.MemberEnd() && authors->value.IsArray())
+			for (const rapidjson::Value& a : authors->value.GetArray())
+				if (a.IsString() && p.authors.size() < 12)
 				{
-					if (std::find(p.serials.begin(), p.serials.end(), serial) == p.serials.end())
-						p.serials.push_back(serial);
-					last_close = i + 11;
-					i += 11;
-					continue;
+					std::string name;
+					for (size_t i = 0; i < a.GetStringLength() && name.size() < 80; i++)
+					{
+						const unsigned char c = static_cast<unsigned char>(a.GetString()[i]);
+						if (c >= 0x20 && c != 0x7f)
+							name += static_cast<char>(c);
+					}
+					name = Trim(name);
+					if (!name.empty())
+						p.authors.push_back(name);
 				}
+		const auto serials = e.FindMember("serials");
+		if (serials != e.MemberEnd() && serials->value.IsArray())
+			for (const rapidjson::Value& v : serials->value.GetArray())
+			{
+				const std::string serial = v.IsString() ? NormalSerial(std::string(v.GetString(), v.GetStringLength())) : std::string();
+				if (!serial.empty() && std::find(p.serials.begin(), p.serials.end(), serial) == p.serials.end())
+					p.serials.push_back(serial);
 			}
-			title += stem[i];
+		bool parts_ok = true;
+		const auto parts = e.FindMember("parts");
+		if (parts != e.MemberEnd() && parts->value.IsArray() && !parts->value.Empty())
+		{
+			uint64_t sum = 0;
+			for (const rapidjson::Value& v : parts->value.GetArray())
+			{
+				TexturePackPart part;
+				if (v.IsObject())
+				{
+					part.url = CatalogText(v, "downloadUrl", 2000);
+					part.bytes = CatalogNumber(v, "sizeBytes");
+					part.sha256 = Lower(CatalogText(v, "sha256", 64));
+				}
+				if (!IsHttps(part.url) || part.bytes == 0 || !IsSha256(part.sha256))
+					parts_ok = false;
+				if (part.bytes > p.bytes - sum)
+				{
+					parts_ok = false;
+					break;
+				}
+				sum += part.bytes;
+				p.parts.push_back(std::move(part));
+			}
+			parts_ok = parts_ok && p.parts.size() >= 2 && p.parts.size() <= 64 && sum == p.bytes;
 		}
-		if (p.serials.empty())
+		if (p.id.empty() || p.name.empty() || p.serials.empty() || !IsHttps(p.url) || p.bytes == 0 || p.bytes > UINT64_MAX / 4 || !IsSha256(p.sha256) || !parts_ok)
 			continue;
-		std::string collapsed;
-		for (char c : title)
-			if (!(c == ' ' && (collapsed.empty() || collapsed.back() == ' ')))
-				collapsed += c;
-		p.title = Trim(collapsed);
-		p.label = last_close != std::string::npos ? Trim(stem.substr(last_close + 1)) : std::string();
-		if (p.label.empty())
-			p.label = p.title;
-		p.bytes = std::strtoull(text(f, "size").c_str(), nullptr, 10);
-		p.md5 = Lower(text(f, "md5"));
-		p.files = static_cast<uint32_t>(std::strtoul(text(f, "filecount").c_str(), nullptr, 10));
-		if (p.bytes == 0 || p.md5.size() != 32)
+		if (std::any_of(out.begin(), out.end(), [&](const TexturePack& o) { return o.id == p.id; }))
 			continue;
 		out.push_back(std::move(p));
 	}
 	if (out.empty())
 	{
-		error = "archive.org's list has no texture packs";
+		error = "The texture catalog has no packs";
 		return false;
 	}
 	return true;
@@ -1043,13 +1131,16 @@ void TexturePackManager::Run()
 		{
 			// pr9l: renamed out of the way, so the sheet shows it gone at once; EmptySetAside deletes its files.
 			const std::string dir = m_textures + "/" + removal;
-			bool ok = Exists(dir + "/" + kMarker);
-			if (ok && !SetAside(dir))
-				ok = RemoveTree(dir);
-			Log("removed " + dir + (ok ? "" : " (not all of it)"));
-			std::lock_guard<std::mutex> lock(m_mutex);
-			m_progress.erase(removal);
-			m_installed.erase(removal);
+			const bool ok = ReadKeyValues(dir + "/" + kMarker).count("name") != 0 && SetAside(dir);
+			if (ok)
+			{
+				Log("removed " + dir);
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_progress.erase(removal);
+				m_installed.erase(removal);
+			}
+			else
+				SetState(removal, State::Failed, 0, 0, "Couldn't remove the installed pack");
 			continue;
 		}
 		Process(job);
@@ -1070,43 +1161,46 @@ void TexturePackManager::LoadCatalog()
 	if (cached && age >= 0 && age < 24 * 3600 && ParseTexturePackCatalog(json, packs, error))
 	{
 		ok = true;
-		Log("list from the cache (" + std::to_string(static_cast<int>(age / 60)) + " min old): " + std::to_string(packs.size()) + " packs");
+		Log("catalog from the cache (" + std::to_string(static_cast<int>(age / 60)) + " min old): " + std::to_string(packs.size()) + " packs");
 	}
 	else
 	{
 		std::string body;
 		const double t0 = Now();
-		const int status = m_platform.get_text ? m_platform.get_text(TexturePackMetadataUrl(), body) : -1;
-		Log("list from archive.org: status " + std::to_string(status) + ", " + std::to_string(body.size()) + " bytes in " +
+		const int status = m_platform.get_text ? m_platform.get_text(kTexturePackCatalogUrl, body) : -1;
+		Log("catalog: status " + std::to_string(status) + ", " + std::to_string(body.size()) + " bytes in " +
 			std::to_string(static_cast<int>((Now() - t0) * 1000)) + " ms");
+		error.clear();
 		if (status == 200 && ParseTexturePackCatalog(body, packs, error))
 		{
 			ok = true;
 			std::string dir = m_cache.substr(0, m_cache.rfind('/'));
 			MakeDirs(dir);
 			if (!settings::WriteFileAtomic(m_cache, body))
-				Log("couldn't keep the list in " + m_cache);
-			Log(std::to_string(packs.size()) + " packs on archive.org");
+				Log("couldn't keep the catalog in " + m_cache);
+			Log(std::to_string(packs.size()) + " packs in the catalog");
 		}
 		else if (cached && ParseTexturePackCatalog(json, packs, error))
 		{
 			ok = true;
-			Log("archive.org didn't answer; using the list from " + std::to_string(static_cast<int>(age / 3600)) + " h ago");
+			Log("the catalog didn't come; using the one from " + std::to_string(static_cast<int>(age / 3600)) + " h ago");
 		}
-		else if (error.empty())
-			error = status < 0 ? "Can't reach archive.org" : "archive.org answered " + std::to_string(status);
+		else if (error.empty() || status != 200)
+			error = status < 0 ? "Can't reach the texture catalog: check the connection" :
+								 "The texture catalog answered " + std::to_string(status);
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);
 	if (ok)
 	{
 		m_catalog = std::move(packs);
 		m_catalog_state = Catalog::Ready;
+		m_catalog_error.clear();
 	}
 	else
 	{
 		m_catalog_state = Catalog::Failed;
 		m_catalog_error = error;
-		Log("no list: " + error);
+		Log("no catalog: " + error);
 	}
 }
 
@@ -1129,22 +1223,49 @@ void TexturePackManager::ResumeJobs()
 		auto kv = ReadKeyValues(m_work + "/" + n);
 		Job j;
 		j.serial = NormalSerial(kv["serial"]);
+		j.id = kv["id"];
 		j.name = kv["name"];
-		j.md5 = Lower(kv["md5"]);
+		j.sha256 = Lower(kv["sha256"]);
 		j.bytes = std::strtoull(kv["bytes"].c_str(), nullptr, 10);
 		j.title = kv["title"];
 		j.settings = kv["settings"];
 		j.header = kv["header"];
-		if (j.serial.empty() || j.name.empty() || j.md5.size() != 32 || j.bytes == 0)
+		j.source = kv["source"];
+		j.source_url = kv["page"];
+		const int count = std::atoi(kv["parts"].c_str());
+		uint64_t sum = 0;
+		for (int i = 0; i < count && i < 64; i++)
+		{
+			// "part.<i>=<bytes> <sha256> <url>"
+			const std::string line = kv["part." + std::to_string(i)];
+			const size_t a = line.find(' '), b = a == std::string::npos ? a : line.find(' ', a + 1);
+			if (b == std::string::npos)
+				break;
+			TexturePackPart part;
+			part.bytes = std::strtoull(line.substr(0, a).c_str(), nullptr, 10);
+			part.sha256 = Lower(line.substr(a + 1, b - a - 1));
+			part.url = line.substr(b + 1);
+			if (!IsHttps(part.url) || !IsSha256(part.sha256) || !part.bytes || part.bytes > j.bytes - sum)
+				break;
+			sum += part.bytes;
+			j.parts.push_back(std::move(part));
+		}
+		const bool download_ok = j.source.empty() && IsSha256(j.sha256) && j.bytes > 0 && j.bytes <= UINT64_MAX / 4 && !j.parts.empty() &&
+			static_cast<int>(j.parts.size()) == count && sum == j.bytes;
+		const bool import_ok = !j.source.empty() && j.parts.empty() && j.sha256.empty() && j.id == "file:" + j.name;
+		if (j.serial.empty() || n != j.serial + ".job" || j.id.empty() || j.name.empty() || !(download_ok || import_ok))
 		{
 			Log("left out a job file that doesn't read: " + n);
 			continue;
 		}
 		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_progress.count(j.serial))
+			continue;
 		m_queue.push_back(j);
 		Progress& p = m_progress[j.serial];
 		p = Progress();
 		p.state = State::Queued;
+		p.id = j.id;
 		p.name = j.name;
 		p.title = j.title;
 		Log("carrying on with " + j.name + " for " + j.serial);
@@ -1154,17 +1275,37 @@ void TexturePackManager::ResumeJobs()
 bool TexturePackManager::WriteJob(const Job& j)
 {
 	MakeDirs(m_work);
-	const std::string text = "serial=" + j.serial + "\nname=" + OneLine(j.name) + "\nmd5=" + j.md5 + "\nbytes=" + std::to_string(j.bytes) +
-		"\ntitle=" + OneLine(j.title) + "\nsettings=" + OneLine(j.settings) + "\nheader=" + OneLine(j.header) + "\n";
+	std::string text = "serial=" + j.serial + "\nid=" + OneLine(j.id) + "\nname=" + OneLine(j.name) + "\nsha256=" + j.sha256 +
+		"\nbytes=" + std::to_string(j.bytes) + "\ntitle=" + OneLine(j.title) + "\nsettings=" + OneLine(j.settings) +
+		"\nheader=" + OneLine(j.header) + "\nsource=" + OneLine(j.source) + "\npage=" + OneLine(j.source_url) +
+		"\nparts=" + std::to_string(j.parts.size()) + "\n";
+	for (size_t i = 0; i < j.parts.size(); i++)
+		text += "part." + std::to_string(i) + "=" + std::to_string(j.parts[i].bytes) + " " + j.parts[i].sha256 + " " + OneLine(j.parts[i].url) + "\n";
 	return settings::WriteFileAtomic(m_work + "/" + j.serial + ".job", text);
 }
 
 void TexturePackManager::DeleteJobFiles(const Job& j)
 {
-	const std::string ext = Lower(j.name.substr(j.name.size() >= 4 ? j.name.size() - 4 : 0));
-	unlink((m_work + "/" + j.md5 + ".part").c_str());
-	unlink((m_work + "/" + j.md5 + ext).c_str());
+	// An imported archive is the user's: only this app's own files go.
+	if (j.source.empty() && IsSha256(j.sha256))
+	{
+		unlink((m_work + "/" + j.serial + "-" + j.sha256 + ".part").c_str());
+		unlink((m_work + "/" + j.serial + "-" + j.sha256 + ".zip").c_str());
+	}
 	unlink((m_work + "/" + j.serial + ".job").c_str());
+}
+
+// A queued, failed or replaced job's files, by what its job file says.
+void TexturePackManager::DeleteDownload(const std::string& serial, const std::string& id)
+{
+	auto kv = ReadKeyValues(m_work + "/" + serial + ".job");
+	Job j;
+	j.serial = serial;
+	j.id = id;
+	j.source = kv["source"];
+	j.sha256 = Lower(kv["sha256"]);
+	if (kv["id"].empty() || kv["id"] == id)
+		DeleteJobFiles(j);
 }
 
 void TexturePackManager::SetState(const std::string& serial, State state, uint64_t done, uint64_t total, const std::string& message)
@@ -1207,8 +1348,9 @@ bool TexturePackManager::Stopping(const std::string& serial) const
 
 void TexturePackManager::Process(const Job& job)
 {
-	const std::string ext = job.name.size() > 4 ? Lower(job.name.substr(job.name.size() - 4)) : std::string(".rar");
-	const std::string part = m_work + "/" + job.md5 + ".part", full = m_work + "/" + job.md5 + ext;
+	const bool imported = !job.source.empty();
+	const std::string part = m_work + "/" + job.serial + "-" + job.sha256 + ".part";
+	const std::string full = imported ? job.source : m_work + "/" + job.serial + "-" + job.sha256 + ".zip";
 	auto cancelled = [&] {
 		bool c;
 		{
@@ -1225,16 +1367,50 @@ void TexturePackManager::Process(const Job& job)
 		}
 		return c;
 	};
-	Log("starting " + job.name + " for " + job.serial + " (" + FormatBytes(job.bytes) + ")");
-	if (FileSize(full) != job.bytes && !Download(job, part, full))
+	uint64_t bytes = job.bytes;
+	if (imported && !LocalTextureArchive(full, bytes))
+	{
+		DeleteJobFiles(job);
+		SetState(job.serial, State::Failed, 0, 0, "The archive is no longer available");
+		return;
+	}
+	Log("starting " + job.name + " for " + job.serial + " (" + FormatBytes(bytes) + (imported ? ", from a file" : "") + ")");
+	const std::string target = m_textures + "/" + job.serial;
+	struct stat existing{};
+	if (lstat(target.c_str(), &existing) == 0)
+	{
+		// A shutdown can happen after publishing the pack, before updating its settings or clearing the journal.
+		const auto marker = S_ISDIR(existing.st_mode) ? ReadKeyValues(target + "/" + kMarker) : std::map<std::string, std::string>{};
+		const auto id = marker.find("id"), checksum = marker.find("sha256");
+		if (id != marker.end() && id->second == job.id && checksum != marker.end() && checksum->second == job.sha256)
+		{
+			Job installed = job;
+			installed.bytes = bytes;
+			Finish(installed);
+		}
+		else
+		{
+			DeleteJobFiles(job);
+			SetState(job.serial, State::Failed, 0, 0, "A texture folder already exists for this game");
+		}
+		return;
+	}
+	// Recheck even a complete file when resuming an interrupted install.
+	if (!imported && FileSize(full) == job.bytes && rename(full.c_str(), part.c_str()) != 0)
+	{
+		SetState(job.serial, State::Failed, 0, 0, "Couldn't reopen the saved download");
+		return;
+	}
+	if (!imported && !Download(job, part, full))
 	{
 		cancelled();
 		return;
 	}
 	if (cancelled() || Stopping(job.serial))
 		return;
-	// Room to unpack: DDS packs come to ~2.7 times their archive (Beyond Good & Evil: 46 MB -> 122 MB).
-	const uint64_t need = job.bytes * 3 + (512ull << 20);
+	// Room to unpack: the textures come to about twice their archive (DDS in RAR came to 2.7 times; the catalog's ZIPs
+	// hold PNG and DDS that deflate less).
+	const uint64_t need = bytes * 2 + (512ull << 20);
 	const uint64_t room = m_platform.free_bytes ? m_platform.free_bytes(m_textures) : UINT64_MAX;
 	if (room < need)
 	{
@@ -1255,7 +1431,9 @@ void TexturePackManager::Process(const Job& job)
 	bool no_space = false;
 	std::string error;
 	const double t0 = Now();
-	const bool ok = Unpack(job, full, staging, files, no_space, error);
+	Job sized = job;
+	sized.bytes = bytes;
+	const bool ok = Unpack(sized, full, staging, files, no_space, error);
 	if (cancelled())
 		return;
 	if (Stopping(job.serial))
@@ -1271,42 +1449,39 @@ void TexturePackManager::Process(const Job& job)
 		else
 			SetState(job.serial, State::Failed, 0, 0, ok ? "Nothing in it is a texture for " + job.serial : error);
 		Log("unpacking failed: " + (ok ? std::string("no textures for ") + job.serial : error));
+		if (imported)
+			unlink((m_work + "/" + job.serial + ".job").c_str());
 		return;
 	}
 	Log("unpacked " + std::to_string(files) + " files in " + std::to_string(static_cast<int>(Now() - t0)) + " s");
-	SetState(job.serial, State::Installing);
-	// <serial>/ (and a second disc's) into the textures folder, beside or into what is there.
-	bool moved = true;
-	if (DIR* d = opendir(staging.c_str()))
+	bool install = false;
 	{
-		std::vector<std::string> names;
-		while (dirent* e = readdir(d))
-			if (std::strcmp(e->d_name, ".") != 0 && std::strcmp(e->d_name, "..") != 0)
-				names.emplace_back(e->d_name);
-		closedir(d);
-		for (const std::string& n : names)
-		{
-			// pr9l: this app's earlier install of the pack as a replacements/ folder makes way for the one-file pack (loose
-			// files would win over the pack's, and keep the per-file cost).
-			const std::string target = m_textures + "/" + n;
-			if (Exists(staging + "/" + n + "/" + OrbisTexturePak::kFileName) && Exists(target + "/" + kMarker) &&
-				IsDir(target + "/replacements") && !SetAside(target + "/replacements"))
-				RemoveTree(target + "/replacements");
-			moved = MoveTree(staging + "/" + n, target) && moved;
-		}
+		std::lock_guard<std::mutex> lock(m_mutex);
+		install = !m_stop && !m_cancel_current;
+		if (install)
+			m_progress[job.serial].state = State::Installing;
 	}
-	RemoveTree(staging);
-	if (!moved)
+	if (!install)
 	{
-		SetState(job.serial, State::Failed, 0, 0, "Couldn't move the pack into " + m_textures);
+		if (!cancelled())
+			RemoveTree(staging);
 		return;
 	}
-	Finish(job, files);
+	const std::string staged_pack = staging + "/" + job.serial;
+	if (!WriteMarker(sized, files, staged_pack) || rename(staged_pack.c_str(), target.c_str()) != 0)
+	{
+		RemoveTree(staging);
+		SetState(job.serial, State::Failed, 0, 0, "Couldn't install the pack into " + target);
+		return;
+	}
+	RemoveTree(staging);
+	Finish(sized);
 }
 
 bool TexturePackManager::Download(const Job& job, const std::string& part, const std::string& full)
 {
 	MakeDirs(m_work);
+	const std::vector<TexturePackPart>& pieces = job.parts;
 	uint64_t have = FileSize(part);
 	if (have > job.bytes)
 	{
@@ -1314,7 +1489,7 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		have = 0;
 	}
 	// Room for the rest of the download and for unpacking it.
-	const uint64_t need = (job.bytes - have) + job.bytes * 3 + (512ull << 20);
+	const uint64_t need = (job.bytes - have) + job.bytes * 2 + (512ull << 20);
 	const uint64_t room = m_platform.free_bytes ? m_platform.free_bytes(m_textures) : UINT64_MAX;
 	if (room < need)
 	{
@@ -1322,20 +1497,70 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		Log("not enough room: " + FormatBytes(room) + " free, " + FormatBytes(need) + " wanted");
 		return false;
 	}
-	// What came before goes through the checksum first.
-	Md5 md5;
+	// The whole file's hash, and the piece's: each piece is checked as it ends (the parts of a big pack have their own).
+	Sha256 whole, piece;
+	size_t index = 0;
+	uint64_t fed = 0, piece_start = 0;
+	int bad_piece = -1;
+	const auto reset = [&] {
+		whole = Sha256();
+		piece = Sha256();
+		index = 0;
+		fed = piece_start = 0;
+		bad_piece = -1;
+	};
+	const auto feed = [&](const void* data, size_t n) {
+		const uint8_t* p = static_cast<const uint8_t*>(data);
+		while (n > 0 && index < pieces.size())
+		{
+			const uint64_t piece_end = piece_start + pieces[index].bytes;
+			const size_t take = static_cast<size_t>(std::min<uint64_t>(n, piece_end - fed));
+			whole.Update(p, take);
+			piece.Update(p, take);
+			fed += take;
+			p += take;
+			n -= take;
+			if (fed == piece_end)
+			{
+				if (piece.Hex() != pieces[index].sha256)
+				{
+					bad_piece = static_cast<int>(index);
+					return false;
+				}
+				piece = Sha256();
+				piece_start = piece_end;
+				index++;
+			}
+		}
+		return n == 0;
+	};
+	const auto piece_failed = [&](const std::string& got) {
+		unlink(part.c_str());
+		const std::string what = pieces.size() > 1 ? "Part " + std::to_string(bad_piece + 1) + " of " + std::to_string(pieces.size()) +
+				" didn't match the catalog's checksum: try again" :
+													 std::string("The download didn't match the catalog's checksum: try again");
+		SetState(job.serial, State::Failed, 0, 0, what);
+		Log("SHA-256 of piece " + std::to_string(bad_piece + 1) + " is " + got + ", the catalog says " +
+			pieces[static_cast<size_t>(bad_piece)].sha256 + ": the download is gone");
+	};
+	// What came before goes through the checksums first.
 	if (have > 0)
 	{
 		SetState(job.serial, State::Checking, 0, have);
 		FILE* f = std::fopen(part.c_str(), "rb");
 		std::vector<uint8_t> buf(4 << 20);
 		uint64_t read = 0;
+		bool fine = true;
 		while (f && read < have)
 		{
 			const size_t n = std::fread(buf.data(), 1, static_cast<size_t>(std::min<uint64_t>(buf.size(), have - read)), f);
 			if (n == 0)
 				break;
-			md5.Update(buf.data(), n);
+			if (!feed(buf.data(), n))
+			{
+				fine = false;
+				break;
+			}
 			read += n;
 			SetProgress(job.serial, read);
 			if (Stopping(job.serial))
@@ -1346,11 +1571,12 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		}
 		if (f)
 			std::fclose(f);
-		if (read != have)
+		if (!fine || read != have)
 		{
+			Log(fine ? "the part file was short: starting over" : "a finished piece of the part file doesn't match: starting over");
 			unlink(part.c_str());
 			have = 0;
-			md5 = Md5();
+			reset();
 		}
 		Log("picking up " + job.name + " at " + FormatBytes(have));
 	}
@@ -1366,36 +1592,47 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		m_rate_bytes = have;
 		m_rate_time = Now();
 	}
-	const std::string url = TexturePackUrl(TexturePack{job.name, {}, {}, {}, job.bytes, job.md5, 0});
 	const double t0 = Now();
 	const uint64_t at_start = have;
 	int failures = 0;
 	bool write_failed = false;
-	while (have < job.bytes)
+	while (have < job.bytes && index < pieces.size())
 	{
 		if (Stopping(job.serial))
 			break;
-		const uint64_t want = std::min<uint64_t>(kChunk, job.bytes - have);
+		const uint64_t in_piece = have - piece_start;
+		const uint64_t want = std::min<uint64_t>(kChunk, pieces[index].bytes - in_piece);
+		const std::string url = pieces[index].url;
 		uint64_t got = 0;
 		const auto sink = [&](const void* data, size_t n) {
-			if (got + n > want || std::fwrite(data, 1, n, f) != n)
+			if (got + n > want)
+				return false;
+			if (std::fwrite(data, 1, n, f) != n)
 			{
-				write_failed = got + n <= want;
+				write_failed = true;
 				return false;
 			}
-			md5.Update(data, n);
 			got += n;
+			if (!feed(data, n))
+				return false;
 			SetProgress(job.serial, have + got);
 			return !Stopping(job.serial);
 		};
-		const int status = m_platform.get_range ? m_platform.get_range(url, have, want, sink) : -1;
-		std::fflush(f);
+		const int status = m_platform.get_range ? m_platform.get_range(url, in_piece, want, sink) : -1;
+		if (std::fflush(f) != 0)
+			write_failed = true;
 		have += got;
 		if (write_failed)
 		{
 			std::fclose(f);
 			SetState(job.serial, State::NeedSpace, 0, 0, "Couldn't write the download (is the disk full?)");
 			Log("writing the download failed at " + FormatBytes(have));
+			return false;
+		}
+		if (bad_piece >= 0)
+		{
+			std::fclose(f);
+			piece_failed("different");
 			return false;
 		}
 		if (got == want && (status == 206 || status == 200))
@@ -1405,14 +1642,15 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		}
 		if (Stopping(job.serial))
 			break;
+		// A short answer: the part file is cut back to what the hashes have seen (they already include `got`).
 		failures++;
-		Log("range at " + std::to_string(have - got) + ": status " + std::to_string(status) + ", " + std::to_string(got) + " of " +
-			std::to_string(want) + " bytes (try " + std::to_string(failures) + ")");
+		Log("range at " + std::to_string(in_piece) + " of piece " + std::to_string(index + 1) + ": status " + std::to_string(status) +
+			", " + std::to_string(got) + " of " + std::to_string(want) + " bytes (try " + std::to_string(failures) + ")");
 		if (failures >= 6)
 		{
 			std::fclose(f);
 			SetState(job.serial, State::Failed, 0, 0,
-				status > 0 ? "archive.org answered " + std::to_string(status) : "The download keeps failing: check the connection");
+				status > 0 ? "The download server answered " + std::to_string(status) : "The download keeps failing: check the connection");
 			return false;
 		}
 		// 2, 4, 8, 16 and 30 s between tries, cut short by a stop.
@@ -1420,19 +1658,23 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		while (Now() < until && !Stopping(job.serial))
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
-	std::fclose(f);
+	if (std::fclose(f) != 0)
+	{
+		SetState(job.serial, State::NeedSpace, 0, 0, "Couldn't save the download (is the disk full?)");
+		return false;
+	}
 	const double secs = Now() - t0;
 	Log("downloaded " + FormatBytes(have - at_start) + " in " + std::to_string(static_cast<int>(secs)) + " s" +
 		(secs > 0 ? " (" + FormatBytes(static_cast<uint64_t>((have - at_start) / secs)) + "/s)" : std::string()));
 	if (have < job.bytes)
 		return false; // stopped: the part stays for next time
 	SetState(job.serial, State::Verifying, job.bytes, job.bytes);
-	const std::string sum = md5.Hex();
-	if (sum != job.md5)
+	const std::string sum = whole.Hex();
+	if (sum != job.sha256)
 	{
 		unlink(part.c_str());
-		SetState(job.serial, State::Failed, 0, 0, "The download didn't match archive.org's checksum: try again");
-		Log("MD5 " + sum + ", archive.org says " + job.md5 + ": the download is gone");
+		SetState(job.serial, State::Failed, 0, 0, "The download didn't match the catalog's checksum: try again");
+		Log("SHA-256 " + sum + ", the catalog says " + job.sha256 + ": the download is gone");
 		return false;
 	}
 	if (rename(part.c_str(), full.c_str()) != 0)
@@ -1440,7 +1682,7 @@ bool TexturePackManager::Download(const Job& job, const std::string& part, const
 		SetState(job.serial, State::Failed, 0, 0, "Couldn't keep the download");
 		return false;
 	}
-	Log("MD5 matches archive.org's");
+	Log("SHA-256 matches the catalog's");
 	return true;
 }
 
@@ -1502,12 +1744,12 @@ bool TexturePackManager::Unpack(const Job& job, const std::string& full, const s
 			break;
 		}
 		SetProgress(job.serial, static_cast<uint64_t>(std::max<la_int64_t>(0, archive_filter_bytes(a, -1))));
-		if (archive_entry_filetype(e) != AE_IFREG)
+		if (archive_entry_filetype(e) != AE_IFREG || archive_entry_hardlink(e))
 			continue;
 		const char* utf8 = archive_entry_pathname_utf8(e);
 		const char* raw = archive_entry_pathname(e);
 		const std::string rel = TexturePackTarget(utf8 ? utf8 : raw ? raw : "", job.serial);
-		if (rel.empty())
+		if (rel.compare(0, job.serial.size() + 1, job.serial + "/") != 0)
 		{
 			skipped++;
 			archive_read_data_skip(a);
@@ -1630,33 +1872,27 @@ bool TexturePackManager::Unpack(const Job& job, const std::string& full, const s
 						   "Couldn't write " + (failed.compare(0, staging.size() + 1, staging + "/") == 0 ? failed.substr(staging.size() + 1) : failed);
 		ok = false;
 	}
-	files = packed + (loose ? loose->Written() : 0);
+	files = packed > 0 ? packed + (loose ? loose->Written() : 0) : 0;
 	if (ok && r != ARCHIVE_EOF)
 	{
 		error = std::string("The pack is damaged: ") + (archive_error_string(a) ? archive_error_string(a) : "?");
 		ok = false;
 	}
-	Log(std::string("read ") + archive_format_name(a) + ": " + std::to_string(files) + " files kept (" + std::to_string(packed) +
+	Log(std::string("read ") + (archive_format_name(a) ? archive_format_name(a) : "archive") + ": " + std::to_string(files) + " files kept (" + std::to_string(packed) +
 		" in the pack), " + std::to_string(skipped) + " left out (dumps or other folders)");
 	archive_read_free(a);
 	return ok;
 }
 
-void TexturePackManager::Finish(const Job& job, uint32_t files)
+bool TexturePackManager::WriteMarker(const Job& job, uint32_t files, const std::string& folder)
 {
-	char when[32];
-	const std::time_t now = std::time(nullptr);
-	std::tm tm{};
-	gmtime_r(&now, &tm);
-	std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M UTC", &tm);
-	const std::string marker = "# Installed by Caliza from archive.org's PCSX2 HD Texture Packs. Removing it from the sheet\n"
-	                           "# (Square, HD texture pack, Triangle twice) deletes this folder.\n"
-	                           "name=" +
-		OneLine(job.name) + "\nsource=https://archive.org/details/" + kTexturePackItem + "\nmd5=" + job.md5 + "\nfiles=" +
-		std::to_string(files) + "\ninstalled=" + when + "\n";
-	if (!settings::WriteFileAtomic(m_textures + "/" + job.serial + "/" + kMarker, marker))
-		Log("couldn't write the marker in " + m_textures + "/" + job.serial);
-	DeleteJobFiles(job);
+	const std::string marker = "# Installed by Caliza\nname=" + OneLine(job.name) + "\nid=" + OneLine(job.id) +
+		"\nsource=" + OneLine(job.source_url) + "\nsha256=" + job.sha256 + "\nfiles=" + std::to_string(files) + "\n";
+	return settings::WriteFileAtomic(folder + "/" + kMarker, marker);
+}
+
+void TexturePackManager::Finish(const Job& job)
+{
 	// Texture replacements on for this game.
 	std::string what, error;
 	if (!job.settings.empty())
@@ -1667,14 +1903,15 @@ void TexturePackManager::Finish(const Job& job, uint32_t files)
 		else
 			Log("couldn't switch Texture replacements on: " + error);
 	}
+	DeleteJobFiles(job);
+	Log("installed " + job.name + " in " + m_textures + "/" + job.serial);
+	if (m_platform.notify)
+		m_platform.notify(job.title, true, error.empty() ? FormatBytes(job.bytes) : "Enable Texture replacements in Game settings");
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_progress.erase(job.serial);
 		m_installed.erase(job.serial);
 	}
-	Log("installed " + job.name + " in " + m_textures + "/" + job.serial);
-	if (m_platform.notify)
-		m_platform.notify(job.title, true, FormatBytes(job.bytes));
 }
 
 // What the textures folder has for a serial: file-system work, so Status calls it without the lock (and not while a pack
@@ -1684,16 +1921,21 @@ TexturePackManager::Installed TexturePackManager::LookAtFolder(const std::string
 	Installed in;
 	in.checked = Now();
 	const std::string dir = m_textures + "/" + serial;
-	const auto kv = ReadKeyValues(dir + "/" + kMarker);
+	struct stat info{};
+	const auto kv = lstat(dir.c_str(), &info) == 0 && S_ISDIR(info.st_mode) ?
+		ReadKeyValues(dir + "/" + kMarker) : std::map<std::string, std::string>{};
 	const auto name = kv.find("name");
 	if (name != kv.end())
 	{
 		in.present = in.ours = true;
 		in.name = name->second;
+		const auto id = kv.find("id");
+		if (id != kv.end())
+			in.id = id->second;
 		in.where = dir;
 		return in;
 	}
-	if (HasEntries(dir + "/replacements"))
+	if (HasEntries(dir + "/replacements") || Exists(dir + "/" + OrbisTexturePak::kFileName))
 	{
 		in.present = true;
 		in.where = dir;
@@ -1717,11 +1959,6 @@ std::vector<TexturePack> TexturePackManager::PacksFor(const std::string& serial)
 	for (const TexturePack& p : m_catalog)
 		if (std::find(p.serials.begin(), p.serials.end(), serial) != p.serials.end())
 			out.push_back(p);
-	// Two with the same edition (two titles under one serial): their titles tell them apart.
-	for (size_t i = 0; i < out.size(); i++)
-		for (size_t j = 0; j < out.size(); j++)
-			if (i != j && out[i].label == out[j].label)
-				out[i].label = out[i].title;
 	return out;
 }
 
@@ -1735,6 +1972,9 @@ TexturePackStatus TexturePackManager::Status(const std::string& raw_serial) cons
 		s.state = State::None;
 		return s;
 	}
+	s.catalog_loading = m_catalog_state == Catalog::Loading;
+	s.catalog_ready = m_catalog_state == Catalog::Ready;
+	s.catalog_message = m_catalog_error;
 	s.packs = PacksFor(serial);
 	const auto it = m_progress.find(serial);
 	if (it != m_progress.end())
@@ -1745,9 +1985,7 @@ TexturePackStatus TexturePackManager::Status(const std::string& raw_serial) cons
 		s.total = p.total;
 		s.rate = p.rate;
 		s.message = p.message;
-		for (size_t i = 0; i < s.packs.size(); i++)
-			if (s.packs[i].name == p.name)
-				s.job_pack = static_cast<int>(i);
+		s.job_name = p.name;
 		return s;
 	}
 	// The folder, from the cache; looked at again when that is a few seconds old, without the lock (the worker's progress
@@ -1772,6 +2010,7 @@ TexturePackStatus TexturePackManager::Status(const std::string& raw_serial) cons
 	{
 		s.state = State::Installed;
 		s.installed = in.name;
+		s.installed_id = in.id;
 		s.where = in.where;
 		s.ours = in.ours;
 		return s;
@@ -1788,56 +2027,79 @@ TexturePackStatus TexturePackManager::Status(const std::string& raw_serial) cons
 	return s;
 }
 
-bool TexturePackManager::Begin(const std::string& raw_serial, int pack, const std::string& settings_path, const std::string& settings_header,
-	const std::string& title)
+bool TexturePackManager::Begin(const std::string& raw_serial, int index, const std::string& settings_path, const std::string& settings_header,
+	const std::string& title, const std::string& id)
 {
 	const std::string serial = NormalSerial(raw_serial);
-	Job j;
+	std::lock_guard<std::mutex> lock(m_mutex);
+	if (serial.empty() || m_catalog_state != Catalog::Ready)
+		return false;
+	const auto packs = PacksFor(serial);
+	const auto it = id.empty() ?
+		(index >= 0 && static_cast<size_t>(index) < packs.size() ? packs.begin() + index : packs.end()) :
+		std::find_if(packs.begin(), packs.end(), [&](const TexturePack& p) { return p.id == id; });
+	if (it == packs.end())
+		return false;
+	Job job;
+	job.serial = serial;
+	job.id = it->id;
+	job.name = it->name;
+	job.sha256 = it->sha256;
+	job.title = title;
+	job.settings = settings_path;
+	job.header = settings_header;
+	job.source_url = it->source_url;
+	job.bytes = it->bytes;
+	job.parts = TexturePackPieces(*it);
+	return Queue(std::move(job));
+}
+
+bool TexturePackManager::Import(const std::string& raw_serial, const std::string& archive_path, const std::string& settings_path,
+	const std::string& settings_header, const std::string& title)
+{
+	const std::string serial = NormalSerial(raw_serial);
+	uint64_t bytes = 0;
+	if (serial.empty() || OneLine(archive_path) != archive_path || !LocalTextureArchive(archive_path, bytes))
+		return false;
+	Job job;
+	job.serial = serial;
+	job.source = archive_path;
+	job.bytes = bytes;
+	job.name = archive_path.substr(archive_path.rfind('/') + 1);
+	job.id = "file:" + job.name;
+	job.title = title;
+	job.settings = settings_path;
+	job.header = settings_header;
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return Queue(std::move(job));
+}
+
+// Called with m_mutex held.
+bool TexturePackManager::Queue(Job job)
+{
+	if (m_stop || m_current == job.serial)
+		return false;
+	const auto pending = m_progress.find(job.serial);
+	if (pending != m_progress.end() && pending->second.state != State::Failed && pending->second.state != State::NeedSpace)
+		return false;
+	struct stat existing{};
+	if (lstat((m_textures + "/" + job.serial).c_str(), &existing) == 0)
+		return false;
+	if (pending != m_progress.end())
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
-		if (serial.empty() || m_stop || m_catalog_state != Catalog::Ready)
-			return false;
-		const auto it = m_progress.find(serial);
-		const bool redo = it != m_progress.end() && (it->second.state == State::Failed || it->second.state == State::NeedSpace);
-		if (it != m_progress.end() && !redo)
-			return false; // already on its way
-		const std::vector<TexturePack> packs = PacksFor(serial);
-		if (pack < 0 || pack >= static_cast<int>(packs.size()))
-			return false;
-		// A failed job of another pack for this game: its files go.
-		if (redo && it->second.name != packs[static_cast<size_t>(pack)].name)
-		{
-			for (const TexturePack& p : m_catalog)
-				if (p.name == it->second.name)
-				{
-					Job old;
-					old.serial = serial;
-					old.name = p.name;
-					old.md5 = p.md5;
-					DeleteJobFiles(old);
-				}
-		}
-		const TexturePack& p = packs[static_cast<size_t>(pack)];
-		j.serial = serial;
-		j.name = p.name;
-		j.md5 = p.md5;
-		j.bytes = p.bytes;
-		j.title = title;
-		j.settings = settings_path;
-		j.header = settings_header;
+		const auto saved = ReadKeyValues(m_work + "/" + job.serial + ".job");
+		const auto digest = saved.find("sha256");
+		if (pending->second.id != job.id || (digest != saved.end() && digest->second != job.sha256))
+			DeleteDownload(job.serial, pending->second.id);
 	}
-	if (!WriteJob(j))
-		Log("couldn't write the job file in " + m_work + " (it won't carry on after a game)");
-	{
-		std::lock_guard<std::mutex> lock(m_mutex);
-		Progress& p = m_progress[serial];
-		p = Progress();
-		p.state = State::Queued;
-		p.name = j.name;
-		p.title = j.title;
-		m_queue.push_back(j);
-	}
-	Log("asked for " + j.name + " (" + FormatBytes(j.bytes) + ") for " + serial);
+	if (!WriteJob(job))
+		return false;
+	Progress& progress = m_progress[job.serial];
+	progress = Progress();
+	progress.id = job.id;
+	progress.name = job.name;
+	progress.title = job.title;
+	m_queue.push_back(std::move(job));
 	m_cv.notify_all();
 	return true;
 }
@@ -1849,7 +2111,9 @@ bool TexturePackManager::Cancel(const std::string& raw_serial)
 	const auto it = m_progress.find(serial);
 	if (it == m_progress.end())
 		return false;
-	if (m_current == serial)
+	if (it->second.state == State::Installing || it->second.state == State::Removing)
+		return false;
+	if (m_current == serial && it->second.state != State::Failed && it->second.state != State::NeedSpace)
 	{
 		m_cancel_current = true;
 		if (m_platform.abort)
@@ -1859,16 +2123,7 @@ bool TexturePackManager::Cancel(const std::string& raw_serial)
 	// Queued, failed or short of space: its files go now.
 	for (auto q = m_queue.begin(); q != m_queue.end();)
 		q = q->serial == serial ? m_queue.erase(q) : q + 1;
-	for (const TexturePack& p : m_catalog)
-		if (p.name == it->second.name)
-		{
-			Job old;
-			old.serial = serial;
-			old.name = p.name;
-			old.md5 = p.md5;
-			DeleteJobFiles(old);
-		}
-	unlink((m_work + "/" + serial + ".job").c_str());
+	DeleteDownload(serial, it->second.id);
 	m_progress.erase(it);
 	Log("forgot the download for " + serial);
 	return true;
@@ -1878,7 +2133,10 @@ bool TexturePackManager::Remove(const std::string& raw_serial)
 {
 	const std::string serial = NormalSerial(raw_serial);
 	std::lock_guard<std::mutex> lock(m_mutex);
-	if (serial.empty() || m_progress.count(serial) || !Exists(m_textures + "/" + serial + "/" + kMarker))
+	const std::string folder = m_textures + "/" + serial;
+	struct stat info{};
+	if (serial.empty() || m_progress.count(serial) || lstat(folder.c_str(), &info) != 0 ||
+		!S_ISDIR(info.st_mode) || ReadKeyValues(folder + "/" + kMarker).count("name") == 0)
 		return false; // only a pack this app installed, and not while it's busy with it
 	Progress& p = m_progress[serial];
 	p = Progress();
@@ -1922,9 +2180,10 @@ TexturePackService TexturePackManager::Service()
 {
 	TexturePackService s;
 	s.status = [this](const std::string& serial) { return Status(serial); };
-	s.begin = [this](const std::string& serial, int pack, const std::string& path, const std::string& header, const std::string& title) {
-		return Begin(serial, pack, path, header, title);
-	};
+	s.begin = [this](const std::string& serial, int index, const std::string& path, const std::string& header, const std::string& title,
+		const std::string& id) { return Begin(serial, index, path, header, title, id); };
+	s.import = [this](const std::string& serial, const std::string& path, const std::string& settings, const std::string& header,
+		const std::string& title) { return Import(serial, path, settings, header, title); };
 	s.cancel = [this](const std::string& serial) { return Cancel(serial); };
 	s.remove = [this](const std::string& serial) { return Remove(serial); };
 	s.retry = [this] { Retry(); };

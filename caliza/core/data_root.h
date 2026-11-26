@@ -1,4 +1,4 @@
-// Caliza PS4 core: canonical data-root layout and resumable legacy-to-Caliza migration.
+// Caliza core: canonical data-root layout and resumable legacy-to-Caliza migration.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

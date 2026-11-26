@@ -1,4 +1,4 @@
-# Caliza PS4 interface rebuild — read-only architecture inventory
+# Caliza interface rebuild — read-only architecture inventory
 
 No files were edited. This report reflects the current tree under `/Users/felipe/Proyectos/caliza`.
 
@@ -35,7 +35,7 @@ Operations implemented in [fe_app.cpp:371-516](/Users/felipe/Proyectos/caliza/ps
 - Launch Smart Tune for a game.
 - Open the GPL About overlay.
 
-The PS4 branch already contains partial Caliza visual treatment: the native wordmark is `Caliza PS4`, the library layout shifts/scales the cover flow, and a Caliza disc panel is drawn beside game details in [fe_app.cpp:578-835](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_app.cpp:578). This is not yet a clean redesign boundary; it is conditional rendering inside the old shelf implementation.
+The PS4 branch already contains partial Caliza visual treatment: the native wordmark is `Caliza`, the library layout shifts/scales the cover flow, and a Caliza disc panel is drawn beside game details in [fe_app.cpp:578-835](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_app.cpp:578). This is not yet a clean redesign boundary; it is conditional rendering inside the old shelf implementation.
 
 ### 1.2 Settings-sheet operations
 
@@ -181,7 +181,7 @@ Important current package constants:
 
 - build tag: `caliza-<commit>` at [build-ps4.sh:36-41](/Users/felipe/Proyectos/caliza/ps4/build-ps4.sh:36);
 - title ID: `ZERU00001`;
-- display title: `Caliza PS4`;
+- display title: `Caliza`;
 - content label: `CALIZA00`, yielding `IV0000-ZERU00001_00-CALIZA0000000000.pkg`;
 - source URL still `https://github.com/felipebasurto/caliza`;
   all in [build-ps4.sh:135-164](/Users/felipe/Proyectos/caliza/ps4/build-ps4.sh:135).
@@ -535,7 +535,7 @@ There is effectively **no volume identity**:
 
 ### 5.1 Central contradiction
 
-[README.md:23](/Users/felipe/Proyectos/caliza/README.md:23) explicitly says current source builds use Caliza PS4 while retaining the same title ID and console data directory. The rebuild brief instead asks about migrating `/data/caliza` to `/data/caliza`.
+[README.md:23](/Users/felipe/Proyectos/caliza/README.md:23) explicitly says current source builds use Caliza while retaining the same title ID and console data directory. The rebuild brief instead asks about migrating `/data/caliza` to `/data/caliza`.
 
 That is a product/platform decision that must be settled before implementation:
 
@@ -584,10 +584,10 @@ User-visible/runtime names still mixed:
 - generated settings comments say “written by the Caliza settings page” / “written from the Caliza shelf” in [fe_web.cpp:1141-1147](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_web.cpp:1141) and [fe_options.cpp:1029-1046](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_options.cpp:1029).
 - browser storage keys are `caliza.tab` and legacy `caliza.token` in [index.html:565-577](/Users/felipe/Proyectos/caliza/ps5/frontend/assets/web/index.html:565).
 - fallback selector draws `CALIZA` in [game_select.cpp:203-211](/Users/felipe/Proyectos/caliza/ps5/coreorbis/orbis-shims/game_select.cpp:203).
-- native PS4 wordmark is already `Caliza PS4` in [fe_app.cpp:700-707](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_app.cpp:700).
+- native PS4 wordmark is already `Caliza` in [fe_app.cpp:700-707](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_app.cpp:700).
 - web title/header is patched at serve time to Caliza/PS2UI in [fe_web.cpp:315-328](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_web.cpp:315).
 - the patch asset is embedded as `/caliza-ps2ui.css` in [fe_ps5.cpp:1434-1440](/Users/felipe/Proyectos/caliza/ps5/frontend/fe_ps5.cpp:1434).
-- package display title is already `Caliza PS4`, but title/content IDs remain ZERU/CALIZA in [build-ps4.sh:158-163](/Users/felipe/Proyectos/caliza/ps4/build-ps4.sh:158).
+- package display title is already `Caliza`, but title/content IDs remain ZERU/CALIZA in [build-ps4.sh:158-163](/Users/felipe/Proyectos/caliza/ps4/build-ps4.sh:158).
 - SOURCE.txt still names Caliza and `github.com/felipebasurto/caliza` in [build-ps4.sh:135-140](/Users/felipe/Proyectos/caliza/ps4/build-ps4.sh:135).
 - [ps4/BRAND.md](/Users/felipe/Proyectos/caliza/ps4/BRAND.md) is largely a Caliza branding guide; its naming table says display name `Caliza`, data dir `/data/caliza`, title prefix `ZERU`, bundle `io.github.calizaemu.caliza`, and log prefix `[CALIZA]`.
 

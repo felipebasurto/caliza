@@ -13,4 +13,7 @@ for size in 1080p 720p; do
     (cd "$root" && "$host" --width "$width" --height "$height" --script "/tmp/caliza-$script.script")
   done
 done
+# The 200% text-size pair is rendered once, at TV size, into the output root.
+sed "s|@OUT@|$out|g" "$root/caliza/host/scripts/text-200.script" >/tmp/caliza-text-200.script
+(cd "$root" && "$host" --width 1920 --height 1080 --script /tmp/caliza-text-200.script)
 printf 'captured Estratos preview shots in %s\n' "$out"

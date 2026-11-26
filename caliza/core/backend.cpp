@@ -1,4 +1,4 @@
-// Caliza PS4 core: asynchronous storage-backed implementation of the interface contract.
+// Caliza core: asynchronous storage-backed implementation of the interface contract.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "backend.h"
@@ -515,13 +515,22 @@ private:
 				continue;
 			}
 			std::vector<std::string> names;
-			while (const dirent* entry = readdir(dir))
+			int read_error = 0;
+			for (;;)
 			{
-				if (entry->d_name[0] == '.')
-					continue;
-				names.emplace_back(entry->d_name);
+				errno = 0;
+				const dirent* entry = readdir(dir);
+				if (!entry)
+				{
+					read_error = errno;
+					break;
+				}
+				if (entry->d_name[0] != '.')
+					names.emplace_back(entry->d_name);
 			}
 			closedir(dir);
+			if (read_error != 0 && first_error.empty())
+				first_error = "Can't list " + current.first + ": " + std::strerror(read_error);
 			std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) {
 				const std::string la = LowerAscii(a);
 				const std::string lb = LowerAscii(b);
@@ -594,7 +603,7 @@ private:
 		}
 		else if (outcome.state != ScanState::Cancelled && outcome.state != ScanState::Failed)
 		{
-			outcome.state = ScanState::Complete;
+			outcome.state = first_error.empty() ? ScanState::Complete : ScanState::Failed;
 			outcome.error = first_error;
 		}
 		return outcome;
@@ -626,7 +635,7 @@ struct ScanBatch
 	CommandId command = 0;
 	CommandType type = CommandType::None;
 	uint32_t remaining = 0;
-	bool failed = false;
+	std::string error;
 	bool cancelled = false;
 };
 
@@ -670,7 +679,7 @@ public:
 			initial_errors.push_back(error);
 
 		snapshot.revision = 0;
-		snapshot.product = "Caliza PS4";
+		snapshot.product = "Caliza";
 		snapshot.build_tag = "caliza-core";
 		snapshot.data_root = layout.root;
 		snapshot.legacy_data_root = options.legacy_data_root;
@@ -1173,7 +1182,7 @@ private:
 		if (!storage::fs::IsPathWithin(path, layout.root))
 			return {CommandStatus::Failed, "report path must stay inside the Caliza data root", false};
 		std::ostringstream report;
-		report << "Caliza PS4 storage report\n";
+		report << "Caliza storage report\n";
 		report << "revision: " << copy.revision << "\n";
 		report << "data root: " << copy.data_root << "\n";
 		report << "volumes: " << copy.volumes.size() << "\n";
@@ -1243,7 +1252,6 @@ private:
 		}
 		GameEntry merged = game;
 		merged.last_played = existing->last_played;
-		merged.hidden = existing->hidden;
 		*existing = std::move(merged);
 	}
 
@@ -1312,7 +1320,8 @@ private:
 		if (batch_it != scan_batches.end())
 		{
 			ScanBatch& batch = batch_it->second;
-			batch.failed = batch.failed || outcome.state == ScanState::Failed;
+			if (outcome.state == ScanState::Failed && batch.error.empty())
+				batch.error = outcome.error.empty() ? "Scan failed" : outcome.error;
 			batch.cancelled = batch.cancelled || outcome.state == ScanState::Cancelled;
 			if (batch.remaining)
 				batch.remaining--;
@@ -1325,10 +1334,12 @@ private:
 					status = CommandStatus::Cancelled;
 					message = "scan cancelled";
 				}
-				else if (batch.failed)
+				else if (!batch.error.empty())
 				{
 					status = CommandStatus::Failed;
-					message = "scan failed";
+					message = batch.error;
+					snapshot.scan.state = ScanState::Failed;
+					snapshot.scan.error = batch.error;
 				}
 				PushEventLocked(batch.command, batch.type, status, message);
 				scan_batches.erase(batch_it);

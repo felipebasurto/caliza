@@ -1,6 +1,6 @@
 // PS5 port frontend: tests for the HD texture pack downloads (fe_texpacks.cpp), on a PC (2026-10-05, AI-assisted).
 // test-texpacks.sh builds it with the vendored libarchive and makes the zip fixtures with Python. A fake platform serves
-// the "archive.org" list and files from a folder; the manager's worker runs as on the console.
+// a community catalog and files from a folder; the manager's worker runs as on the console.
 //
 //   texpacks_test <fixtures dir> <work dir> [<a real pack .rar> <its serial>]
 //
@@ -180,7 +180,7 @@ static void TestPakFormat(const std::string& dir)
 	CHECK(!read(dir + "/extra.pak", got, error) && error.find("left over") != std::string::npos);
 }
 
-// The "archive.org" of the tests: the list is `list`, a file is `dir`/<its name>, served in blocks, slowly if asked.
+// The catalog server for the tests: the list is `list`, a file is `dir`/<its name>, served in blocks, slowly if asked.
 struct FakeArchive
 {
 	std::string dir, list;
@@ -194,13 +194,13 @@ struct FakeArchive
 	{
 		TexturePackPlatform p;
 		p.get_text = [this](const std::string& url, std::string& body) {
-			if (url != TexturePackMetadataUrl())
+			if (url != kTexturePackCatalogUrl)
 				return 404;
 			body = list;
 			return list.empty() ? -1 : 200;
 		};
 		p.get_range = [this](const std::string& url, uint64_t offset, uint64_t length, const std::function<bool(const void*, size_t)>& sink) {
-			const std::string prefix = std::string("https://archive.org/download/") + kTexturePackItem + "/";
+			const std::string prefix = "https://textures.example/";
 			if (url.compare(0, prefix.size(), prefix) != 0)
 				return 404;
 			uint64_t expected = UINT64_MAX;
@@ -247,10 +247,12 @@ struct FakeArchive
 	}
 };
 
-static std::string Entry(const std::string& name, uint64_t size, const std::string& md5, const char* source = "original")
+static std::string Entry(const std::string& name, uint64_t size, const std::string& sha, const std::string& serials,
+	const std::string& parts = {})
 {
-	return "{\"name\":\"" + name + "\",\"source\":\"" + source + "\",\"size\":\"" + std::to_string(size) + "\",\"md5\":\"" + md5 +
-	       "\",\"format\":\"RAR\",\"filecount\":\"3\"}";
+	return "{\"id\":\"" + name + "\",\"name\":\"" + name + "\",\"serials\":[" + serials + "],\"sizeBytes\":" +
+		std::to_string(size) + ",\"sha256\":\"" + sha + "\",\"downloadUrl\":\"https://textures.example/" +
+		PercentEncode(name) + "\",\"authors\":[\"Texture artist\"],\"fileCount\":3" + parts + "}";
 }
 
 static bool WaitFor(TexturePackManager& m, const std::string& serial, State want, double seconds)
@@ -276,12 +278,12 @@ static void TestNames()
 		  "God%20of%20War%20%28USA%29%20%5BSCUS-97399%5D%20HD%20Remaster.rar");
 	CHECK(PercentDecode(PercentEncode("Beyond Good & Evil 'x' #1.rar")) == "Beyond Good & Evil 'x' #1.rar");
 	CHECK(PercentDecode("100%") == "100%");
-	CHECK(TexturePackMd5("", 0) == "d41d8cd98f00b204e9800998ecf8427e");
-	CHECK(TexturePackMd5("abc", 3) == "900150983cd24fb0d6963f7d28e17f72");
+	CHECK(TexturePackSha256("", 0) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+	CHECK(TexturePackSha256("abc", 3) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 	const std::string fox = "The quick brown fox jumps over the lazy dog";
-	CHECK(TexturePackMd5(fox.data(), fox.size()) == "9e107d9d372bb6826bd81d3542a419d6");
+	CHECK(TexturePackSha256(fox.data(), fox.size()) == "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592");
 	std::string big(1000003, 'x');
-	CHECK(TexturePackMd5(big.data(), big.size()).size() == 32);
+	CHECK(TexturePackSha256(big.data(), big.size()).size() == 64);
 	CHECK(FormatBytes(1249000000) == "1.2 GB");
 	CHECK(FormatBytes(356300000) == "356 MB");
 
@@ -304,31 +306,25 @@ static void TestNames()
 
 static void TestCatalog()
 {
-	const std::string md5(32, 'a');
-	const std::string json = "{\"files\":[" + Entry("Cover.png", 100, md5) + "," +
-	                         Entry("God of War (USA) [SCUS-97399] HD Remaster.rar", 1249000000, md5) + "," +
-	                         Entry("God of War (USA) [SCUS-97399] HD Remaster Definitive Edition.rar", 4410000000ull, md5) + "," +
-	                         Entry("Mortal Kombat Deadly Alliance (USA) [SLUS-21087] HD Remaster.rar", 10, md5) + "," +
-	                         Entry("Mortal Kombat Shaolin Monks (USA) [SLUS-21087] HD Remaster.rar", 10, md5) + "," +
-	                         Entry("Onimusha Dawn of Dreams (USA) (Disc 1) [SLUS-21180] & (Disc 2) [SLUS-21362] HD Remaster.rar", 13, md5) +
-	                         "," + Entry("PlayStation 2 BIOS (USA) HD Remaster.rar", 65, md5) + "," +
-	                         Entry("Forgotten Realms Demon Stone [SLUS-20804] HD Remaster.rar", 5, md5) + "," +
-	                         Entry("Derived (USA) [SLUS-11111] HD Remaster.rar", 5, md5, "derivative") + "," +
-	                         Entry("No Sum (USA) [SLUS-22222] HD Remaster.rar", 5, "") + "]}";
+	const std::string hash(64, 'a');
+	const std::string piece = "{\"sizeBytes\":5,\"sha256\":\"" + hash + "\",\"downloadUrl\":\"https://textures.example/p\"}";
+	const std::string parts = ",\"parts\":[" + piece + "," + piece + "]";
+	const std::string json = "{\"schemaVersion\":1,\"entries\":[" +
+		Entry("Standard", 10, hash, "\"SLUS-20776\"") + "," +
+		Entry("High resolution", 10, hash, "\"SLUS-20776\",\"SLES-12345\"", parts) + "," +
+		Entry("Wrong size", 11, hash, "\"SLUS-20776\"", parts) + "," +
+		Entry("No checksum", 11, "", "\"SLUS-20776\"") + "]}";
 	std::vector<TexturePack> packs;
 	std::string error;
 	CHECK(ParseTexturePackCatalog(json, packs, error));
-	CHECK(packs.size() == 6);
-	if (packs.size() == 6)
+	CHECK(packs.size() == 2);
+	if (packs.size() == 2)
 	{
-		CHECK(packs[0].serials.size() == 1 && packs[0].serials[0] == "SCUS-97399");
-		CHECK(packs[0].label == "HD Remaster");
-		CHECK(packs[1].label == "HD Remaster Definitive Edition");
-		CHECK(packs[1].bytes == 4410000000ull);
-		CHECK(packs[0].title == "God of War (USA) HD Remaster");
-		CHECK(packs[4].serials.size() == 2 && packs[4].serials[1] == "SLUS-21362");
-		CHECK(packs[5].serials.size() == 1 && packs[5].serials[0] == "SLUS-20804");
+		CHECK(packs[0].authors == std::vector<std::string>{"Texture artist"});
 		CHECK(packs[0].files == 3);
+		CHECK(packs[1].serials.size() == 2);
+		CHECK(TexturePackPieces(packs[0]).size() == 1);
+		CHECK(TexturePackPieces(packs[1]).size() == 2);
 	}
 	CHECK(!ParseTexturePackCatalog("{\"error\":\"not found\"}", packs, error));
 	CHECK(!ParseTexturePackCatalog("not json", packs, error));
@@ -349,26 +345,37 @@ int main(int argc, char** argv)
 	TestPakFormat(work + "/pakformat");
 
 	// The fixtures (test-texpacks.sh): good.zip (Pack/SLUS-20776/replacements/a.dds, .../01/b.png, Pack/SLUS-20776/dumps/c.png,
-	// readme.txt), a two-disc pack, and their MD5s in md5.txt.
+	// readme.txt), a two-disc pack, and their SHA-256s in sha256.txt.
 	const std::string good = "Spider-Man 2 (USA) [SLUS-20776] HD Remaster.zip";
 	const std::string disc = "Onimusha (USA) (Disc 1) [SLUS-21180] & (Disc 2) [SLUS-21362] HD Remaster.zip";
 	const std::string many = "Many Files (USA) [SLUS-11111] HD Remaster.zip", clash = "Clash (USA) [SLUS-22222] HD Remaster.zip";
-	std::string good_md5, disc_md5, many_md5, clash_md5;
+	std::string good_sha256, disc_sha256, many_sha256, clash_sha256;
 	{
-		std::istringstream md5s(ReadAll(fixtures + "/md5.txt"));
-		md5s >> good_md5 >> disc_md5 >> many_md5 >> clash_md5;
+		std::istringstream sha256s(ReadAll(fixtures + "/sha256.txt"));
+		sha256s >> good_sha256 >> disc_sha256 >> many_sha256 >> clash_sha256;
 	}
 	const uint64_t many_size = ReadAll(fixtures + "/" + many).size(), clash_size = ReadAll(fixtures + "/" + clash).size();
 	const uint64_t good_size = ReadAll(fixtures + "/" + good).size(), disc_size = ReadAll(fixtures + "/" + disc).size();
-	CHECK(good_size > 0 && disc_size > 0 && good_md5.size() == 32);
-	CHECK(TexturePackMd5(ReadAll(fixtures + "/" + good).data(), good_size) == good_md5);
+	CHECK(good_size > 0 && disc_size > 0 && good_sha256.size() == 64);
+	CHECK(TexturePackSha256(ReadAll(fixtures + "/" + good).data(), good_size) == good_sha256);
 
 	FakeArchive server;
 	server.dir = fixtures;
-	server.list = "{\"files\":[" + Entry(good, good_size, good_md5) + "," + Entry(disc, disc_size, disc_md5) + "," +
-	              Entry("Broken (USA) [SLUS-99999] HD Remaster.zip", good_size, std::string(32, 'b')) + "," +
-	              Entry(many, many_size, many_md5) + "," + Entry(clash, clash_size, clash_md5) + "]}";
-	// The broken entry's file: a copy of good.zip under that name, whose MD5 doesn't match the list's.
+	const std::string disc_data = ReadAll(fixtures + "/" + disc);
+	const size_t split = disc_data.size() / 2;
+	const std::string first = disc_data.substr(0, split), second = disc_data.substr(split);
+	std::ofstream(fixtures + "/disc.001", std::ios::binary) << first;
+	std::ofstream(fixtures + "/disc.002", std::ios::binary) << second;
+	const auto part = [](const std::string& name, const std::string& data) {
+		return "{\"downloadUrl\":\"https://textures.example/" + name + "\",\"sizeBytes\":" +
+			std::to_string(data.size()) + ",\"sha256\":\"" + TexturePackSha256(data.data(), data.size()) + "\"}";
+	};
+	server.list = "{\"entries\":[" + Entry(good, good_size, good_sha256, "\"SLUS-20776\"") + "," +
+		Entry(disc, disc_size, disc_sha256, "\"SLUS-21180\",\"SLUS-21362\"",
+			",\"parts\":[" + part("disc.001", first) + "," + part("disc.002", second) + "]") + "," +
+		Entry("Broken (USA) [SLUS-99999] HD Remaster.zip", good_size, std::string(64, 'b'), "\"SLUS-99999\"") + "," +
+		Entry(many, many_size, many_sha256, "\"SLUS-11111\"") + "," + Entry(clash, clash_size, clash_sha256, "\"SLUS-22222\"") + "]}";
+	// The broken entry's file: a copy of good.zip under that name, whose SHA-256 doesn't match the list's.
 	{
 		std::ofstream(fixtures + "/Broken (USA) [SLUS-99999] HD Remaster.zip", std::ios::binary) << ReadAll(fixtures + "/" + good);
 	}
@@ -404,7 +411,7 @@ int main(int argc, char** argv)
 		CHECK(!Exists(textures + "/readme.txt"));
 		CHECK(ReadAll(textures + "/SLUS-20776/" + TexturePackManager::kMarker).find("name=" + good) != std::string::npos);
 		CHECK(!Exists(textures + "/.caliza-unpack"));
-		CHECK(!Exists(downloads + "/SLUS-20776.job") && !Exists(downloads + "/" + good_md5 + ".zip"));
+		CHECK(!Exists(downloads + "/SLUS-20776.job") && !Exists(downloads + "/SLUS-20776-" + good_sha256 + ".zip"));
 		const std::string ini = ReadAll(settings_path);
 		CHECK(ini.find("LoadTextureReplacements=true") != std::string::npos);
 		CHECK(ini.find("# Spider-Man 2 (SLUS-20776)") != std::string::npos);
@@ -418,7 +425,7 @@ int main(int argc, char** argv)
 		CHECK(WaitNoSetAside(textures, 5)); // pr9l: renamed aside, then deleted
 		CHECK(m.Stop(2000));
 	}
-	// 3. A two-disc pack: both serials' folders.
+	// 3. A multipart download for a two-disc game only installs the selected disc.
 	{
 		TexturePackManager m(server.Platform(nullptr, nullptr), textures, downloads, cache);
 		m.Start();
@@ -426,11 +433,11 @@ int main(int argc, char** argv)
 		CHECK(m.Begin("SLUS-21362", 0, "", "", "Onimusha"));
 		CHECK(WaitFor(m, "SLUS-21362", State::Installed, 20));
 		std::map<std::string, std::string> pak;
-		CHECK(ReadPak(textures + "/SLUS-21180/replacements.pak", pak) && pak.size() == 1 && pak["d1.png"] == "disc one");
+		CHECK(!Exists(textures + "/SLUS-21180"));
 		CHECK(ReadPak(textures + "/SLUS-21362/replacements.pak", pak) && pak.size() == 1 && pak["d2.png"] == "disc two");
 		CHECK(m.Stop(2000));
 	}
-	// 4. A download that doesn't match archive.org's MD5: failed, nothing kept, nothing installed.
+	// 4. A download that doesn't match the catalog's SHA-256: failed, nothing kept, nothing installed.
 	{
 		std::vector<std::string> popups;
 		TexturePackManager m(server.Platform(nullptr, &popups), textures, downloads, cache);
@@ -439,7 +446,7 @@ int main(int argc, char** argv)
 		CHECK(m.Begin("SLUS-99999", 0, "", "", "Broken"));
 		CHECK(WaitFor(m, "SLUS-99999", State::Failed, 20));
 		CHECK(m.Status("SLUS-99999").message.find("checksum") != std::string::npos);
-		CHECK(!Exists(downloads + "/" + std::string(32, 'b') + ".part"));
+		CHECK(!Exists(downloads + "/SLUS-99999-" + std::string(64, 'b') + ".part"));
 		CHECK(!Exists(textures + "/SLUS-99999"));
 		CHECK(m.Cancel("SLUS-99999")); // Triangle twice: forgotten
 		CHECK(m.Status("SLUS-99999").state == State::Available);
@@ -461,7 +468,7 @@ int main(int argc, char** argv)
 			CHECK(m.Activity().active && m.Activity().title == "Spider-Man 2");
 			CHECK(m.Stop(3000));
 		}
-		const std::string part = downloads + "/" + good_md5 + ".part";
+		const std::string part = downloads + "/SLUS-20776-" + good_sha256 + ".part";
 		struct stat st{};
 		CHECK(stat(part.c_str(), &st) == 0 && st.st_size > 0 && static_cast<uint64_t>(st.st_size) < good_size);
 		CHECK(Exists(downloads + "/SLUS-20776.job"));
@@ -488,7 +495,7 @@ int main(int argc, char** argv)
 		CHECK(WaitFor(m, "SLUS-20776", State::Downloading, 5));
 		CHECK(m.Cancel("SLUS-20776"));
 		CHECK(WaitFor(m, "SLUS-20776", State::Available, 10));
-		CHECK(!Exists(downloads + "/" + good_md5 + ".part") && !Exists(downloads + "/SLUS-20776.job"));
+		CHECK(!Exists(downloads + "/SLUS-20776-" + good_sha256 + ".part") && !Exists(downloads + "/SLUS-20776.job"));
 		CHECK(m.Stop(2000));
 		server.block_delay_ms = 0;
 	}
@@ -592,7 +599,11 @@ int main(int argc, char** argv)
 		CHECK(WaitFor(m, "SLUS-20776", State::Installed, 5)); // the old one, by its marker
 		for (const double until = Now() + 5; Now() < until && m.Status("SLUS-20776").packs.empty();) // the list
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
-		CHECK(m.Begin("SLUS-20776", 0, "", "", "Spider-Man 2"));
+		CHECK(!m.Begin("SLUS-20776", 0, "", "", "Spider-Man 2"));
+		CHECK(ReadAll(tex + "/SLUS-20776/replacements/old.dds") == "old");
+		CHECK(m.Remove("SLUS-20776"));
+		CHECK(WaitFor(m, "SLUS-20776", State::Available, 5));
+		CHECK(m.Import("SLUS-20776", fixtures + "/" + good, "", "", "Spider-Man 2"));
 		CHECK(m.Status("SLUS-20776").state != State::Installed); // on its way again
 		CHECK(WaitFor(m, "SLUS-20776", State::Installed, 20));
 		std::map<std::string, std::string> pak;
@@ -607,21 +618,19 @@ int main(int argc, char** argv)
 			deleted += l.find("] deleted ") != std::string::npos && l.find("files set aside") != std::string::npos;
 		}
 		CHECK(set_aside == 2 && deleted >= 1);
+		const std::string original = ReadAll(fixtures + "/" + good);
+		CHECK(TexturePackSha256(original.data(), original.size()) == good_sha256);
+		CHECK(m.Status("SLUS-20776").installed_id == "file:" + good);
 		CHECK(m.Stop(2000));
 	}
-	// 11. A real pack from archive.org (optional): unpacked as on the console.
+	// Optional real local archive import.
 	if (argc >= 5)
 	{
 		const std::string real = argv[3], serial = argv[4];
-		const std::string data = ReadAll(real);
-		const std::string name = real.substr(real.rfind('/') + 1);
 		FakeArchive local;
-		local.dir = real.substr(0, real.rfind('/'));
-		local.list = "{\"files\":[" + Entry(name, data.size(), TexturePackMd5(data.data(), data.size())) + "]}";
 		TexturePackManager m(local.Platform(nullptr, nullptr), work + "/real-textures", work + "/real-textures/.dl", work + "/cache/real.json");
 		m.Start();
-		CHECK(WaitFor(m, serial, State::Available, 5));
-		CHECK(m.Begin(serial, 0, "", "", "real"));
+		CHECK(m.Import(serial, real, "", "", "real"));
 		CHECK(WaitFor(m, serial, State::Installed, 120));
 		std::map<std::string, std::string> pak;
 		size_t entries = 0;

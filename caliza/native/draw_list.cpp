@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: renderer-independent 2D draw list.
+// Caliza Estratos: renderer-independent 2D draw list.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "draw_list.h"
@@ -57,6 +57,17 @@ void DrawList::AddPoly(const std::vector<std::pair<float, float>>& points, Color
 		DrawVertex b{points[i].first, points[i].second, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
 		DrawVertex c{points[i + 1].first, points[i + 1].second, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
 		AddTriangle(nullptr, a, b, c);
+	}
+}
+
+void DrawList::Transform(size_t first, float dx, float dy, float scale, float ox, float oy, float alpha)
+{
+	for (size_t i = first; i < m_vertices.size(); i++)
+	{
+		DrawVertex& v = m_vertices[i];
+		v.x = ox + (v.x - ox) * scale + dx;
+		v.y = oy + (v.y - oy) * scale + dy;
+		v.a *= alpha;
 	}
 }
 

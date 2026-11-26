@@ -1,4 +1,4 @@
-# Caliza PS4 interface architecture
+# Caliza interface architecture
 
 This document is the orchestrator contract for the Estratos interface rebuild. It is a working inventory and boundary definition; hardware-only items are marked pending rather than treated as evidence.
 
@@ -40,7 +40,7 @@ Concurrent agents must not edit files outside their ownership. The orchestrator 
 
 ## Brand and artifact rules
 
-Compatibility exceptions expected at this stage: title id `ZERU00001`, content label `CALIZA00`, ini keys under `Caliza/`, the public repository slug and historical documentation. User-visible product copy, package title, logs, diagnostics, panel, README, generated assets and new artifact names use Caliza PS4. Do not rewrite Git history and do not change the installed title id without an explicit post-upgrade-test decision.
+Compatibility exceptions expected at this stage: title id `ZERU00001`, content label `CALIZA00`, ini keys under `Caliza/`, the public repository slug and historical documentation. User-visible product copy, package title, logs, diagnostics, panel, README, generated assets and new artifact names use Caliza. Do not rewrite Git history and do not change the installed title id without an explicit post-upgrade-test decision.
 
 ## Migration requirements fixed for implementation
 

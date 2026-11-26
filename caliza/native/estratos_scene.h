@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: view-model to 2D composition.
+// Caliza Estratos: view-model to 2D composition.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once
@@ -18,6 +18,40 @@ class Fonts;
 
 namespace caliza
 {
+// Interface motion carried from one frame to the next: which screen is showing and since when, retargetable
+// tweens for gliding focus, and the open/close moments of transient layers. Build() owns all updates.
+struct MotionMemory
+{
+	struct Tween
+	{
+		float from = 0.0f, to = 0.0f;
+		double start = 0.0;
+		float duration = 0.0f;
+		double epoch = -1.0; // screen_since when created; a new screen snaps instead of gliding across
+		bool ready = false;
+	};
+
+	bool started = false;
+	Screen screen = Screen::Boot;
+	double screen_since = 0.0;
+	int direction = 1; // +1 deeper, -1 back
+	std::map<std::string, Tween> tweens;
+	std::string focus_id;
+	double focus_since = 0.0;
+	std::string value_id;
+	int value_index = -1;
+	int value_direction = 0;
+	double value_since = -10.0;
+	std::string toast;
+	double toast_since = -10.0;
+	double toast_gone = -10.0;
+	bool toast_leaving = false;
+	bool dialog_open = false;
+	double dialog_since = -10.0;
+	bool keyboard_open = false;
+	double keyboard_since = -10.0;
+};
+
 class EstratosScene
 {
 public:
@@ -32,15 +66,22 @@ public:
 	const fe::Fonts& Fonts() const;
 	const Texture2D* AtlasTexture() const { return &m_atlas; }
 	const Texture2D* CoverFor(const std::string& key, const std::string& title);
+	// Procedural atmosphere textures, generated once: a soft radial glow sprite and a nebula fog field.
+	const Texture2D* GlowTexture() const { return &m_glow; }
+	const Texture2D* FogTexture() const { return &m_fog; }
 
 	DrawList Build(const UiView& view, uint32_t width, uint32_t height, double seconds);
+	MotionMemory& Motion() { return m_motion; }
 
 private:
 	std::vector<uint8_t> m_text_font;
 	std::vector<uint8_t> m_icon_font;
 	fe::Fonts* m_fonts = nullptr;
 	Texture2D m_atlas;
+	Texture2D m_glow;
+	Texture2D m_fog;
 	std::map<std::string, Texture2D> m_covers;
+	MotionMemory m_motion;
 	bool m_ready = false;
 };
 } // namespace caliza

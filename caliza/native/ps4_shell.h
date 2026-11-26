@@ -1,4 +1,4 @@
-// Caliza PS4 native shell adapter: Estratos entry point and orchestrator boundary.
+// Caliza native shell adapter: Estratos entry point and orchestrator boundary.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

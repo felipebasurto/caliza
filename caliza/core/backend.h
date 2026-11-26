@@ -1,4 +1,4 @@
-// Caliza PS4 core: asynchronous storage-backed implementation of the interface contract.
+// Caliza core: asynchronous storage-backed implementation of the interface contract.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

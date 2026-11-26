@@ -1,6 +1,7 @@
 # Caliza Estratos scripted controller tour. Paths are relative to the caller's working directory.
-shot @OUT@/00-boot.png
-wait 1400
+wait 900
+snap @OUT@/00-boot.png
+wait 600
 expect-screen home
 shot @OUT@/01-home.png
 press cross
@@ -25,7 +26,7 @@ press circle
 press circle
 expect-screen home
 shot @OUT@/01b-home-continue.png
-# Memory Cards (continue now occupies index zero. Up clamps there).
+# Memory cards (continue now occupies index zero. Up clamps there).
 press up
 press up
 press up
@@ -50,7 +51,14 @@ press down
 press down
 press cross
 expect-screen settings
+# Display category, focus Resolution and raise it one step so the explanation panel shows a choice.
+press down
+press down
+press down
+press cross
+press right
 shot @OUT@/08-settings.png
+press circle
 press circle
 # Controls.
 press up

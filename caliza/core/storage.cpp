@@ -1,4 +1,4 @@
-// Caliza PS4 core: POSIX storage discovery, folder browsing and saved-source persistence.
+// Caliza core: POSIX storage discovery, folder browsing and saved-source persistence.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "storage.h"
@@ -886,8 +886,16 @@ FolderListing BrowseFolderPosix(const std::string& path, const std::string& filt
 	}
 
 	std::vector<FolderEntry> all;
-	while (const dirent* entry = readdir(dir))
+	int read_error = 0;
+	for (;;)
 	{
+		errno = 0;
+		const dirent* entry = readdir(dir);
+		if (!entry)
+		{
+			read_error = errno;
+			break;
+		}
 		const char* name_c = entry->d_name;
 		if (name_c[0] == '.')
 			continue;
@@ -926,6 +934,8 @@ FolderListing BrowseFolderPosix(const std::string& path, const std::string& filt
 		all.push_back(std::move(item));
 	}
 	closedir(dir);
+	if (read_error != 0)
+		listing.error = ErrnoString("can't list " + listing.path, read_error);
 
 	std::sort(all.begin(), all.end(), [](const FolderEntry& a, const FolderEntry& b) {
 		if (a.directory != b.directory)

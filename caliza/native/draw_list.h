@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: renderer-independent 2D draw list.
+// Caliza Estratos: renderer-independent 2D draw list.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once
@@ -79,6 +79,11 @@ public:
 		float v1, Color tint = {});
 	void AddText(const fe::Fonts& fonts, const std::string& utf8, float x, float baseline, float px, Color color,
 		float weight = 0.0f, int align = 0); // 0 left, 1 centre, 2 right
+
+	// Moves, scales (about ox, oy) and fades every vertex added since `first`. Animation uses it to treat a group of
+	// primitives as one layer without each primitive knowing about motion.
+	size_t VertexCount() const { return m_vertices.size(); }
+	void Transform(size_t first, float dx, float dy, float scale, float ox, float oy, float alpha);
 
 	const std::vector<DrawVertex>& Vertices() const { return m_vertices; }
 	const std::vector<DrawBatch>& Batches() const { return m_batches; }

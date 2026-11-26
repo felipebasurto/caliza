@@ -10,7 +10,8 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SKIP_DIRS = {".git", "build", "deps", "obj", "out"}
+# .impeccable holds a local design-tool cache with absolute checkout paths; it is not product source.
+SKIP_DIRS = {".git", ".impeccable", "build", "deps", "obj", "out"}
 LEGACY = "zer" + "uko"
 WORD = re.compile(re.escape(LEGACY), re.IGNORECASE)
 

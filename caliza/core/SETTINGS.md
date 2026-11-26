@@ -1,4 +1,4 @@
-# Caliza PS4 settings and catalog schema
+# Caliza settings and catalog schema
 
 This directory contains the portable schema inventory shared by the future native interface, the
 companion web panel, host tests and the backend/orchestrator:

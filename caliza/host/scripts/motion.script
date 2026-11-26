@@ -1,0 +1,24 @@
+# Caliza Estratos motion clips: numbered frames for checking transitions by eye (not part of the evidence set).
+clip @OUT@/boot 36 33
+wait 600
+expect-screen home
+press down
+clip @OUT@/home-focus 12 33
+press up
+press cross
+clip @OUT@/home-to-library 14 33
+press right
+clip @OUT@/library-focus 12 33
+press circle
+wait 400
+press down
+press down
+press cross
+expect-screen settings
+press down
+press down
+press down
+press cross
+clip @OUT@/settings-open 10 33
+press right
+clip @OUT@/settings-change 10 33

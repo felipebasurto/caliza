@@ -24,7 +24,7 @@
 
 ## P0.5 brand/UX alignment (deferred to the design pass)
 
-1. Full alignment of the frontend with `ps4/BRAND.md` section 3: game-state taxonomy (Ready / Needs startup files / Missing file / Not checked yet / May slow down), plain-language relabeling of the remaining technical rows, "Tune for this game" copy and result states, first-run teaching flow, reduce-motion option, regional confirm/cancel detection. The visual refinement pass is scheduled separately (design-owner review), then this UX alignment should be implemented against the final designs.
+1. Full alignment of the frontend with `ps4/docs/estratos/STYLE-GUIDE.md`: game-state taxonomy (Ready / Needs startup files / Missing file / Not checked yet / May slow down), plain-language relabeling of the remaining technical rows, "Tune for this game" copy and result states, first-run teaching flow, reduce-motion option, regional confirm/cancel detection. The visual refinement pass is scheduled separately (design-owner review), then this UX alignment should be implemented against the final designs.
 2. Wire-format decision for the texture-pack magic `PS5SX2TP` and frame-cap magic `PS5FCAP1` (rename breaks existing packs; keep for now).
 3. Fix the RetroAchievements user-agent platform string (reports PS5 on PS4; their rules ask for accurate identity) once the correct PS4 identification format is confirmed.
 4. Optional `calizaemu` GitHub organization: create in the web UI and transfer the repository (links redirect automatically).

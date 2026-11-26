@@ -1,4 +1,4 @@
-// Caliza PS4: portable catalog identity/model implementation.
+// Caliza: portable catalog identity/model implementation.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "catalog_model.h"

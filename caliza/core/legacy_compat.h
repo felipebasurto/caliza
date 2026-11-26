@@ -1,4 +1,4 @@
-// Caliza PS4 compatibility with installations made before the final brand transition.
+// Caliza compatibility with installations made before the final brand transition.
 // The retired product name is intentionally never present as one contiguous literal in source or user-visible
 // copy. These helpers exist only so migration can recognize old data and fold it into /data/caliza.
 // SPDX-License-Identifier: GPL-3.0-or-later

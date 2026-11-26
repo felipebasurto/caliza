@@ -373,6 +373,8 @@ struct HostContext
 	{
 		seconds += dt;
 		model.Tick(backend.GetSnapshot(), backend.PollEvents(), input, dt);
+		// Build every frame, as the console does, so transitions start when the view changes, not when captured.
+		(void)scene.Build(model.BuildView(), vulkan.width, vulkan.height, seconds);
 	}
 
 	bool Shot(const std::string& path)
@@ -525,12 +527,32 @@ int main(int argc, char** argv)
 				host.Tick(held, 1.0 / 60.0);
 			host.Tick(none, 1.0 / 60.0);
 		}
-		else if (verb == "shot")
+		else if (verb == "shot" || verb == "snap")
 		{
+			// shot lets transitions settle first; snap captures the frame as it is.
 			std::string path;
 			command >> path;
+			if (verb == "shot")
+				for (int frames = 27; frames > 0; frames--)
+					host.Tick(none, 1.0 / 60.0);
 			if (path.empty() || !host.Shot(path))
 				return 1;
+		}
+		else if (verb == "clip")
+		{
+			// clip <path-prefix> <frames> <step-ms>: a numbered frame sequence for checking motion.
+			std::string prefix;
+			int frames = 0, step = 33;
+			command >> prefix >> frames >> step;
+			for (int i = 0; i < frames; i++)
+			{
+				char name[32];
+				std::snprintf(name, sizeof(name), "-%03d.png", i);
+				if (!host.Shot(prefix + name))
+					return 1;
+				for (int f = std::max(1, step * 60 / 1000); f > 0; f--)
+					host.Tick(none, 1.0 / 60.0);
+			}
 		}
 		else if (verb == "scale")
 		{

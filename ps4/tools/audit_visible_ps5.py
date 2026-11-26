@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when user-visible Caliza PS4 surfaces reintroduce inherited PS5 wording.
+"""Fail when user-visible Caliza surfaces reintroduce inherited PS5 wording.
 
 This is deliberately stricter than a whole-repository grep. Internal ABI names, driver
 environment variables, source-layout compatibility names, upstream controller databases,

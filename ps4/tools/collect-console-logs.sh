@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only collection of Caliza PS4 validation logs over the console's FTP server.
+# Read-only collection of Caliza validation logs over the console's FTP server.
 # It never writes, deletes, installs, or interrupts anything on the console.
 #
 #   PS4_HOST=192.168.1.20 bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs

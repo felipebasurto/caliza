@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: deterministic controller-first UI model.
+// Caliza Estratos: deterministic controller-first UI model.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_model.h"
@@ -80,11 +80,11 @@ std::string ScanStateText(const ScanProgress& scan)
 {
 	switch (scan.state)
 	{
-		case ScanState::Idle: return "Library scan idle";
+		case ScanState::Idle: return {};
 		case ScanState::Scanning: return "Scanning " + scan.current_path;
 		case ScanState::Cancelling: return "Cancelling scan";
-		case ScanState::Cancelled: return "Scan cancelled";
-		case ScanState::Complete: return "Scan complete";
+		case ScanState::Cancelled: return {};
+		case ScanState::Complete: return {};
 		case ScanState::Failed: return scan.error.empty() ? "Scan failed" : scan.error;
 	}
 	return {};
@@ -124,24 +124,24 @@ std::vector<HomeAction> HomeActions(const Snapshot& snapshot)
 		out.push_back({"continue", "Continue  ·  " + title, EntryIcon::Continue});
 	}
 	out.push_back({"library", "Library", EntryIcon::Library});
-	out.push_back({"memory", "Memory Cards", EntryIcon::MemoryCard});
+	out.push_back({"memory", "Memory cards", EntryIcon::MemoryCard});
 	out.push_back({"settings", "Settings", EntryIcon::Settings});
 	out.push_back({"controls", "Controls", EntryIcon::Controls});
 	out.push_back({"accessibility", "Accessibility", EntryIcon::Accessibility});
 	out.push_back({"diagnostics", "Diagnostics", EntryIcon::Diagnostics});
-	out.push_back({"system-menu", "PS2 System Menu", EntryIcon::Game});
+	out.push_back({"system-menu", "PS2 system menu", EntryIcon::Game});
 	return out;
 }
 
 std::vector<NamedAction> FirstRunActions(const Snapshot& snapshot)
 {
 	return {
-		{"bios-folder", "Choose BIOS Folder", "", snapshot.bios.path.empty() ? "No BIOS folder selected" : snapshot.bios.path,
+		{"bios-folder", "Choose BIOS folder", "", snapshot.bios.path.empty() ? "No BIOS folder selected" : snapshot.bios.path,
 			EntryIcon::Folder},
-		{"check-bios", "Check Again", "", snapshot.bios.checking ? "Checking…" : "Use the selected folder",
+		{"check-bios", "Check again", "", snapshot.bios.checking ? "Checking…" : "Use the selected folder",
 			EntryIcon::Action, snapshot.bios.checking},
-		{"game-folder", "Add Game Folder", "", "Internal, USB or extended storage", EntryIcon::Folder},
-		{"finish", "Continue to Home", "", snapshot.bios.present ? "BIOS found" : "Available after the BIOS check",
+		{"game-folder", "Add game folder", "", "Internal, USB or extended storage", EntryIcon::Folder},
+		{"finish", "Continue to home", "", snapshot.bios.present ? "BIOS found" : "Available after the BIOS check",
 			EntryIcon::Action, !snapshot.bios.present},
 	};
 }
@@ -181,54 +181,83 @@ std::vector<NamedAction> DetailActions(const GameEntry* game, const BiosStatus& 
 	const bool launchable = game && game->can_launch && !game->damaged && bios.present;
 	const OperationStatus* patches = FindOperation(operations, "online-patches:", game);
 	const OperationStatus* textures = FindOperation(operations, "texture-pack:", game);
-	const bool texture_busy = textures && (textures->state == OperationState::Queued || textures->state == OperationState::Running);
 	const bool patch_busy = patches && patches->state == OperationState::Running;
 	return {
-		{"play", "Play", "", launchable ? "Start the emulator" : (bios.present ? "This image cannot launch" : "PS2 BIOS required"),
+		{"play", "Play", "", launchable ? "" : (bios.present ? "This image cannot launch" : "PS2 BIOS required"),
 			EntryIcon::Game, !launchable},
-		{"settings", "Game Settings", "", "Display, emulation and fixes", EntryIcon::Settings},
-		{"memory", "Memory Card", "", "Choose cards for this session", EntryIcon::MemoryCard},
+		{"settings", "Game settings", "", "Display, emulation and fixes", EntryIcon::Settings},
+		{"memory", "Memory card", "", "Choose cards for this session", EntryIcon::MemoryCard},
 		{"smart-tune", "Smart Tune", "Experimental", launchable ? "Start once with performance measurement" : "Requires a launchable image and BIOS",
 			EntryIcon::Action, !launchable},
 		{"patches", "Get patches and cheats", OperationValue(patches, "Download"),
 			patches && !patches->message.empty() ? patches->message : "PCSX2, Gabominated and cheat files", EntryIcon::Action,
 			patch_busy, false, patches ? patches->progress : -1.0f},
-		{"textures", texture_busy ? "Cancel HD texture download" : "HD texture pack", OperationValue(textures, "Check archive.org"),
-			textures && !textures->message.empty() ? textures->message : "Download and install replacements", EntryIcon::Action,
+		{"textures", "HD texture packs", OperationValue(textures, ""),
+			"Browse the catalog or import a pack", EntryIcon::Action,
 			false, false, textures ? textures->progress : -1.0f},
 	};
+}
+
+std::vector<NamedAction> TextureActions(const TexturePacks& packs, bool has_serial)
+{
+	using Catalog = TexturePacks::Catalog;
+	const auto& operation = packs.operation;
+	const bool busy = operation.state == OperationState::Running || operation.state == OperationState::Queued;
+	std::vector<NamedAction> rows;
+	if (!has_serial)
+		return rows;
+	if (busy)
+	{
+		rows.push_back({"cancel", operation.cancelable ? "Cancel operation" : "Please wait", "", operation.message,
+			EntryIcon::Action, !operation.cancelable, false, operation.progress});
+		return rows;
+	}
+	if (packs.installed)
+	{
+		rows.push_back({"remove", packs.removable ? "Delete installed pack" : "External texture pack", "Installed",
+			packs.installed_name, EntryIcon::Action, !packs.removable, packs.removable});
+	}
+	else
+		rows.push_back({"import", "Import from storage", "", "Choose a ZIP or RAR archive", EntryIcon::Folder});
+	if (packs.catalog == Catalog::Unavailable)
+		rows.push_back({"retry", "Retry catalog", "", packs.catalog_message, EntryIcon::Action});
+	if (operation.state == OperationState::Failed && operation.cancelable)
+		rows.push_back({"forget", "Clear failed operation", "", operation.message, EntryIcon::Action});
+	for (const auto& pack : packs.entries)
+		rows.push_back({"pack:" + pack.id, pack.name, FormatBytes(pack.bytes), pack.authors, EntryIcon::Action, packs.installed});
+	return rows;
 }
 
 std::vector<NamedAction> PauseActions(const VmStatus& vm)
 {
 	return {
-		{"resume", "Resume", "", vm.state == VmState::Paused ? "Return to the game" : "Resume when paused",
+		{"resume", "Resume", "", vm.state == VmState::Paused ? "" : "Resume when paused",
 			EntryIcon::Action, vm.state != VmState::Paused},
-		{"save", "Save State", "", vm.can_save ? "Write a quick state" : "Unavailable right now", EntryIcon::Action, !vm.can_save},
-		{"load", "Load State", "", vm.can_load ? "Load the quick state" : "No state is available", EntryIcon::Action, !vm.can_load},
-		{"disc", "Change Disc", "", "Choose another image", EntryIcon::Folder},
-		{"return", "Return to Library", "", "Unsaved progress is lost", EntryIcon::Warning, false, true},
+		{"save", "Save state", "", vm.can_save ? "" : "Unavailable right now", EntryIcon::Action, !vm.can_save},
+		{"load", "Load state", "", vm.can_load ? "" : "No state is available", EntryIcon::Action, !vm.can_load},
+		{"disc", "Change disc", "", "", EntryIcon::Folder},
+		{"return", "Return to library", "", "Unsaved progress is lost", EntryIcon::Warning, false, true},
 	};
 }
 
 std::vector<NamedAction> EmptyLibraryActions(const std::string& search)
 {
 	std::vector<NamedAction> out = {
-		{"add-folder", "Add Folder", "", "Choose a folder to scan", EntryIcon::Folder},
-		{"rescan", "Rescan Library", "", "Check saved folders again", EntryIcon::Action},
+		{"add-folder", "Add folder", "", "", EntryIcon::Folder},
+		{"rescan", "Rescan library", "", "", EntryIcon::Action},
 	};
 	if (!search.empty())
-		out.push_back({"clear-search", "Clear Search", "", search, EntryIcon::Action});
+		out.push_back({"clear-search", "Clear search", "", search, EntryIcon::Action});
 	return out;
 }
 
 std::vector<NamedAction> AccessibilityActions(const AccessibilityState& a11y)
 {
 	return {
-		{"text_scale", "Text Size", std::to_string(a11y.text_scale_percent) + "%", "100% to 200%"},
+		{"text_scale", "Text size", std::to_string(a11y.text_scale_percent) + "%", "100% to 200%"},
 		{"high_contrast", "Contrast", a11y.high_contrast ? "High" : "Standard", "Stronger surfaces and focus"},
-		{"reduce_motion", "Reduce Motion", BoolText(a11y.reduce_motion), "Stops ambient movement"},
-		{"large_focus", "Large Focus", BoolText(a11y.large_focus), "Thicker controller focus"},
+		{"reduce_motion", "Reduce motion", BoolText(a11y.reduce_motion), "Stops ambient movement"},
+		{"large_focus", "Large focus", BoolText(a11y.large_focus), "Thicker controller focus"},
 	};
 }
 
@@ -387,6 +416,8 @@ void UiModel::Tick(const Snapshot& snapshot, const std::vector<CommandEvent>& ev
 	}
 	for (const CommandEvent& event : events)
 	{
+		if (event.type == CommandType::SelectGame && event.status == CommandStatus::Succeeded)
+			continue;
 		if (event.status == CommandStatus::Failed || event.status == CommandStatus::Cancelled ||
 			event.status == CommandStatus::Succeeded)
 		{
@@ -440,6 +471,7 @@ void UiModel::Dispatch(const LogicalInput& in)
 		case Screen::Home: HandleHome(in); break;
 		case Screen::Library: HandleLibrary(in); break;
 		case Screen::GameDetail: HandleGameDetail(in); break;
+		case Screen::TexturePacks: HandleTexturePacks(in); break;
 		case Screen::PauseOverlay: HandlePause(in); break;
 		case Screen::MemoryCards: HandleMemoryCards(in); break;
 		case Screen::Settings: HandleSettings(in); break;
@@ -530,13 +562,13 @@ bool UiModel::HasTag(const GameEntry& game, const char* tag)
 std::vector<UiModel::FilterOption> UiModel::Filters() const
 {
 	return {
-		{"all", "All Games", FilterKind::All, VolumeKind::Internal},
+		{"all", "All games", FilterKind::All, VolumeKind::Internal},
 		{"recent", "Recent", FilterKind::Recent, VolumeKind::Internal},
 		{"internal", "Internal", FilterKind::Volume, VolumeKind::Internal},
 		{"usb", "USB", FilterKind::Volume, VolumeKind::USB},
 		{"extended", "Extended", FilterKind::Volume, VolumeKind::Extended},
-		{"attention", "Needs Attention", FilterKind::Damaged, VolumeKind::Internal},
-		{"add-folder", "Add Folder", FilterKind::AddFolder, VolumeKind::Internal},
+		{"attention", "Needs attention", FilterKind::Damaged, VolumeKind::Internal},
+		{"add-folder", "Add folder", FilterKind::AddFolder, VolumeKind::Internal},
 	};
 }
 
@@ -544,10 +576,15 @@ std::vector<const GameEntry*> UiModel::VisibleGames() const
 {
 	std::vector<FilterOption> filters = Filters();
 	const FilterOption& filter = filters[static_cast<size_t>(ClampIndex(m_filter_index, static_cast<int>(filters.size())))];
+	bool show_hidden = false;
+	for (const SettingCategory& category : m_snapshot.settings)
+		for (const SettingItem& item : category.items)
+			if (item.id == "shelf-global.show-hidden-games")
+				show_hidden = item.value == "true";
 	std::vector<const GameEntry*> out;
 	for (const GameEntry& game : m_snapshot.games)
 	{
-		if (game.hidden)
+		if (game.hidden && !show_hidden)
 			continue;
 		bool include = true;
 		if (filter.kind == FilterKind::Recent)
@@ -563,8 +600,19 @@ std::vector<const GameEntry*> UiModel::VisibleGames() const
 					source = &candidate;
 					break;
 				}
+			// A USB slot can have a readable mount path and no durable platform ID.
+			const std::string& path = source && !source->path.empty() ? source->path : game.path;
 			const VolumeInfo* volume = nullptr;
-			if (source)
+			for (const VolumeInfo& candidate : m_snapshot.volumes)
+			{
+				const std::string& root = candidate.root_path;
+				if (root.empty() || (volume && root.size() <= volume->root_path.size()))
+					continue;
+				if (path == root || (path.compare(0, root.size(), root) == 0 &&
+					(root.back() == '/' || (path.size() > root.size() && path[root.size()] == '/'))))
+					volume = &candidate;
+			}
+			if (!volume && source && !source->volume_id.empty())
 				for (const VolumeInfo& candidate : m_snapshot.volumes)
 					if (candidate.id == source->volume_id)
 					{
@@ -573,8 +621,6 @@ std::vector<const GameEntry*> UiModel::VisibleGames() const
 					}
 			include = volume ? volume->kind == filter.volume_kind : filter.volume_kind == VolumeKind::Internal;
 		}
-		else if (filter.kind == FilterKind::AddFolder)
-			include = false;
 
 		if (include && !m_library_search.empty())
 			include = ContainsCaseInsensitive(game.title, m_library_search) ||
@@ -771,7 +817,7 @@ void UiModel::HandleLibrary(const LogicalInput& in)
 
 	if (in.triangle)
 	{
-		OpenKeyboard(KeyboardTarget::LibrarySearch, "Search Library", m_library_search);
+		OpenKeyboard(KeyboardTarget::LibrarySearch, "Search library", m_library_search);
 		return;
 	}
 	if (in.circle)
@@ -917,11 +963,9 @@ void UiModel::ActivateGameDetail(int index)
 		Post(CommandType::FetchOnlinePatches, game->id);
 	else if (id == "textures")
 	{
-		const OperationStatus* operation = FindOperation(m_snapshot.operations, "texture-pack:", game);
-		if (operation && (operation->state == OperationState::Queued || operation->state == OperationState::Running) && operation->cancelable)
-			Post(CommandType::CancelTexturePack, game->id);
-		else if (!operation || operation->state != OperationState::Running)
-			Post(CommandType::DownloadTexturePack, game->id, "", "", 0);
+		m_texture_index = 0;
+		Post(CommandType::SelectGame, game->id);
+		m_screen = Screen::TexturePacks;
 	}
 	else if (id == "settings")
 		OpenSettings(Screen::GameDetail, m_detail_game_id);
@@ -929,6 +973,64 @@ void UiModel::ActivateGameDetail(int index)
 	{
 		m_memory_return_screen = Screen::GameDetail;
 		m_screen = Screen::MemoryCards;
+	}
+}
+
+void UiModel::HandleTexturePacks(const LogicalInput& in)
+{
+	const GameEntry* game = FindGame(m_detail_game_id);
+	if (!game)
+	{
+		OpenLibrary();
+		return;
+	}
+	if (in.circle)
+	{
+		Post(CommandType::SelectGame);
+		m_screen = Screen::GameDetail;
+		return;
+	}
+	if (m_snapshot.selected_game_id != game->id)
+		return;
+	const auto& packs = m_snapshot.texture_packs;
+	const auto rows = TextureActions(packs, !game->serial.empty());
+	const int count = static_cast<int>(rows.size());
+	if (in.up)
+		m_texture_index = MoveClamped(m_texture_index, -1, count);
+	if (in.down)
+		m_texture_index = MoveClamped(m_texture_index, 1, count);
+	if (!in.cross || rows.empty())
+		return;
+	const auto& row = rows[static_cast<size_t>(ClampIndex(m_texture_index, count))];
+	if (row.disabled)
+		return;
+	if (row.id == "cancel")
+		OpenDialog(PendingAction::CancelTexturePack, "Cancel texture operation?",
+			"Any partial download for this operation will be removed.", "Cancel operation", true, game->id);
+	else if (row.id == "forget")
+		OpenDialog(PendingAction::CancelTexturePack, "Clear failed operation?",
+			"Any partial download for this operation will be removed.", "Clear operation", true, game->id);
+	else if (row.id == "retry")
+		Post(CommandType::RetryTexturePackCatalog, game->id);
+	else if (row.id == "import")
+		OpenPicker(PickerPurpose::ImportTexturePack, Screen::TexturePacks);
+	else if (row.id == "remove")
+		OpenDialog(PendingAction::DeleteTexturePack, "Delete installed pack?",
+			"The installed textures for this game will be removed.", "Delete pack", true, game->id);
+	else
+	{
+		const auto pack = std::find_if(packs.entries.begin(), packs.entries.end(),
+			[&](const TexturePackEntry& entry) { return "pack:" + entry.id == row.id; });
+		if (pack == packs.entries.end())
+			return;
+		std::string detail = FormatBytes(pack->bytes);
+		if (!pack->authors.empty())
+			detail += " · " + pack->authors;
+		if (!pack->license.empty())
+			detail += "\n" + pack->license;
+		if (!pack->source.empty())
+			detail += "\n" + pack->source;
+		OpenDialog(PendingAction::DownloadTexturePack, pack->name, detail, "Download", false, game->id, "", pack->id);
 	}
 }
 
@@ -963,13 +1065,13 @@ void UiModel::ActivatePause(int index)
 		m_screen = m_pause_return_screen;
 	}
 	else if (action.id == "save")
-		Post(CommandType::SaveState);
+		Post(CommandType::SaveState, "", "", "", 1); // the runtime schema and the legacy combos both use slot 1
 	else if (action.id == "load")
-		Post(CommandType::LoadState);
+		Post(CommandType::LoadState, "", "", "", 1);
 	else if (action.id == "disc")
 		OpenPicker(PickerPurpose::ChangeDisc, Screen::PauseOverlay);
 	else if (action.id == "return")
-		OpenDialog(PendingAction::ReturnToLibrary, "Return to Library?",
+		OpenDialog(PendingAction::ReturnToLibrary, "Return to library?",
 			"The current game session closes. Unsaved progress in memory is lost.", "Return", true);
 }
 
@@ -988,7 +1090,7 @@ static std::vector<NamedAction> MemoryActionsForSlot(const Snapshot& snapshot, i
 		action.icon = EntryIcon::MemoryCard;
 		out.push_back(action);
 	}
-	out.push_back({"create", "Create Memory Card", "", "For slot " + std::to_string(slot + 1), EntryIcon::Action});
+	out.push_back({"create", "Create memory card", "", "For slot " + std::to_string(slot + 1), EntryIcon::Action});
 	return out;
 }
 
@@ -1095,7 +1197,7 @@ void UiModel::HandleSettings(const LogicalInput& in)
 	const SettingItem& item = category.items[static_cast<size_t>(ClampIndex(item_index, item_count))];
 	if (in.square && item.modified)
 	{
-		OpenDialog(PendingAction::ResetSetting, "Reset Setting?", item.label + " returns to its default value.",
+		OpenDialog(PendingAction::ResetSetting, "Reset setting?", item.label + " returns to its default value.",
 			"Reset", item.destructive, ScopedSettingCommandId(item, m_settings_game_id));
 		return;
 	}
@@ -1173,7 +1275,7 @@ void UiModel::HandleControls(const LogicalInput& in)
 	}
 	if (in.square)
 	{
-		OpenDialog(PendingAction::ResetControlBindings, "Reset Controls?",
+		OpenDialog(PendingAction::ResetControlBindings, "Reset controls?",
 			"Every action returns to the default controller layout.", "Reset", true);
 		return;
 	}
@@ -1285,13 +1387,13 @@ void UiModel::RebuildPickerRows()
 		{
 			any_volume = true;
 			PickerRowData row;
-			row.id = "volume:" + volume.id;
+			row.id = "volume:" + (volume.id.empty() ? volume.root_path : volume.id);
 			row.label = volume.label.empty() ? volume.root_path : volume.label;
 			row.path = volume.root_path;
 			row.directory = true;
 			row.disabled = !volume.present || !volume.readable;
 			row.detail = !volume.present ? "Disconnected" : !volume.readable ? "Not readable" :
-				FormatBytes(volume.free_bytes) + " free";
+				(volume.total_bytes ? FormatBytes(volume.free_bytes) + " free" : volume.root_path);
 			if (!volume.status.empty() && row.disabled)
 				row.detail += " · " + volume.status;
 			m_picker.rows.push_back(row);
@@ -1300,7 +1402,7 @@ void UiModel::RebuildPickerRows()
 		{
 			PickerRowData row;
 			row.id = "volume:internal";
-			row.label = "Internal Storage";
+			row.label = "Internal storage";
 			row.path = m_snapshot.data_root.empty() ? "/data/caliza" : m_snapshot.data_root;
 			row.directory = true;
 			row.detail = "Caliza data";
@@ -1326,15 +1428,17 @@ void UiModel::RebuildPickerRows()
 
 	PickerRowData use;
 	use.id = "use-current";
-	use.label = m_picker.purpose == PickerPurpose::BiosFolder ? "Use This BIOS Folder" : "Use This Folder";
+	use.label = m_picker.purpose == PickerPurpose::BiosFolder ? "Use this BIOS folder" : "Use this folder";
 	use.detail = m_picker.current_path;
 	use.path = m_picker.current_path;
 	use.use_current = true;
-	m_picker.rows.push_back(use);
+	const bool importing = m_picker.purpose == PickerPurpose::ImportTexturePack;
+	if (!importing)
+		m_picker.rows.push_back(use);
 
 	PickerRowData parent;
 	parent.id = "parent";
-	parent.label = "Up One Level";
+	parent.label = "Up one level";
 	parent.detail = m_picker.listing.parent.empty() ? "Locations" : m_picker.listing.parent;
 	parent.path = m_picker.listing.parent;
 	parent.parent = true;
@@ -1342,19 +1446,24 @@ void UiModel::RebuildPickerRows()
 
 	for (const FolderEntry& entry : m_picker.listing.entries)
 	{
+		const std::string name = importing ? Lower(entry.name) : "";
+		const std::string ext = name.size() >= 4 ? name.substr(name.size() - 4) : "";
+		const bool archive = ext == ".zip" || ext == ".rar";
+		if (importing && !entry.directory && !archive)
+			continue;
 		PickerRowData row;
 		row.id = "entry:" + entry.path;
 		row.label = entry.name;
 		row.path = entry.path;
 		row.directory = entry.directory;
-		row.image = entry.image;
-		row.disabled = !entry.readable || (!entry.directory && !entry.image);
+		row.image = importing ? !entry.directory && archive : entry.image;
+		row.disabled = !entry.readable || (!entry.directory && !row.image);
 		if (!entry.readable)
 			row.detail = "Not readable";
 		else if (entry.directory)
 			row.detail = entry.compatible_count ? std::to_string(entry.compatible_count) + " compatible" : "Folder";
-		else if (entry.image)
-			row.detail = "Compatible image";
+		else if (row.image)
+			row.detail = importing ? "Texture archive" : "Compatible image";
 		else
 			row.detail = "File";
 		m_picker.rows.push_back(row);
@@ -1410,7 +1519,7 @@ void UiModel::HandleFolderPicker(const LogicalInput& in)
 {
 	if (in.triangle)
 	{
-		OpenKeyboard(KeyboardTarget::FolderFilter, "Filter Folder", m_picker.filter);
+		OpenKeyboard(KeyboardTarget::FolderFilter, "Filter folder", m_picker.filter);
 		return;
 	}
 	if (in.circle)
@@ -1448,8 +1557,8 @@ void UiModel::HandleFolderPicker(const LogicalInput& in)
 		const PickerRowData& row = m_picker.rows[static_cast<size_t>(ClampIndex(m_picker.row_index, count))];
 		if (row.id.rfind("source:", 0) == 0)
 		{
-			OpenDialog(PendingAction::RemoveLibraryFolder, "Remove Saved Folder?",
-				"Only the library link is removed. Game images stay where they are.", "Remove Link", true,
+			OpenDialog(PendingAction::RemoveLibraryFolder, "Remove saved folder?",
+				"Only the library link is removed. Game images stay where they are.", "Remove link", true,
 				row.id.substr(7));
 			return;
 		}
@@ -1496,7 +1605,7 @@ void UiModel::ActivatePickerRow()
 	}
 	if (row.image)
 	{
-		if (m_picker.purpose == PickerPurpose::ChangeDisc)
+		if (m_picker.purpose == PickerPurpose::ChangeDisc || m_picker.purpose == PickerPurpose::ImportTexturePack)
 			FinishPicker(row.path, true);
 		else
 			SetToast("Use the folder containing this image");
@@ -1508,6 +1617,15 @@ void UiModel::FinishPicker(const std::string& selected_path, bool image_file)
 	switch (m_picker.purpose)
 	{
 		case PickerPurpose::AddLibraryFolder:
+			if (m_picker.return_screen == Screen::Library)
+			{
+				m_filter_index = 0;
+				m_library_zone = 1;
+				m_empty_index = 0;
+				m_grid_index = 0;
+				m_library_focus_game_id.clear();
+				m_library_search.clear();
+			}
 			m_pending_scan_added_path = selected_path;
 			Post(CommandType::AddLibraryFolder, "", selected_path);
 			break;
@@ -1520,8 +1638,11 @@ void UiModel::FinishPicker(const std::string& selected_path, bool image_file)
 		case PickerPurpose::ChangeDisc:
 			Post(CommandType::ChangeDisc, "", selected_path);
 			break;
+		case PickerPurpose::ImportTexturePack:
+			if (image_file)
+				Post(CommandType::ImportTexturePack, m_detail_game_id, selected_path);
+			break;
 	}
-	(void)image_file;
 	ClosePicker(true);
 }
 
@@ -1581,6 +1702,15 @@ void UiModel::ExecuteDialogAction(const DialogState& dialog)
 				Post(CommandType::ApplyRecommendedSettings);
 			else
 				Post(CommandType::SetSetting, dialog.id, dialog.path, "activate", dialog.number);
+			break;
+		case PendingAction::DownloadTexturePack:
+			Post(CommandType::DownloadTexturePack, dialog.id, "", dialog.value);
+			break;
+		case PendingAction::CancelTexturePack:
+			Post(CommandType::CancelTexturePack, dialog.id);
+			break;
+		case PendingAction::DeleteTexturePack:
+			Post(CommandType::DeleteTexturePack, dialog.id);
 			break;
 		case PendingAction::None:
 			break;
@@ -1708,6 +1838,7 @@ static const char* ScreenName(Screen screen)
 		case Screen::Home: return "home";
 		case Screen::Library: return "library";
 		case Screen::GameDetail: return "game-detail";
+		case Screen::TexturePacks: return "texture-packs";
 		case Screen::PauseOverlay: return "pause";
 		case Screen::MemoryCards: return "memory-cards";
 		case Screen::Settings: return "settings";
@@ -1740,8 +1871,7 @@ UiView UiModel::BuildView() const
 	{
 		case Screen::Boot:
 		{
-			view.title = m_snapshot.product.empty() ? "Caliza PS4" : m_snapshot.product;
-			view.subtitle = "Preparing the mineral interface";
+			view.title = m_snapshot.product.empty() ? "Caliza" : m_snapshot.product;
 			if (m_snapshot.bios.checking)
 				view.status = "Checking for a PS2 BIOS…";
 			view.focus_id = "boot";
@@ -1761,7 +1891,7 @@ UiView UiModel::BuildView() const
 			bios.icon = m_snapshot.bios.present ? EntryIcon::Action : EntryIcon::Warning;
 			UiEntry folder;
 			folder.id = "step-folder";
-			folder.label = "2  Game Folder";
+			folder.label = "2  Game folder";
 			folder.detail = m_snapshot.sources.empty() ? "Choose where games live" :
 				std::to_string(m_snapshot.sources.size()) + " folder" + (m_snapshot.sources.size() == 1 ? "" : "s");
 			folder.selected = !m_snapshot.sources.empty();
@@ -1781,7 +1911,7 @@ UiView UiModel::BuildView() const
 		}
 		case Screen::Home:
 		{
-			view.title = "PS2 Emulator for PS4";
+			view.title = "PS2 emulator for PS4";
 			view.subtitle = m_snapshot.build_tag;
 			const std::vector<HomeAction> actions = HomeActions(m_snapshot);
 			for (size_t i = 0; i < actions.size(); i++)
@@ -1793,6 +1923,24 @@ UiView UiModel::BuildView() const
 				entry.focused = static_cast<int>(i) == m_home_index;
 				if (entry.focused)
 					view.focus_id = entry.id;
+				if (entry.id == "library")
+				{
+					const size_t count = m_snapshot.games.size();
+					entry.detail = count == 0 ? "Add a folder to find your games" :
+						std::to_string(count) + (count == 1 ? " game" : " games");
+				}
+				else if (entry.id == "memory")
+					entry.detail = "Create cards and choose what goes in each slot";
+				else if (entry.id == "settings")
+					entry.detail = "Display, graphics, performance and folders";
+				else if (entry.id == "controls")
+					entry.detail = "Save, load and fast-forward shortcuts";
+				else if (entry.id == "accessibility")
+					entry.detail = "Text size, contrast, motion and focus";
+				else if (entry.id == "diagnostics")
+					entry.detail = "System status and the companion panel";
+				else if (entry.id == "system-menu")
+					entry.detail = m_snapshot.bios.present ? "Start the PS2 without a disc" : "Needs a PS2 BIOS first";
 				if (entry.id == "continue")
 				{
 					const GameEntry* game = FindGame(m_snapshot.continue_game_id);
@@ -1840,6 +1988,7 @@ UiView UiModel::BuildView() const
 				tile.badges = game.badges;
 				tile.disabled = !GameLaunchable(game);
 				tile.damaged = game.damaged;
+				tile.hidden = game.hidden;
 				tile.focused = m_library_zone == 1 && static_cast<int>(i) == m_grid_index;
 				if (tile.focused)
 					view.focus_id = "game:" + tile.id;
@@ -1860,7 +2009,7 @@ UiView UiModel::BuildView() const
 			view.subtitle = std::to_string(games.size()) + (games.size() == 1 ? " game" : " games");
 			if (!m_library_search.empty())
 				view.subtitle += " · search “" + m_library_search + "”";
-			if (games.empty() && m_snapshot.games.empty())
+			if (games.empty() && m_snapshot.games.empty() && view.status.empty())
 				view.status = "No games yet. Add a folder without moving or copying your images.";
 			prompts({{PromptGlyph::Cross, games.empty() ? "Select" : "Play"}, {PromptGlyph::Square, "Details"},
 				{PromptGlyph::Triangle, "Search"}, {PromptGlyph::Circle, "Back"}});
@@ -1894,6 +2043,37 @@ UiView UiModel::BuildView() const
 			prompts({{PromptGlyph::Cross, "Select"}, {PromptGlyph::Circle, "Back"}});
 			break;
 		}
+		case Screen::TexturePacks:
+		{
+			view.title = "HD texture packs";
+			const GameEntry* game = FindGame(m_detail_game_id);
+			if (game)
+				view.subtitle = game->title + (game->serial.empty() ? "" : " · " + game->serial);
+			if (!game || game->serial.empty())
+				view.status = "This game has no recognized serial";
+			else if (m_snapshot.selected_game_id != game->id)
+				view.status = "Loading packs";
+			else
+			{
+				using Catalog = TexturePacks::Catalog;
+				const auto& packs = m_snapshot.texture_packs;
+				if (packs.catalog == Catalog::Loading)
+					view.status = "Loading catalog";
+				else if (packs.catalog == Catalog::Ready && packs.entries.empty())
+					view.status = "No catalog packs for this game";
+				const auto rows = TextureActions(packs, true);
+				const int focus = ClampIndex(m_texture_index, static_cast<int>(rows.size()));
+				for (size_t i = 0; i < rows.size(); i++)
+				{
+					const bool focused = static_cast<int>(i) == focus;
+					view.items.push_back(EntryFromAction(rows[i], focused));
+					if (focused)
+						view.focus_id = "texture:" + rows[i].id;
+				}
+			}
+			prompts({{PromptGlyph::Cross, "Select"}, {PromptGlyph::Circle, "Back"}});
+			break;
+		}
 		case Screen::PauseOverlay:
 		{
 			view.title = "Paused";
@@ -1917,7 +2097,7 @@ UiView UiModel::BuildView() const
 		}
 		case Screen::MemoryCards:
 		{
-			view.title = "Memory Cards";
+			view.title = "Memory cards";
 			for (int slot = 0; slot < 2; slot++)
 			{
 				UiEntry entry;
@@ -1982,12 +2162,18 @@ UiView UiModel::BuildView() const
 					entry.id = setting.id;
 					entry.label = setting.label;
 					entry.value = setting.value;
-					for (const SettingChoice& choice : setting.choices)
-						if (choice.value == setting.value)
-							entry.value = choice.label;
+					for (size_t c = 0; c < setting.choices.size(); c++)
+					{
+						entry.options.push_back(setting.choices[c].label);
+						if (setting.choices[c].value == setting.value)
+						{
+							entry.value = setting.choices[c].label;
+							entry.option_index = static_cast<int>(c);
+						}
+					}
 					entry.detail = setting.description;
-					if (setting.restart_required)
-						entry.detail += entry.detail.empty() ? "Restart required" : " · restart required";
+					entry.needs_restart = setting.restart_required;
+					entry.game_scoped = setting.game_scoped;
 					entry.modified = setting.modified;
 					entry.destructive = setting.destructive;
 					entry.focused = m_settings_zone == 1 && static_cast<int>(i) == item_index;
@@ -1995,18 +2181,20 @@ UiView UiModel::BuildView() const
 						view.focus_id = "setting:" + entry.id;
 					view.items.push_back(entry);
 				}
-				view.subtitle = category.label;
 			}
 			else
 				view.status = "No settings are exposed by the backend yet";
-			prompts({{PromptGlyph::Cross, "Change"}, {PromptGlyph::Square, "Reset"}, {PromptGlyph::Circle, "Back"}});
+			if (m_settings_zone == 1)
+				prompts({{PromptGlyph::DpadLeftRight, "Change"}, {PromptGlyph::Square, "Reset"}, {PromptGlyph::Circle, "Back"}});
+			else
+				prompts({{PromptGlyph::Cross, "Open"}, {PromptGlyph::Circle, "Back"}});
 			break;
 		}
 		case Screen::Controls:
 		{
 			view.title = "Controls";
-			view.subtitle = m_controls_capture ? "Press the new button. Options cancels." :
-				"Map interface and emulator actions";
+			if (m_controls_capture)
+				view.subtitle = "Press the new button. Options cancels.";
 			for (size_t i = 0; i < m_snapshot.controls.size(); i++)
 			{
 				const ControlBinding& binding = m_snapshot.controls[i];
@@ -2027,7 +2215,7 @@ UiView UiModel::BuildView() const
 		case Screen::Accessibility:
 		{
 			view.title = "Accessibility";
-			view.subtitle = "Preview updates after the backend applies the setting";
+			view.subtitle = "Changes apply right away";
 			const std::vector<NamedAction> actions = AccessibilityActions(m_snapshot.accessibility);
 			for (size_t i = 0; i < actions.size(); i++)
 			{
@@ -2043,9 +2231,9 @@ UiView UiModel::BuildView() const
 			view.title = "Diagnostics";
 			UiEntry report;
 			report.id = "report";
-			report.label = "Generate Report";
+			report.label = "Generate report";
 			report.value = "Web panel";
-			report.detail = "Native report collection is not bound yet; use the companion panel diagnostics";
+			report.detail = "Reports are collected from the companion panel on another device";
 			report.disabled = true;
 			report.icon = EntryIcon::Diagnostics;
 			report.focused = true;
@@ -2060,17 +2248,19 @@ UiView UiModel::BuildView() const
 				view.items.push_back(entry);
 			};
 			info("build", "Build ID", m_snapshot.diagnostics.build_id.empty() ? m_snapshot.build_tag : m_snapshot.diagnostics.build_id);
-			info("console", "Console Status", m_snapshot.diagnostics.console_status.empty() ? "Unknown" : m_snapshot.diagnostics.console_status);
-			info("panel", "Web Panel", m_snapshot.diagnostics.web_panel_connected ? "Connected" : "Not connected");
+			info("console", "Console status", m_snapshot.diagnostics.console_status.empty() ? "Unknown" : m_snapshot.diagnostics.console_status);
+			info("panel", "Web panel", m_snapshot.diagnostics.web_panel_connected ? "Connected" : "Not connected");
 			view.subtitle = m_snapshot.diagnostics.web_panel_url;
 			prompts({{PromptGlyph::Cross, "Open"}, {PromptGlyph::Circle, "Back"}});
 			break;
 		}
 		case Screen::FolderPicker:
 		{
-			view.title = m_picker.purpose == PickerPurpose::BiosFolder ? "Choose BIOS Folder" :
-				m_picker.purpose == PickerPurpose::ChangeDisc ? "Change Disc" : "Choose Game Folder";
-			view.subtitle = m_picker.at_root ? "Locations" : JoinBreadcrumbs(m_picker.listing.breadcrumbs);
+			view.title = m_picker.purpose == PickerPurpose::BiosFolder ? "Choose BIOS folder" :
+				m_picker.purpose == PickerPurpose::ChangeDisc ? "Change disc" :
+				m_picker.purpose == PickerPurpose::ImportTexturePack ? "Import texture pack" : "Choose game folder";
+			if (!m_picker.at_root)
+				view.subtitle = JoinBreadcrumbs(m_picker.listing.breadcrumbs);
 			view.picker.purpose = m_picker.purpose;
 			view.picker.title = view.title;
 			view.picker.current_path = m_picker.current_path;
@@ -2097,8 +2287,9 @@ UiView UiModel::BuildView() const
 			}
 			if (!m_picker.listing.error.empty())
 				view.picker.status = m_picker.listing.error;
-			else if (!m_picker.at_root && m_picker.listing.entries.empty())
-				view.picker.status = "No readable folders or compatible images here";
+			else if (!m_picker.at_root && (m_picker.listing.entries.empty() || (m_picker.purpose == PickerPurpose::ImportTexturePack && m_picker.rows.size() == 1)))
+				view.picker.status = m_picker.purpose == PickerPurpose::ImportTexturePack ? "No folders or ZIP/RAR archives here" :
+					"No readable folders or compatible images here";
 			else if (m_picker.listing.truncated)
 				view.picker.status = "Showing the first entries; use the filter to narrow this folder";
 			prompts({{PromptGlyph::Cross, "Open"}, {PromptGlyph::Triangle, "Filter"}, {PromptGlyph::Square, "Actions"},

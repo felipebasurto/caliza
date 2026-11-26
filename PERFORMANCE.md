@@ -1,6 +1,6 @@
 # Slow game? Try this before you report it
 
-Caliza PS4 runs many PS2 games well, but some games are heavier than others. Most slowdowns improve with a few per-game settings. Try these first; it takes about five minutes. If the game is still slow afterwards, the report tells us exactly where to look.
+Caliza runs many PS2 games well, but some games are heavier than others. Most slowdowns improve with a few per-game settings. Try these first; it takes about five minutes. If the game is still slow afterwards, the report tells us exactly where to look.
 
 ## First: is it slow, or is it broken?
 

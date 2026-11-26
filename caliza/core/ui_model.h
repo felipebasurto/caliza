@@ -1,4 +1,4 @@
-// Caliza PS4 Estratos: deterministic controller-first UI model.
+// Caliza Estratos: deterministic controller-first UI model.
 // Snapshots and command events in; navigation state, view data and backend commands out.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -20,6 +20,7 @@ enum class Screen
 	Home,
 	Library,
 	GameDetail,
+	TexturePacks,
 	PauseOverlay,
 	MemoryCards,
 	Settings,
@@ -35,6 +36,7 @@ enum class PickerPurpose
 	BiosFolder,
 	RelocateLibraryFolder,
 	ChangeDisc,
+	ImportTexturePack,
 };
 
 enum class PromptGlyph
@@ -45,6 +47,7 @@ enum class PromptGlyph
 	Triangle,
 	Options,
 	Dpad,
+	DpadLeftRight,
 };
 
 enum class EntryIcon
@@ -83,6 +86,11 @@ struct UiEntry
 	bool destructive = false;
 	bool modified = false;
 	float progress = -1.0f; // 0..1 when nonnegative
+	// Settings rows: the choice labels in order and the current one, for the explanation panel.
+	std::vector<std::string> options;
+	int option_index = -1;
+	bool needs_restart = false;
+	bool game_scoped = false;
 };
 
 struct UiTile
@@ -95,6 +103,7 @@ struct UiTile
 	bool focused = false;
 	bool disabled = false;
 	bool damaged = false;
+	bool hidden = false;
 };
 
 struct UiPickerRow
@@ -237,6 +246,9 @@ private:
 		ResetSetting,
 		ReturnToLibrary,
 		RemoveLibraryFolder,
+		DownloadTexturePack,
+		CancelTexturePack,
+		DeleteTexturePack,
 		ApplyRecommendedSettings,
 	};
 
@@ -310,6 +322,7 @@ private:
 	void HandleHome(const LogicalInput& in);
 	void HandleLibrary(const LogicalInput& in);
 	void HandleGameDetail(const LogicalInput& in);
+	void HandleTexturePacks(const LogicalInput& in);
 	void HandlePause(const LogicalInput& in);
 	void HandleMemoryCards(const LogicalInput& in);
 	void HandleSettings(const LogicalInput& in);
@@ -389,6 +402,7 @@ private:
 	std::string m_pending_scan_added_path;
 	std::string m_detail_game_id;
 	int m_detail_index = 0;
+	int m_texture_index = 0;
 	int m_pause_index = 0;
 	Screen m_pause_return_screen = Screen::Home;
 	int m_memory_zone = 0; // 0 slots, 1 cards/actions

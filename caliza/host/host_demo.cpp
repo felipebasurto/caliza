@@ -3,6 +3,8 @@
 
 #include "host_demo.h"
 
+#include "settings_projection.h"
+
 #include <algorithm>
 
 namespace caliza
@@ -28,16 +30,6 @@ GameEntry Game(const char* id, const char* title, const char* region, uint64_t b
 	return game;
 }
 
-SettingItem Setting(const char* id, const char* label, const char* value, SettingKind kind, const char* description)
-{
-	SettingItem item;
-	item.id = id;
-	item.label = label;
-	item.value = value;
-	item.kind = kind;
-	item.description = description;
-	return item;
-}
 } // namespace
 
 Snapshot MakeDemoSnapshot()
@@ -63,7 +55,7 @@ Snapshot MakeDemoSnapshot()
 	VolumeInfo internal;
 	internal.id = "internal";
 	internal.root_path = "/data/caliza";
-	internal.label = "Internal Storage";
+	internal.label = "Internal storage";
 	internal.kind = VolumeKind::Internal;
 	internal.present = internal.readable = true;
 	internal.total_bytes = 420000000000ull;
@@ -71,7 +63,7 @@ Snapshot MakeDemoSnapshot()
 	VolumeInfo usb;
 	usb.id = "usb0";
 	usb.root_path = "/mnt/usb0";
-	usb.label = "USB Drive";
+	usb.label = "USB drive";
 	usb.kind = VolumeKind::USB;
 	usb.present = usb.readable = true;
 	usb.total_bytes = 1000000000000ull;
@@ -81,7 +73,7 @@ Snapshot MakeDemoSnapshot()
 	source.id = "usb0";
 	source.path = "/mnt/usb0/games";
 	source.volume_id = "usb0";
-	source.label = "USB Drive / games";
+	source.label = "USB drive / games";
 	source.state = SourceState::Connected;
 	source.game_count = static_cast<uint32_t>(s.games.size());
 	s.sources = {source};
@@ -94,26 +86,10 @@ Snapshot MakeDemoSnapshot()
 	MemoryCardInfo empty;
 	empty.slot = 1;
 	s.memory_cards = {card, empty};
-	SettingCategory video;
-	video.id = "video";
-	video.label = "Video";
-	video.items = {
-		Setting("renderer", "Renderer", "Vulkan", SettingKind::Choice, "Graphics backend"),
-		Setting("aspect", "Aspect Ratio", "16:9", SettingKind::Choice, "Display geometry"),
-		Setting("vsync", "VSync", "true", SettingKind::Toggle, "Synchronise presentation"),
-		Setting("internal_resolution", "Internal Resolution", "2", SettingKind::Number, "Native resolution multiplier"),
-	};
-	video.items[0].choices = {{"Vulkan", "Vulkan"}, {"Software", "Software"}};
-	video.items[1].choices = {{"16:9", "16:9"}, {"4:3", "4:3"}, {"Auto", "Auto"}};
-	SettingCategory system;
-	system.id = "system";
-	system.label = "System";
-	system.items = {
-		Setting("fast_boot", "Fast Boot", "false", SettingKind::Toggle, "Skip the BIOS splash"),
-		Setting("cheats", "Cheats", "false", SettingKind::Toggle, "Enable patched game data"),
-		Setting("backup", "Backup Memory Cards", "true", SettingKind::Toggle, "Create dated memory-card copies"),
-	};
-	s.settings = {video, system};
+	// The real global settings catalog, so the preview shows the same rows and help text as the console.
+	settings::ProjectionOptions projection;
+	projection.values = {{"upscale_multiplier", "2"}, {"EmuCore/EnableWideScreenPatches", "true"}};
+	s.settings = settings::ProjectSettings(projection);
 	s.controls = {
 		{"cross", "Confirm / Cross", "Cross"}, {"circle", "Back / Circle", "Circle"},
 		{"square", "Context / Square", "Square"}, {"triangle", "Search / Triangle", "Triangle"},
@@ -161,6 +137,38 @@ CommandId DemoBackend::Post(const Command& command)
 		m_snapshot.vm.can_save = m_snapshot.vm.can_load = true;
 		m_snapshot.continue_game_id = command.id;
 		m_snapshot.continue_valid = true;
+	}
+	else if (command.type == CommandType::SelectGame)
+	{
+		m_snapshot.selected_game_id = command.id;
+		m_snapshot.texture_packs = {};
+		if (!command.id.empty())
+		{
+			const auto game = std::find_if(m_snapshot.games.begin(), m_snapshot.games.end(), [&](const GameEntry& entry) {
+				return entry.id == command.id;
+			});
+			const std::string title = game == m_snapshot.games.end() ? "Demo game" : game->title;
+			auto& packs = m_snapshot.texture_packs;
+			packs.catalog = TexturePacks::Catalog::Ready;
+			packs.entries = {
+				{"sharp", title + " HD", "Elliot Maren", "", "See the original release for terms", 685ull << 20},
+				{"faithful", title + " · Faithful", "Jules Sato", "", "See the original release for terms", 312ull << 20},
+			};
+		}
+	}
+	else if (command.type == CommandType::DownloadTexturePack || command.type == CommandType::ImportTexturePack)
+	{
+		auto& packs = m_snapshot.texture_packs;
+		const auto it = std::find_if(packs.entries.begin(), packs.entries.end(), [&](const TexturePackEntry& entry) {
+			return entry.id == command.value;
+		});
+		packs.installed_name = it != packs.entries.end() ? it->name : command.path.substr(command.path.rfind('/') + 1);
+		packs.removable = packs.installed = true;
+	}
+	else if (command.type == CommandType::DeleteTexturePack)
+	{
+		m_snapshot.texture_packs.installed_name.clear();
+		m_snapshot.texture_packs.removable = m_snapshot.texture_packs.installed = false;
 	}
 	else if (command.type == CommandType::PauseVm)
 		m_snapshot.vm.state = VmState::Paused;
@@ -226,8 +234,8 @@ FolderListing DemoBackend::BrowseFolder(const std::string& path, const std::stri
 	if (path.empty() || path == "/")
 	{
 		listing.entries = {
-			{"Internal Storage", "/data/caliza", true, false, true, 0},
-			{"USB Drive", "/mnt/usb0", true, false, true, 8},
+			{"Internal storage", "/data/caliza", true, false, true, 0},
+			{"USB drive", "/mnt/usb0", true, false, true, 8},
 		};
 	}
 	else if (path == "/mnt/usb0")
@@ -235,6 +243,7 @@ FolderListing DemoBackend::BrowseFolder(const std::string& path, const std::stri
 		listing.entries = {
 			{"games", "/mnt/usb0/games", true, false, true, 8},
 			{"bios", "/mnt/usb0/bios", true, false, true, 0},
+			{"aurora-hd.zip", "/mnt/usb0/aurora-hd.zip", false, false, true, 0},
 		};
 	}
 	else

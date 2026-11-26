@@ -1,4 +1,4 @@
-// Caliza PS4 native shell adapter: Estratos entry point and orchestrator boundary.
+// Caliza native shell adapter: Estratos entry point and orchestrator boundary.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ps4_shell.h"
@@ -377,7 +377,7 @@ bool EditSettings(const std::string& path, const std::vector<caliza::settings::M
 		change.value = mutation.value;
 		changes.push_back(std::move(change));
 	}
-	return fe::settings::EditSettingsFile(path, "# Caliza PS4 settings", changes, *summary, *error);
+	return fe::settings::EditSettingsFile(path, "# Caliza settings", changes, *summary, *error);
 }
 
 std::string StemOfPath(const std::string& file)
@@ -446,15 +446,29 @@ caliza::OperationStatus TextureOperation(const std::string& serial, const fe::Te
 	out.label = "HD texture pack";
 	out.game_id = serial;
 	out.message = status.message;
-	if (out.message.empty() && !status.installed.empty())
-		out.message = status.installed;
+	if (out.message.empty())
+	{
+		switch (status.state)
+		{
+			case State::Queued: out.message = "Queued"; break;
+			case State::Checking: out.message = "Checking saved download"; break;
+			case State::Downloading: out.message = "Downloading"; break;
+			case State::Verifying: out.message = "Verifying"; break;
+			case State::Unpacking: out.message = "Unpacking"; break;
+			case State::Installing: out.message = "Installing"; break;
+			case State::Removing: out.message = "Removing installed pack"; break;
+			default: out.message = status.installed; break;
+		}
+		if (!status.job_name.empty())
+			out.message += " · " + status.job_name;
+	}
 	if (status.total)
 		out.progress = static_cast<float>(static_cast<double>(status.done) / static_cast<double>(status.total));
 	switch (status.state)
 	{
-		case State::Loading: out.state = caliza::OperationState::Running; out.message = "looking on archive.org"; break;
+		case State::Loading: out.state = caliza::OperationState::Running; out.message = "Loading catalog"; break;
 		case State::Unavailable: out.state = caliza::OperationState::Failed; break;
-		case State::None: out.state = caliza::OperationState::Idle; break;
+		case State::None:
 		case State::Available: out.state = caliza::OperationState::Idle; break;
 		case State::Queued: out.state = caliza::OperationState::Queued; out.cancelable = true; break;
 		case State::Checking:
@@ -463,7 +477,7 @@ caliza::OperationStatus TextureOperation(const std::string& serial, const fe::Te
 		case State::Unpacking:
 		case State::Installing:
 			out.state = caliza::OperationState::Running;
-			out.cancelable = status.state == State::Checking || status.state == State::Downloading || status.state == State::Verifying;
+			out.cancelable = status.state != State::Installing;
 			break;
 		case State::Installed: out.state = caliza::OperationState::Succeeded; break;
 		case State::Removing: out.state = caliza::OperationState::Running; break;
@@ -574,7 +588,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	options.hooks.edit_settings_file = EditSettings;
 	options.hooks.apply_recommended = [](const std::string& path, const std::string& preset_id, std::string* summary, std::string* error) {
 		const std::string presets(reinterpret_cast<const char*>(fe_presets), reinterpret_cast<const char*>(fe_presets_end));
-		return fe::settings::ApplyRecommended(path, presets, preset_id, "# Caliza PS4 recommended settings", *summary, *error);
+		return fe::settings::ApplyRecommended(path, presets, preset_id, "# Caliza recommended settings", *summary, *error);
 	};
 	options.hooks.create_memory_card = [](const std::string& dir, uint64_t mb, const std::string& name, std::string* made, std::string* error) {
 		return fe::settings::CreateCard(dir, mb, name, *made, *error);
@@ -613,7 +627,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 		TrackSerial(service_tracking, game.serial);
 		return patch_service.begin(ToFrontendGame(game));
 	};
-	options.hooks.download_texture_pack = [texture_service, service_tracking, &paths](const caliza::GameEntry& game, int pack_index, std::string* error) {
+	options.hooks.download_texture_pack = [texture_service, service_tracking, &paths](const caliza::GameEntry& game, int pack_index, const std::string& pack_id, std::string* error) {
 		if (!texture_service.begin)
 		{
 			*error = "the texture pack service is disabled or unavailable";
@@ -623,7 +637,46 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 		const std::string settings_path = paths.settings_dir + "/" + stem + ".ini";
 		const std::string header = "# " + game.title + (game.serial.empty() ? std::string() : " (" + game.serial + ")");
 		TrackSerial(service_tracking, game.serial);
-		return texture_service.begin(game.serial, pack_index, settings_path, header, game.title);
+		return texture_service.begin(game.serial, pack_index, settings_path, header, game.title, pack_id);
+	};
+	options.hooks.import_texture_pack = [texture_service, service_tracking, &paths](const caliza::GameEntry& game,
+		const std::string& archive, std::string* error) {
+		if (!texture_service.import)
+		{
+			*error = "The texture pack service is unavailable";
+			return false;
+		}
+		const std::string settings_path = paths.settings_dir + "/" + StemOfPath(game.file) + ".ini";
+		const std::string header = "# " + game.title + " (" + game.serial + ")";
+		TrackSerial(service_tracking, game.serial);
+		return texture_service.import(game.serial, archive, settings_path, header, game.title);
+	};
+	options.hooks.texture_packs = [texture_service](const caliza::GameEntry& game) {
+		using Catalog = caliza::TexturePacks::Catalog;
+		caliza::TexturePacks result;
+		if (!texture_service.status || fe::NormalSerial(game.serial).empty())
+		{
+			result.catalog_message = game.serial.empty() ? "This game has no recognized serial" : "Catalog unavailable for this game";
+			return result;
+		}
+		const auto status = texture_service.status(game.serial);
+		result.catalog = status.catalog_ready ? Catalog::Ready : status.catalog_loading ? Catalog::Loading : Catalog::Unavailable;
+		result.catalog_message = status.catalog_message;
+		result.operation = TextureOperation(game.serial, status);
+		result.installed = status.state == fe::TexturePackStatus::State::Installed;
+		result.installed_name = status.installed;
+		result.removable = status.ours;
+		using State = fe::TexturePackStatus::State;
+		if (status.state == State::Unavailable || status.state == State::Loading)
+			result.operation = {};
+		for (const fe::TexturePack& pack : status.packs)
+		{
+			std::string authors;
+			for (const std::string& author : pack.authors)
+				authors += (authors.empty() ? "" : ", ") + author;
+			result.entries.push_back({pack.id, pack.name, authors, pack.source_url, pack.license, pack.bytes});
+		}
+		return result;
 	};
 	options.hooks.cancel_texture_pack = [texture_service, service_tracking](const caliza::GameEntry& game, std::string*) {
 		TrackSerial(service_tracking, game.serial);

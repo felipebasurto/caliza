@@ -1036,7 +1036,7 @@ std::vector<std::string> orbis_usb_game_dirs(const char* when)
 			entries++;
 			isos += IsDiscImageName(e->d_name) ? 1 : 0;
 			const std::string lower = LowerAscii(e->d_name);
-			if (lower == "dvd" || lower == "cd" || lower == "caliza" || lower == "games")
+			if (lower == "dvd" || lower == "cd" || lower == "caliza" || lower == "games" || lower == "ps2")
 				subs.push_back(e->d_name);
 			// vk-285-118 (AI-assisted): a drive laid out like /data/caliza (testers: "games in the games/ folder on the external
 			// drive are NOT detected", while PCSX2/textures there works): PCSX2/games/, and caliza/games/, also DVD/ and CD/ in them.
