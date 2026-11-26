@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backing, and SPU2 reset cache invalidation; binary artifact validated at `d3fa36c`.
+Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backing, and SPU2 reset cache invalidation; binary artifact validated at `453c9f5`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **115 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **117 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -129,6 +129,8 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 113. `752b833` — bound folder-card FAT and directory traversal.
 114. `97b8010` — record bounded folder-card candidate evidence.
 115. `d3fa36c` — retain folder-card data after host write failures.
+116. `e899b89` — record folder write-durability candidate evidence.
+117. `453c9f5` — harden memory-card bounds and write retries.
 
 ## Completed work
 
@@ -159,11 +161,11 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `d3fa36c` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, lazy MDEC/CDVD backing, lazy DEV9 flash backing, lazy CPU/GPU profiler backing, lazy folder-card/OSD backing, DEV9 flash bounds fixes, SPU2 PCM cache compaction, the PS4 2048 KiB MTVU backing cap, folder memory-card geometry/bounds hardening, cycle-safe metadata traversal, lazy PGIF backing, SPU2 reset cache invalidation, wrapped-DMA cache invalidation, bounded folder-card FAT/directory traversal, and folder-card host-write failure retention):
+Built in the Linux x86_64 OpenOrbis container at exactly `453c9f5` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, lazy MDEC/CDVD backing, lazy DEV9 flash backing, lazy CPU/GPU profiler backing, lazy folder-card/OSD backing, DEV9 flash bounds fixes, SPU2 PCM cache compaction, the PS4 2048 KiB MTVU backing cap, folder memory-card geometry/bounds hardening, cycle-safe metadata traversal, lazy PGIF backing, SPU2 reset cache invalidation, wrapped-DMA cache invalidation, bounded folder-card FAT/directory traversal, folder-card host-write failure retention, bounded sector-page caching, and upstream PS1 protocol state bounds):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,152,680 bytes**, SHA-256 `ba4be27385515a27718298084b73e8dd8945f4da392f0ae2032bd4c002d3dacd` (`readelf`: `.bss` **23,921,664 bytes**, down **524,288 bytes** from the prior artifact and **75,812,160 bytes** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `07484474891879eb90507fb2e5895337a2b639a5cd402a561de99b28af265de7`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `849a284bbfdb8d2ab8842f9ab82c378850b112db180ef4b41848fb89a43bde40`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,152,680 bytes**, SHA-256 `2e0307edf848f7ba6fb5710de9699829520db59deff55dce46effe2b15d9811d` (`readelf`: `.bss` **23,921,664 bytes**, down **524,288 bytes** from the prior artifact and **75,812,160 bytes** from the original 99,733,824-byte reference).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `b0534e75929301320780854a5c7e4e54ee52765ba42d2e6b066f529cdf1ad745`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `f591c545097d29840d9c260a64bc6a7d589a2a2b3ea14e028973e5805ec3ec2b`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -175,11 +177,11 @@ Built in the Linux x86_64 OpenOrbis container at exactly `d3fa36c` (includes sto
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-folder-writefail-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-mcd-security-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current memory-card-review package is `candidate77` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, and write-failure retention in `ps4/logs/host-tests-folder-writefail.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, and memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -224,7 +226,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `d3fa36c` (includes sto
 
 - **Static-memory reduction wave:** folder memory cards and OSD composition backing are lazy, DEV9 flash guest/staging indexing is bounded, the SPU2 PCM cache entry is 62 bytes with host-tested predictor-width invariants, the PS4 MTVU backing is capped at the pre-existing 2048 KiB default lap, and the oversized PGIF GP0 FIFO backing is lazy. ELF `.bss` is now 23,921,664 bytes. The MTVU cap intentionally removes larger user-selected laps on the normal PS4 candidate; document this as a memory-pressure tradeoff until hardware evidence says whether heavy-MTVU games need a separate wide-ring experiment.
 
-- **Folder memory-card hardening:** host-controlled superblocks must now have geometry the fixed backing arrays can represent before they are treated as formatted; data-cluster mapping uses overflow-safe range checks, file reads/writes reject out-of-range clusters, and file-entry page/offset indexing is bounded. Metadata-cluster traversal is iterative and cycle-safe, direct FAT-chain indexing is bounded, and directory recursion is depth-capped. Malformed metadata is still not a complete untrusted-input proof because sector-address cache growth and broader folder-card behavior remain under review. Host file write failures now retain dirty pages for retry instead of silently dropping them.
+- **Folder memory-card hardening:** host-controlled superblocks must now have geometry the fixed backing arrays can represent before they are treated as formatted; data-cluster mapping uses overflow-safe range checks, file reads/writes reject out-of-range clusters, and file-entry page/offset indexing is bounded. Metadata-cluster traversal is iterative and cycle-safe, direct FAT-chain indexing is bounded, and directory recursion is depth-capped. Malformed metadata is still not a complete untrusted-input proof although shared-directory DAG expansion and broader folder-card behavior remain under review. Out-of-range sector pages are no longer cached, and upstream PS1 protocol state bounds are ported. Host file write failures now retain dirty pages for retry instead of silently dropping them.
 
 - **PGIF backing:** the oversized 512 KiB PS1 GPU FIFO backing is no longer static BSS. It is allocated lazily on the first actual GP0 FIFO write, retries after VM reset if allocation failed, keeps FIFO size/DREQ semantics visible before allocation, and is surfaced as a fatal analyzer condition if allocation fails.
 
