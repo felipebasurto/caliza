@@ -5,9 +5,7 @@
 #include "R3000A.h"
 #include "R5900.h"
 
-#include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <unistd.h>
 
 extern "C" volatile unsigned long long g_orbis_data_base;
@@ -30,16 +28,67 @@ void write_text(int fd, const char* text, int length)
 	}
 }
 
-void write_format(int fd, const char* format, ...)
+struct Line
 {
-	char line[384];
-	va_list args;
-	va_start(args, format);
-	const int length = vsnprintf(line, sizeof(line), format, args);
-	va_end(args);
-	if (length > 0)
-		write_text(fd, line, length < static_cast<int>(sizeof(line)) ? length : static_cast<int>(sizeof(line)) - 1);
-}
+	char buffer[384];
+	size_t length = 0;
+
+	void ch(char c)
+	{
+		if (length + 1 < sizeof(buffer))
+			buffer[length++] = c;
+	}
+
+	void text(const char* value)
+	{
+		while (*value)
+			ch(*value++);
+	}
+
+	void hex(unsigned long long value, int width)
+	{
+		for (int shift = (width - 1) * 4; shift >= 0; shift -= 4)
+			ch("0123456789abcdef"[(value >> shift) & 0xf]);
+	}
+
+	void hex64(unsigned long long value)
+	{
+		text("0x");
+		if (!value)
+		{
+			ch('0');
+			return;
+		}
+		bool started = false;
+		for (int shift = 60; shift >= 0; shift -= 4)
+		{
+			const unsigned digit = (value >> shift) & 0xf;
+			if (digit || started || shift == 0)
+			{
+				ch("0123456789abcdef"[digit]);
+				started = true;
+			}
+		}
+	}
+
+	void dec(unsigned long long value)
+	{
+		char digits[20];
+		int count = 0;
+		do
+		{
+			digits[count++] = static_cast<char>('0' + value % 10);
+			value /= 10;
+		} while (value && count < 20);
+		while (count > 0)
+			ch(digits[--count]);
+	}
+
+	void flush(int fd)
+	{
+		write_text(fd, buffer, static_cast<int>(length));
+	}
+};
 
 bool in_range(unsigned long long address, unsigned long long base, unsigned long long size)
 {
@@ -53,9 +102,21 @@ extern "C" {
 // mid-update if another thread crashed, but they do not require any lock to read.
 void ps4_crash_guest_regs(int fd)
 {
-	write_format(fd, "guest: eepc=%08x eecy=%llu eeinsn=%08x ioppc=%08x iopcy=%llu iopinsn=%08x\n",
-		cpuRegs.pc, static_cast<unsigned long long>(cpuRegs.cycle), cpuRegs.code, psxRegs.pc,
-		static_cast<unsigned long long>(psxRegs.cycle), psxRegs.code);
+	Line line;
+	line.text("guest: eepc=");
+	line.hex(cpuRegs.pc, 8);
+	line.text(" eecy=");
+	line.dec(cpuRegs.cycle);
+	line.text(" eeinsn=");
+	line.hex(cpuRegs.code, 8);
+	line.text(" ioppc=");
+	line.hex(psxRegs.pc, 8);
+	line.text(" iopcy=");
+	line.dec(psxRegs.cycle);
+	line.text(" iopinsn=");
+	line.hex(psxRegs.code, 8);
+	line.ch('\n');
+	line.flush(fd);
 }
 
 // The recompiler's exact block ownership is not yet recoverable. Even this range check is useful in
@@ -67,21 +128,46 @@ void ps4_crash_jit_info(int fd, uint64_t rip, int brief)
 	if (!in_range(rip, base, size))
 	{
 		if (!brief)
-			write_format(fd, "jit: rip %#llx is outside recompiler memory [%#llx, %#llx)\n",
-				static_cast<unsigned long long>(rip), base, base + size);
+		{
+			Line line;
+			line.text("jit: rip ");
+			line.hex64(rip);
+			line.text(" is outside recompiler memory [");
+			line.hex64(base);
+			line.ch(',');
+			line.hex64(base + size);
+			line.text(")\n");
+			line.flush(fd);
+		}
 		return;
 	}
-	write_format(fd, "jit: rip %#llx is recompiler memory +%#llx (block owner not mapped yet)%s\n",
-		static_cast<unsigned long long>(rip), static_cast<unsigned long long>(rip - base),
-		brief ? "" : "; range is direct executable memory");
+	Line line;
+	line.text("jit: rip ");
+	line.hex64(rip);
+	line.text(" is recompiler memory +");
+	line.hex64(rip - base);
+	line.text(" (block owner not mapped yet)");
+	if (!brief)
+		line.text("; range is direct executable memory");
+	line.ch('\n');
+	line.flush(fd);
 }
 
 void ps4_recompiler_status(int fd)
 {
-	write_format(fd,
-		"recompiler memory: code=[%#llx,%#llx) direct=%d data=[%#llx,%#llx)\n",
-		g_orbis_code_base, g_orbis_code_base + g_orbis_code_size, g_orbis_code_direct,
-		g_orbis_data_base, g_orbis_data_base + g_orbis_data_size);
+	Line line;
+	line.text("recompiler memory: code=[");
+	line.hex64(g_orbis_code_base);
+	line.ch(',');
+	line.hex64(g_orbis_code_base + g_orbis_code_size);
+	line.text(") direct=");
+	line.dec(static_cast<unsigned long long>(g_orbis_code_direct));
+	line.text(" data=[");
+	line.hex64(g_orbis_data_base);
+	line.ch(',');
+	line.hex64(g_orbis_data_base + g_orbis_data_size);
+	line.text(")\n");
+	line.flush(fd);
 }
 
 // A full PCSX2 state dump allocates and takes locks, so it is intentionally not attempted in the
