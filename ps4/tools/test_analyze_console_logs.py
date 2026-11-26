@@ -235,6 +235,12 @@ def main() -> int:
         ok &= expect("audio drain wait warns", audiodrain, (), 0,
                      "WARN audio teardown waited unusually long")
 
+        feteardown = root / "feteardown.log"
+        feteardown.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[frontend] sound worker stuck in output; detached, leaving port 5 open\n")
+        ok &= expect("frontend teardown timeout warns", feteardown, (), 0,
+                     "WARN frontend shelf sound worker stuck")
+
         audioopenfail = root / "audioopenfail.log"
         audioopenfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                                  "[audio] sceAudioOutOpen rate=48000 ch=2 -> 80260002\n")

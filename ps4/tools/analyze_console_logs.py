@@ -190,6 +190,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("audio worker teardown timed out and its output port was deliberately abandoned; audio output syscalls appear stuck")
     if ev.has("[audio] teardown waiting for in-flight worker read"):
         ev.warnings.append("audio teardown waited unusually long for an in-flight worker read; investigate scheduler starvation")
+    if ev.has("[frontend] sound worker stuck in output"):
+        ev.warnings.append("frontend shelf sound worker stuck in audio output; port deliberately abandoned and worker detached")
 
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
