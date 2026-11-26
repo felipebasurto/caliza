@@ -171,6 +171,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("CDVD read retry exhaustion evidence present; the command now completes with an emulated-drive error, but image/storage integrity needs investigation")
     if ev.has("isoFile error"):
         ev.warnings.append("ISO reader error evidence present; inspect image truncation, filesystem corruption, or out-of-range guest reads")
+    if ev.has("network share check budget expired"):
+        ev.warnings.append("network share boot-check budget expired; pending NFS shares were skipped for automatic scanning but remain registered for retry")
     audio_init_bad = 0
     audio_open_bad = 0
     for line in ev.lines:

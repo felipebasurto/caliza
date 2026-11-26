@@ -2192,6 +2192,26 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
     int mounted = 0;
     char message[192] = {};
   };
+  struct NetfsCheckShared
+  {
+    explicit NetfsCheckShared(std::vector<NetfsShareJob>&& source) : jobs(std::move(source)), done(jobs.size()) {}
+    ~NetfsCheckShared()
+    {
+      pthread_mutex_destroy(&mutex);
+      pthread_cond_destroy(&cond);
+    }
+    std::vector<NetfsShareJob> jobs;
+    std::vector<std::atomic<int>> done; // per job: 0 pending, 1 mounted, -1 failed.
+    std::atomic<size_t> next_job{0};
+    std::atomic<size_t> completed{0};
+    std::atomic<int> refs{1};
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+  };
+  const auto release_shared = [](NetfsCheckShared* shared) {
+    if (shared->refs.fetch_sub(1, std::memory_order_acq_rel) == 1)
+      delete shared;
+  };
   std::vector<std::string> seen;
   std::vector<NetfsShareJob> jobs;
   size_t at = 0;
@@ -2237,76 +2257,90 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
   if (!jobs.empty())
   {
     // CEMUPS4 serializes operations per mount, so independent shares can be checked concurrently.
-    // Keep the fan-out small: every worker can block in network syscalls on Jaguar's limited CPUs.
+    // NFS RPC waits cannot be cancelled. Move the work queue and results into a reference-counted
+    // heap object, detach the workers, and stop waiting after a bounded boot budget; stragglers
+    // release the object when their RPC eventually returns. needs proper testing with a sleeping NAS.
     const size_t worker_count = std::min<size_t>(4, jobs.size());
-    std::atomic<size_t> next_job{0};
-    const auto check_jobs = [&]() {
+    NetfsCheckShared* shared = new NetfsCheckShared(std::move(jobs));
+    const auto worker_entry = [](void* opaque) -> void* {
+      NetfsCheckShared* shared = static_cast<NetfsCheckShared*>(opaque);
       for (;;)
       {
-        const size_t index = next_job.fetch_add(1, std::memory_order_relaxed);
-        if (index >= jobs.size())
+        const size_t index = shared->next_job.fetch_add(1, std::memory_order_relaxed);
+        if (index >= shared->jobs.size())
           break;
-        NetfsShareJob& job = jobs[index];
+        NetfsShareJob& job = shared->jobs[index];
         job.mounted = ps4_netfs_check(job.name.c_str(), job.message, sizeof(job.message));
+        shared->done[index].store(job.mounted ? 1 : -1, std::memory_order_release);
+        pthread_mutex_lock(&shared->mutex);
+        shared->completed.fetch_add(1, std::memory_order_relaxed);
+        pthread_cond_signal(&shared->cond);
+        pthread_mutex_unlock(&shared->mutex);
       }
+      if (shared->refs.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        delete shared;
+      return nullptr;
     };
-    if (worker_count == 1)
-    {
-      check_jobs();
-    }
+    pthread_attr_t attr;
+    const bool attr_initialized = pthread_attr_init(&attr) == 0;
+    const bool large_stack = attr_initialized && pthread_attr_setstacksize(&attr, 1024 * 1024) == 0;
+    size_t created = 0;
+    if (!large_stack)
+      printf("[boot] %s: network share large worker stack unavailable; boot check skipped rather than risking small stacks\n", when);
     else
     {
-      // fe_web/fe_covers already hit Orbis's small default pthread stacks in network code. Give these
-      // workers the same 1 MiB budget and degrade to serial checking if thread creation fails rather
-      // than letting a joinable std::thread terminate the process during unwinding.
-      struct NetfsCheckContext
+      for (; created < worker_count; created++)
       {
-        std::vector<NetfsShareJob>* jobs;
-        std::atomic<size_t>* next_job;
-      } context{&jobs, &next_job};
-      const auto worker_entry = [](void* opaque) -> void* {
-        const NetfsCheckContext* context = static_cast<const NetfsCheckContext*>(opaque);
-        for (;;)
+        pthread_t thread;
+        shared->refs.fetch_add(1, std::memory_order_relaxed);
+        if (pthread_create(&thread, &attr, worker_entry, shared) != 0)
         {
-          const size_t index = context->next_job->fetch_add(1, std::memory_order_relaxed);
-          if (index >= context->jobs->size())
-            break;
-          NetfsShareJob& job = (*context->jobs)[index];
-          job.mounted = ps4_netfs_check(job.name.c_str(), job.message, sizeof(job.message));
+          if (shared->refs.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            delete shared;
+          break;
         }
-        return nullptr;
-      };
-      pthread_attr_t attr;
-      const bool attr_initialized = pthread_attr_init(&attr) == 0;
-      const bool large_stack = attr_initialized && pthread_attr_setstacksize(&attr, 1024 * 1024) == 0;
-      if (!large_stack)
-      {
-        // The network client can overflow Orbis's small default pthread stack. Do not
-        // quietly trade a slow serial check for a stack-corruption risk. needs proper testing.
-        printf("[boot] %s: network share large worker stack unavailable; checks run serially\n", when);
-        check_jobs();
+        pthread_detach(thread);
       }
-      else
-      {
-        pthread_t threads[4] = {};
-        size_t created = 0;
-        for (; created < worker_count; created++)
-        {
-          const int rc = pthread_create(&threads[created], &attr, worker_entry, &context);
-          if (rc != 0)
-          {
-            printf("[boot] %s: network share worker %zu unavailable (rc=%d); remaining checks run serially\n", when, created + 1, rc);
-            break;
-          }
-        }
-        for (size_t i = 0; i < created; i++)
-          pthread_join(threads[i], nullptr);
-        if (created < worker_count)
-          check_jobs();
-      }
-      if (attr_initialized)
-        pthread_attr_destroy(&attr);
+      if (created < worker_count)
+        printf("[boot] %s: only %zu/%zu network share workers started\n", when, created, worker_count);
     }
+    if (attr_initialized)
+      pthread_attr_destroy(&attr);
+    bool timed_out = false;
+    if (created != 0)
+    {
+      timespec deadline{};
+      clock_gettime(CLOCK_REALTIME, &deadline);
+      deadline.tv_sec += 8;
+      pthread_mutex_lock(&shared->mutex);
+      while (shared->completed.load(std::memory_order_relaxed) < shared->jobs.size())
+      {
+        if (pthread_cond_timedwait(&shared->cond, &shared->mutex, &deadline) == ETIMEDOUT)
+          break;
+      }
+      timed_out = shared->completed.load(std::memory_order_relaxed) < shared->jobs.size();
+      pthread_mutex_unlock(&shared->mutex);
+    }
+    // Copy only jobs explicitly marked complete; pending jobs may still be written by detached workers.
+    for (size_t job_index = 0; job_index < shared->jobs.size(); job_index++)
+    {
+      const NetfsShareJob& job = shared->jobs[job_index];
+      const int done = shared->done[job_index].load(std::memory_order_acquire);
+      NetfsShareJob finished;
+      // name/url are immutable after construction, unlike message/mounted.
+      finished.name = job.name;
+      finished.url = job.url;
+      finished.mounted = done == 1;
+      if (done == 0)
+        std::snprintf(finished.message, sizeof(finished.message), "check timed out");
+      else
+        std::snprintf(finished.message, sizeof(finished.message), "%s", job.message);
+      jobs.push_back(std::move(finished));
+    }
+    if (timed_out)
+      printf("[boot] %s: network share check budget expired after 8 s; pending shares stay registered for manual retry\n", when);
+    release_shared(shared);
+
     for (const NetfsShareJob& job : jobs)
     {
       printf("[boot] %s: network share %s at /net/%s: %s%s\n", when, job.url.c_str(), job.name.c_str(),

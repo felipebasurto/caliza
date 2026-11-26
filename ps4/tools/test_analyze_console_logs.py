@@ -205,6 +205,12 @@ def main() -> int:
                      "WARN ISO reader error evidence")
 
 
+        nfstimeout = root / "nfstimeout.log"
+        nfstimeout.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[boot] test: network share check budget expired after 8 s; pending shares stay registered for manual retry\n")
+        ok &= expect("NFS boot-check timeout warns", nfstimeout, (), 0,
+                     "WARN network share boot-check budget expired")
+
         audioinitfail = root / "audioinitfail.log"
         audioinitfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                                  "[audio] sceAudioOutInit=80260001\n")
