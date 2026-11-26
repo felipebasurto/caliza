@@ -523,6 +523,7 @@ int scePadSetVibration(int32_t handle, const void *param); // vk-285-113: { uint
 int scePadSetVibrationMode(int32_t handle, int32_t mode);   // vk-285-117: see orbis_pad_rumble_mode
 int sceUserServiceInitialize(const void *params);
 int sceUserServiceGetInitialUser(int32_t *userId);
+int sceUserServiceGetForegroundUser(int32_t *userId);
 // vk-285-109: the users logged in on the PS5, four ids, -1 for none (how the PS5 SDL port's joystick code
 // reads it: ps5-payload-dev/SDL src/joystick/ps5/SDL_ps5joystick.c).
 int sceUserServiceGetLoginUserIdList(int32_t *userIds);
@@ -848,6 +849,14 @@ static void *orbis_pad_thread(void *)
   int32_t user = -1;
   int rc_ui = sceUserServiceInitialize(nullptr);
   int rc_uu = sceUserServiceGetInitialUser(&user);
+  if (rc_uu != 0)
+  {
+    // Some Orbis user-service states expose the foreground user even when the initial-user
+    // query fails. Match the keyboard/mouse path rather than losing player 1 permanently.
+    const int rc_fg = sceUserServiceGetForegroundUser(&user);
+    if (rc_fg == 0)
+      rc_uu = 0;
+  }
   int rc_pi = scePadInit();
   int handle = user >= 0 ? scePadOpen(user, 0, 0, nullptr) : -999;
   if (handle < 0 && user >= 0)
@@ -1034,7 +1043,7 @@ static void *orbis_pad_thread(void *)
         if ((d.buttons & 0x6u) == 0x6u)
         {
           combo++;
-          if (((dpad & ~prev_dpad) & 0x50u) || state_fired)
+          if (((dpad & ~prev_dpad) & 0xF0u) || state_fired)
             used = true;
         }
         else
@@ -1119,7 +1128,7 @@ static void *orbis_pad_thread(void *)
       for (int i = 0; i < g_orbis_extra_count; i++)
         orbis_rumble_send(static_cast<int>(extra[i].port), extra[i].handle, s_rumble_extra[i]);
     }
-    if ((++reads % 250u) == 0u || (rc != 0 && reads % 1000u == 0u))
+    if ((++reads % 250u) == 0u || (rc != 0 && reads % 100u == 0u))
       printf("[pad] read rc=%x buttons=%08x lx=%u ly=%u\n", rc, d.buttons, d.lx, d.ly);
     for (int i = 0; i < g_orbis_extra_count; i++)
     {
@@ -1163,7 +1172,7 @@ static void *orbis_pad_thread(void *)
         printf("[pad] player %d controller %s (rc=%x)\n", i + 2, on ? "connected" : "not connected", rc2);
         s_on[i] = on ? 1 : 0;
       }
-      if ((reads % 250u) == 0u || (rc2 != 0 && reads % 1000u == 0u))
+      if ((reads % 250u) == 0u || (rc2 != 0 && reads % 100u == 0u))
         printf("[pad] player %d read rc=%x buttons=%08x lx=%u ly=%u connected=%u\n", i + 2, rc2, d2.buttons, d2.lx, d2.ly,
           static_cast<unsigned>(d2.rest[76 - 12]));
     }
