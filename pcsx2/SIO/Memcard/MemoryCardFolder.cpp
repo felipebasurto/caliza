@@ -615,8 +615,11 @@ static bool FilterMatches(const std::string_view fileName, const std::string_vie
 	return false;
 }
 
-bool FolderMemoryCard::AddFolder(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, MemoryCardFileMetadataReference* parent /* = nullptr */, const bool enableFiltering /* = false */, const std::string_view filter /* = "" */)
+bool FolderMemoryCard::AddFolder(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, MemoryCardFileMetadataReference* parent /* = nullptr */, const bool enableFiltering /* = false */, const std::string_view filter /* = "" */, const u32 directoryDepth)
 {
+	if (directoryDepth >= MaxFolderDirectoryDepth)
+		return false;
+
 	if (FileSystem::DirectoryExists(dirPath.c_str()))
 	{
 		std::string localFilter;
@@ -662,7 +665,7 @@ bool FolderMemoryCard::AddFolder(MemoryCardFileEntry* const dirEntry, const std:
 				const std::string filePath(Path::Combine(dirPath, file.m_fileName));
 
 				// make sure we have enough space on the memcard for the directory
-				const u32 newNeededClusters = CalculateRequiredClustersOfDirectory(filePath) + ((dirEntry->entry.data.length % 2) == 0 ? 1 : 0);
+				const u32 newNeededClusters = CalculateRequiredClustersOfDirectory(filePath, directoryDepth + 1) + ((dirEntry->entry.data.length % 2) == 0 ? 1 : 0);
 				if (newNeededClusters > GetAmountFreeDataClusters())
 				{
 					Console.Warning(GetCardFullMessage(file.m_fileName));
@@ -712,7 +715,7 @@ bool FolderMemoryCard::AddFolder(MemoryCardFileEntry* const dirEntry, const std:
 				++entryNumber;
 
 				// and add all files in subdir
-				AddFolder(newDirEntry, filePath, dirRef);
+				AddFolder(newDirEntry, filePath, dirRef, false, "", directoryDepth + 1);
 			}
 		}
 
@@ -806,8 +809,11 @@ bool FolderMemoryCard::AddFile(MemoryCardFileEntry* const dirEntry, const std::s
 	}
 }
 
-u32 FolderMemoryCard::CalculateRequiredClustersOfDirectory(const std::string& dirPath) const
+u32 FolderMemoryCard::CalculateRequiredClustersOfDirectory(const std::string& dirPath, const u32 directoryDepth) const
 {
+	if (directoryDepth >= MaxFolderDirectoryDepth)
+		return 0;
+
 	const u32 clusterSize = m_superBlock.data.pages_per_cluster * m_superBlock.data.page_len;
 	u32 requiredFileEntryPages = 2;
 	u32 requiredClusters = 0;
@@ -830,7 +836,7 @@ u32 FolderMemoryCard::CalculateRequiredClustersOfDirectory(const std::string& di
 		}
 		else
 		{
-			requiredClusters += CalculateRequiredClustersOfDirectory(Path::Combine(dirPath, fd.FileName));
+			requiredClusters += CalculateRequiredClustersOfDirectory(Path::Combine(dirPath, fd.FileName), directoryDepth + 1);
 		}
 	}
 

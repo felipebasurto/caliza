@@ -464,7 +464,7 @@ protected:
 	// - dirPath: the full path to the directory in the host file system
 	// - parent: pointer to the parent dir's quick-access reference element
 	// - enableFiltering and filter: filter loaded contents, see LoadMemoryCardData()
-	bool AddFolder(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, MemoryCardFileMetadataReference* parent = nullptr, const bool enableFiltering = false, const std::string_view filter = "");
+	bool AddFolder(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, MemoryCardFileMetadataReference* parent = nullptr, const bool enableFiltering = false, const std::string_view filter = "", const u32 directoryDepth = 0);
 
 	// adds a file in the host file sytem to the memory card
 	// - dirEntry: the entry of the directory in the parent directory, or the root "." entry
@@ -474,7 +474,7 @@ protected:
 	bool AddFile(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, const EnumeratedFileEntry& fileEntry, MemoryCardFileMetadataReference* parent = nullptr);
 
 	// calculates the amount of clusters a directory would use up if put into a memory card
-	u32 CalculateRequiredClustersOfDirectory(const std::string& dirPath) const;
+	u32 CalculateRequiredClustersOfDirectory(const std::string& dirPath, const u32 directoryDepth = 0) const;
 
 
 	// adds a file to the quick-access dictionary, so it can be accessed more efficiently (ie, without searching through the entire file system) later
