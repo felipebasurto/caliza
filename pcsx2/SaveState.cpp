@@ -326,12 +326,15 @@ memLoadingState::memLoadingState(const VmStateBuffer& load_from)
 // Loading of state data from a memory buffer...
 void memLoadingState::FreezeMem( void* data, int size )
 {
-	if (static_cast<u32>(m_idx + size) > m_memory.size())
+	// Variable-sized guest-controlled fields reach this function. Reject sign
+	// and addition overflow before they can become wild memcpy/memset sizes.
+	if (size < 0 || m_idx < 0 || static_cast<u64>(m_idx) + static_cast<u64>(size) > m_memory.size())
 		m_error = true;
 
 	if (m_error)
 	{
-		std::memset(data, 0, size);
+		if (size >= 0)
+			std::memset(data, 0, size);
 		return;
 	}
 
@@ -507,8 +510,9 @@ bool MemorySavestateEntry::FreezeIn(zip_file_t* zf) const
 	const s64 bytesRead = zip_fread(zf, GetDataPtr(), expectedSize);
 	if (bytesRead != static_cast<s64>(expectedSize))
 	{
-		Console.WriteLn(Color_Yellow, " '%s' is incomplete (expected 0x%x bytes, loading only 0x%x bytes)",
-			GetFilename(), expectedSize, static_cast<u32>(bytesRead));
+		Console.WriteLn(Color_Red, " '%s' is incomplete (expected 0x%x bytes, read 0x%llx bytes)",
+			GetFilename(), expectedSize, static_cast<unsigned long long>(bytesRead));
+		return false;
 	}
 
 	return true;

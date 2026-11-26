@@ -203,8 +203,27 @@ bool SaveStateBase::gifPathFreeze(u32 path)
 		}
 	}
 	u8* bufferPtr = gifPath.buffer; // Backup current buffer ptr
+	const u32 realBuffSize = gifPath.buffSize;
+	const u32 realBuffLimit = gifPath.buffLimit;
+	const GIF_PATH realPathIndex = gifPath.idx;
 	Freeze(g_orbis_gif_fake.count[path]); // vk-285-90: was gifPath.mtvu.fakePackets (same size and place)
 	FreezeMem(&gifPath, sizeof(gifPath) - sizeof(gifPath.mtvu));
+	if (IsLoading())
+	{
+		// The frozen struct includes queue offsets and sizes. Validate them
+		// against the fixed runtime allocation before copying packet bytes;
+		// otherwise a hostile state can overwrite past the GIF buffer and keep
+		// invalid landmines in the post-load queue state. Needs proper testing.
+		const bool validPathState = gifPath.buffSize == realBuffSize && gifPath.buffLimit == realBuffLimit &&
+			gifPath.idx == realPathIndex && gifPath.curSize <= realBuffSize &&
+			gifPath.curOffset <= gifPath.curSize && static_cast<u32>(gifPath.state) <= static_cast<u32>(GIF_PATH_WAIT);
+		if (!validPathState)
+		{
+			gifPath.buffer = bufferPtr;
+			m_error = true;
+			return false;
+		}
+	}
 	FreezeMem(bufferPtr, gifPath.curSize);
 	gifPath.buffer = bufferPtr;
 	if (!IsSaving())

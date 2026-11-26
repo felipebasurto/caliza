@@ -53,7 +53,17 @@ void StateWrapper::Do(std::string* value_ptr)
 	u32 length = static_cast<u32>(value_ptr->length());
 	Do(&length);
 	if (m_mode == Mode::Read)
+	{
+		// Reject impossible lengths before resize(); otherwise a crafted state
+		// can turn four bytes of input into a multi-gigabyte allocation. Every
+		// serialized string byte must be present in the stream. Needs proper testing.
+		if (length > GetRemainingBytes())
+		{
+			m_error = true;
+			return;
+		}
 		value_ptr->resize(length);
+	}
 	DoBytes(&(*value_ptr)[0], length);
 	value_ptr->resize(std::strlen(&(*value_ptr)[0]));
 }

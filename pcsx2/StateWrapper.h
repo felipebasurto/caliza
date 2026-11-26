@@ -30,6 +30,7 @@ public:
 		virtual u32 Read(void* buf, u32 count) = 0;
 		virtual u32 Write(const void* buf, u32 count) = 0;
 		virtual u32 GetPosition() = 0;
+		virtual u32 GetLength() = 0;
 		virtual bool SeekAbsolute(u32 pos) = 0;
 		virtual bool SeekRelative(s32 count) = 0;
 	};
@@ -42,6 +43,7 @@ public:
 		u32 Read(void* buf, u32 count) override;
 		u32 Write(const void* buf, u32 count) override;
 		u32 GetPosition() override;
+		u32 GetLength() override { return static_cast<u32>(m_buf_length); }
 		bool SeekAbsolute(u32 pos) override;
 		bool SeekRelative(s32 count) override;
 
@@ -59,6 +61,7 @@ public:
 		u32 Read(void* buf, u32 count) override;
 		u32 Write(const void* buf, u32 count) override;
 		u32 GetPosition() override;
+		u32 GetLength() override { return static_cast<u32>(m_buf_length); }
 		bool SeekAbsolute(u32 pos) override;
 		bool SeekRelative(s32 count) override;
 
@@ -79,6 +82,7 @@ public:
 		u32 Read(void* buf, u32 count) override;
 		u32 Write(const void* buf, u32 count) override;
 		u32 GetPosition() override;
+		u32 GetLength() override { return static_cast<u32>(m_buf.size()); }
 		bool SeekAbsolute(u32 pos) override;
 		bool SeekRelative(s32 count) override;
 
@@ -102,6 +106,15 @@ public:
 	Mode GetMode() const { return m_mode; }
 	void SetMode(Mode mode) { m_mode = mode; }
 	u32 GetVersion() const { return m_version; }
+
+	/// Bytes remaining in the backing stream, used only to reject impossible
+	/// attacker-controlled container lengths before allocating for them.
+	u32 GetRemainingBytes() const
+	{
+		const u32 length = m_stream->GetLength();
+		const u32 position = m_stream->GetPosition();
+		return position <= length ? length - position : 0;
+	}
 
 	/// Overload for integral or floating-point types. Writes bytes as-is.
 	template <typename T>
@@ -204,7 +217,14 @@ public:
 		u32 length = static_cast<u32>(data->size());
 		Do(&length);
 		if (m_mode == Mode::Read)
+		{
+			if (length > GetRemainingBytes())
+			{
+				m_error = true;
+				return;
+			}
 			data->resize(length);
+		}
 		DoArray(data->data(), data->size());
 	}
 
@@ -215,8 +235,13 @@ public:
 		Do(&length);
 		if (m_mode == Mode::Read)
 		{
+			if (length > GetRemainingBytes())
+			{
+				m_error = true;
+				return;
+			}
 			data->clear();
-			for (u32 i = 0; i < length; i++)
+			for (u32 i = 0; i < length && !m_error; i++)
 			{
 				T value;
 				Do(&value);

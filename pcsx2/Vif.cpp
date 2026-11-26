@@ -40,6 +40,11 @@ bool SaveStateBase::vif0Freeze()
 	Freeze(vif0);
 
 	Freeze(nVif[0].bSize);
+	if (IsLoading() && nVif[0].bSize > sizeof(nVif[0].buffer))
+	{
+		m_error = true;
+		return false;
+	}
 	FreezeMem(nVif[0].buffer, nVif[0].bSize);
 
 	return IsOkay();
@@ -55,6 +60,11 @@ bool SaveStateBase::vif1Freeze()
 	Freeze(vif1);
 
 	Freeze(nVif[1].bSize);
+	if (IsLoading() && nVif[1].bSize > sizeof(nVif[1].buffer))
+	{
+		m_error = true;
+		return false;
+	}
 	FreezeMem(nVif[1].buffer, nVif[1].bSize);
 
 	return IsOkay();

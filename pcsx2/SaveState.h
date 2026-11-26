@@ -153,7 +153,19 @@ public:
 		Freeze(length);
 
 		if (IsLoading())
+		{
+			// Never allocate beyond the bytes remaining in this memory-backed
+			// state stream; a hostile length field otherwise becomes a huge
+			// allocation and an out-of-bounds clearing write. Needs proper testing.
+			const u64 remaining = m_idx >= 0 && static_cast<u64>(m_idx) <= m_memory.size() ?
+				static_cast<u64>(m_memory.size()) - static_cast<u64>(m_idx) : 0;
+			if (static_cast<u64>(length) > remaining)
+			{
+				m_error = true;
+				return;
+			}
 			s.resize(length);
+		}
 
 		FreezeMem(s.data(), length);
 	}

@@ -755,6 +755,11 @@ s32 FileMemoryCard::EraseBlock(uint slot, u32 adr)
 		return 1;
 	}
 
+	// Apply the same fixed-card-size bound as writes. The uncached PS1 path
+	// otherwise lets guest-controlled erase addresses extend the host image.
+	if (m_fileSize[slot] < 0 || static_cast<u64>(adr) + static_cast<u64>(MC2_ERASE_SIZE) > static_cast<u64>(m_fileSize[slot]))
+		return 0;
+
 	// vk-285-31: on the RAM image.
 	OrbisMcdTimer timer;
 	g_orbis_mcd_erases.fetch_add(1, std::memory_order_relaxed);
