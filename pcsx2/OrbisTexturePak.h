@@ -8,7 +8,7 @@
 // replacements/ folder still work (packs copied over by hand) and win over the same name in the pack.
 //
 // The file, little-endian:
-//   header, 64 bytes: "PS5SX2TP", u32 version (1), u32 entry count, u64 index offset, u64 index size, zeros;
+//   header, 64 bytes: "CALIZATP", u32 version (1), u32 entry count, u64 index offset, u64 index size, zeros;
 //   the entries' bytes, back to back, from offset 64;
 //   the index: per entry u64 offset, u64 size, u16 name length, the name (UTF-8, its path under replacements/ with '/').
 // The header is written last, so a pack cut short has no magic and isn't read. Header only: the unpacker, the GS code
@@ -29,7 +29,7 @@
 
 namespace OrbisTexturePak
 {
-constexpr char kMagic[8] = {'P', 'S', '5', 'S', 'X', '2', 'T', 'P'};
+constexpr char kMagic[8] = {'C', 'A', 'L', 'I', 'Z', 'A', 'T', 'P'};
 constexpr uint32_t kVersion = 1;
 constexpr size_t kHeaderSize = 64;
 constexpr const char* kFileName = "replacements.pak";
@@ -116,7 +116,7 @@ inline bool ParseHeader(const uint8_t* h, uint64_t file_size, uint32_t& count, u
 {
 	if (file_size < kHeaderSize || std::memcmp(h, kMagic, sizeof(kMagic)) != 0)
 	{
-		error = "not a PS5SX2 texture pack (or not finished)";
+		error = "not a Caliza texture pack (or not finished)";
 		return false;
 	}
 	if (GetLE(h + 8, 4) != kVersion)

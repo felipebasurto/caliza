@@ -75,7 +75,7 @@ When reporting a problem, include the app version, PS4 model, system software ve
 
 ## Build from source
 
-The PS4 target lives in [`ps4/`](ps4/). The new Caliza interface and companion panel live in [`caliza/`](caliza/). The inherited Orbis adaptation layer currently remains in the historical `ps5/coreorbis/` directory; [`REPO-MAP.md`](REPO-MAP.md) explains what is active, what is transitional, what is unused and how that directory will be renamed after the interface integration.
+The PS4 target lives in [`ps4/`](ps4/). The new Caliza interface and companion panel live in [`caliza/`](caliza/). The inherited Orbis adaptation layer is transitional and is being renamed behind the Caliza backend boundary; [`REPO-MAP.md`](REPO-MAP.md) explains what is active, transitional or unused.
 
 The build requires Linux or WSL, Clang with the OpenOrbis SDK, the Crema/CEMUPS4 runtime and sysroot, Mesa RADV, and the dependencies listed in [`Makefile.ps4`](ps4/Makefile.ps4). See the [PS4 platform notes](ps4/PS4_PLATFORM.md) and the [build setup](AGENTS.md#verification).
 
@@ -87,7 +87,7 @@ bash ps4/build-ps4.sh package
 
 ## Licence and credits
 
-Caliza PS4 contains modified [PCSX2](https://github.com/PCSX2/pcsx2) code, copyright 2002–2026 the PCSX2 Dev Team and contributors. Caliza PS4 is licensed under the [GNU General Public License, version 3 or later](COPYING.GPLv3). The port builds on [PS5SX2](https://github.com/Swordpdf/PS5SX2) and uses the [OpenOrbis toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) and [Mesa RADV](https://docs.mesa3d.org/drivers/radv.html). [Third-party notices](ps4/PORT-THIRD-PARTY.txt) cover additional components, including the optional paraLLEl-GS renderer.
+Caliza PS4 contains modified [PCSX2](https://github.com/PCSX2/pcsx2) code, copyright 2002–2026 the PCSX2 Dev Team and contributors. Caliza PS4 is licensed under the [GNU General Public License, version 3 or later](COPYING.GPLv3). The port builds on GPL-licensed Orbis adaptation work documented in the third-party notices, and uses the [OpenOrbis toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) and [Mesa RADV](https://docs.mesa3d.org/drivers/radv.html). [Third-party notices](ps4/PORT-THIRD-PARTY.txt) cover additional components, including the optional paraLLEl-GS renderer.
 
 Sony Interactive Entertainment owns the PlayStation marks. Caliza PS4 is independent of Sony Interactive Entertainment and the upstream PCSX2 project. Product names identify the platforms and software involved.
 

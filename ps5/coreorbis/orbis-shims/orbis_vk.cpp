@@ -43,7 +43,7 @@ bool OrbisDriverIsRADV()
 
 const char* OrbisDriverName()
 {
-	return OrbisDriverIsRADV() ? "RADV" : "ps5vk";
+	return OrbisDriverIsRADV() ? "RADV" : "orbisvk";
 }
 
 // The kernel's answer about one mapping (the layout homebrew SDKs publish for it).

@@ -92,7 +92,7 @@ extern "C" unsigned long long orbis_self_alloc(unsigned long long len)
     sa.sin_addr.s_addr = htonl(0x7F000001); // 127.0.0.1
     if (connect(fd, (sockaddr*)&sa, sizeof(sa)) < 0)
     {
-        printf("[dbgalloc] connect to local ps5debug failed (errno=%d)\n", errno);
+        printf("[dbgalloc] connect to local orbisdebug failed (errno=%d)\n", errno);
         fflush(stdout);
         close(fd);
         return 0;

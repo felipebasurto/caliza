@@ -64,7 +64,7 @@ unsigned long long g_orbis_readback_n, g_orbis_readback_bytes, g_orbis_readback_
 	g_orbis_readback_wait_max_ns, g_orbis_readback_wait_max_min_ns; // vk-285-113
 
 // vk-285-113 (AI-assisted): draws one Vulkan command buffer may hold before it is submitted early. The PS5 driver copies all the command
-// buffers of one vkQueueSubmit into a 2 MiB stream and refuses more than 523,503 words (ps5vk_queue.c); a draw is ~50-90 words (a feedback
+// buffers of one vkQueueSubmit into a 2 MiB stream and refuses more than 523,503 words (orbisvk queue); a draw is ~50-90 words (a feedback
 // barrier adds 17), so 3500 draws x 90 = 315k words leaves room for uploads, clears and the present pass. RenderHW submits before a draw
 // that would pass it, SendHWDraw between the groups of one full-barrier draw that is bigger than the whole budget by itself.
 static constexpr u32 ORBIS_SUBMIT_DRAW_BUDGET = 3500;
@@ -1346,7 +1346,7 @@ namespace
 		u32 configs = 0, draws = 0, ops = 0;
 	};
 	OrbisSubmitCounts s_orbis_sub_cur, s_orbis_sub_last, s_orbis_sub_peak;
-	// The driver's "a submission of more than N words" refusal (ps5vk_queue.c:1528), seen by DebugMessengerCallback.
+	// The driver's "a submission of more than N words" refusal (orbisvk queue limit), seen by DebugMessengerCallback.
 	std::atomic<u32> s_orbis_overflow_reports{0};
 	std::atomic<u64> s_orbis_overflow_words{0}; // the limit the message names
 	std::atomic<u64> s_orbis_overflow_total{0}; // "this one holds N" (the driver patch adds it): the refused submission's words, 0 if not there
@@ -1589,7 +1589,7 @@ namespace
 		{
 			const unsigned long long held = s_orbis_overflow_total.load();
 			header += StringUtil::StdStringFromFormat(
-				"\nclass: STREAM OVERFLOW, not a GPU stall: the driver refused a submission of more than %llu words %u time(s) (ps5vk_queue.c:1528, "
+				"\nclass: STREAM OVERFLOW, not a GPU stall: the driver refused a submission of more than %llu words %u time(s) (orbisvk queue limit, "
 				"emulog.txt has the 'VK: debug report' lines). A frame put more draws into one vkQueueSubmit than its 2 MiB stream holds",
 				static_cast<unsigned long long>(s_orbis_overflow_words.load()), overflows);
 			if (held)
@@ -1599,8 +1599,8 @@ namespace
 		}
 		else
 		{
-			header += "\nclass: no stream-overflow refusal seen. A completion-marker timeout (a GPU stall) writes ps5vk-hang.txt and a "
-			          "'[ps5vk] GPU hang' line in stderr.log; other refusals show in emulog.txt as 'VK: debug report'.";
+			header += "\nclass: no stream-overflow refusal seen. A completion-marker timeout (a GPU stall) writes orbisvk-hang.txt and a "
+			          "'[orbisvk] GPU hang' line in stderr.log; other refusals show in emulog.txt as 'VK: debug report'.";
 		}
 		header += StringUtil::StdStringFromFormat(
 			"\ndraws (configs/driver draws/other ops): not yet submitted %u/%u/%u, last submit %u/%u/%u, largest since the last log line %u/%u/%u"
@@ -8154,7 +8154,7 @@ void GSDeviceVK::RenderHW(GSHWDrawConfig& config)
 {
 #ifdef ORBIS_VULKAN
 	// vk-285-113 (AI-assisted): the PS5 driver copies every command buffer of one vkQueueSubmit into a 2 MiB stream and refuses more
-	// than 523,503 words (ps5vk_queue.c:1528; a draw is ~50-90 words, an in-stream feedback barrier 17). SendHWDraw makes one barrier +
+	// than 523,503 words (orbisvk queue limit; a draw is ~50-90 words, an in-stream feedback barrier 17). SendHWDraw makes one barrier +
 	// one draw per drawlist group of a full-barrier draw, so one frame can hold thousands of driver draws; vk-285-108..112's Sims,
 	// Stuntman and Area 51 died on it ("a submission of more than 523503 words", then VK_ERROR_DEVICE_LOST). Submit early instead, here at
 	// a draw boundary before this draw has touched any state (the uniform-space flush in ApplyTFXState is the precedent).

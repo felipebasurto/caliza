@@ -49,5 +49,6 @@ echo '== web panel smoke =='
 
 echo '== dead-brand audit =='
 python3 ps4/tools/audit_brand.py
+python3 ps4/tools/audit_visible_ps5.py
 
 echo 'caliza host verification passed'

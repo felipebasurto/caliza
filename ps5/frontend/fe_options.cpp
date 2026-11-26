@@ -385,7 +385,7 @@ const std::vector<OptionGroup>& OptionGroups()
 		{"Display",
 			{
 				Seg("upscale_multiplier", "Resolution", "1", "%", {{"1", "1x"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}, {"5", "5x"}, {"6", "6x"},
-										   {"8", "8x (PS5 Pro)"}},
+										   {"8", "8x (heavy)"}},
 					"Internal resolution. 6x is about 4K; 8x draws more than the screen shows (about 5K, made smaller to fit): sharpest, and the heaviest on the GPU."),
 				Seg("AspectRatio", "Aspect ratio", "Auto 4:3/3:2", "Aspect %",
 					{{"Auto 4:3/3:2", "Auto"}, {"4:3", "4:3"}, {"16:9", "16:9"}, {"Stretch", "Stretch"}}),
@@ -420,7 +420,7 @@ const std::vector<OptionGroup>& OptionGroups()
 				Seg("EmuCore/Speedhacks/EECycleSkip", "EE cycle skip", "0", "Cycle skip %", {{"0", "Off"}, {"1", "Mild"}, {"2", "Moderate"}, {"3", "Max"}}),
 				Toggle("EmuCore/Speedhacks/vuThread", "MTVU (VU1 on its own thread)", "false", "MTVU %", "", true),
 				Seg("HWDownloadMode", "GPU readbacks", "0", "Readbacks %", {{"0", "Accurate"}, {"1", "Whole area"}, {"3", "Don't wait"}, {"4", "Skip"}},
-					"Some games read the picture back from the GPU, which is slow on the PS5. Accurate is PCSX2's default. Whole area reads "
+					"Some games read the picture back from the GPU, which is slow on the PS4. Accurate is PCSX2's default. Whole area reads "
 					"everything drawn since the last read in one go, so there are fewer stops. Don't wait doesn't stop the game for the GPU: "
 					"quicker, but effects that depend on it can flicker. Skip ignores the reads: fastest, and those effects break. A game that "
 					"slows down because of them (on firmware below 10 each read can wait a vblank; elsewhere some games read so often that "
@@ -429,14 +429,14 @@ const std::vector<OptionGroup>& OptionGroups()
 		{"Game",
 			{
 				Seg("Caliza/GameLanguage", "Game language", "-1", "Language %",
-					{{"-1", "Auto (PS5)"}, {"0", "Japanese"}, {"1", "English"}, {"2", "French"}, {"3", "Spanish"}, {"4", "German"}, {"5", "Italian"},
+					{{"-1", "Auto (console)"}, {"0", "Japanese"}, {"1", "English"}, {"2", "French"}, {"3", "Spanish"}, {"4", "German"}, {"5", "Italian"},
 						{"6", "Dutch"}, {"7", "Portuguese"}},
 					"The language the PS2 tells games. PAL games with several languages start in it; most US games are English only. Auto "
-					"follows the PS5's language.",
+					"follows the console language.",
 					true),
 				// 2026-10-05 (AI-assisted): the PS2's network adapter, on for every game by default (main-boot.cpp).
 				Toggle("DEV9/Eth/EthEnable", "Network adapter", "true", "Network %",
-					"The PS2's network adapter, on the PS5's own connection, for online and LAN play (on revival servers such as PS "
+					"The PS2's network adapter, on the console's own network connection, for online and LAN play (on revival servers such as PS "
 					"Rewired; their DNS goes in the game's network settings). It costs nothing until a game uses it. Turn it off for a "
 					"game that misbehaves with it. Takes effect when the game starts.",
 					true),
@@ -504,11 +504,11 @@ const std::vector<OptionGroup>& OptionGroups()
 			{
 				Toggle("Caliza/Rumble", "Rumble", "true", "Rumble %",
 					"The game's vibration on the controller. In a game, hold L2 and D-pad down for 2 seconds to open the settings page in the "
-					"PS5's own web browser; the game keeps running behind it."),
+					"companion panel; the game keeps running behind it."),
 				Seg("Caliza/RumbleStrength", "Rumble strength", "1", "",
 					{{"0.25", "25%"}, {"0.5", "50%"}, {"0.75", "75%"}, {"1", "100%"}, {"1.25", "125%"}, {"1.5", "150%"}, {"2", "200%"}},
 					"How strongly the controller vibrates, as a share of what the game asks for. Above 100% lifts weak rumble; it never goes past the motors' full strength."),
-				Seg("Caliza/Multitap", "Multitap", "0", "", {{"0", "Off"}, {"1", "Port 1"}, {"2", "Port 2"}}, "For 4-player games. Players 2 to 4 are the other PS5 users logged in when the game starts, each on their own controller. Port 1 suits most games; a few want the multitap in port 2. Off: player 2 on port 2, as before.", true),
+				Seg("Caliza/Multitap", "Multitap", "0", "", {{"0", "Off"}, {"1", "Port 1"}, {"2", "Port 2"}}, "For 4-player games. Players 2 to 4 are the other users logged in on the console when the game starts, each on their own controller. Port 1 suits most games; a few want the multitap in port 2. Off: player 2 on port 2, as before.", true),
 			},
 			kTabControls},
 		{"Keyboard and mouse",
@@ -963,7 +963,7 @@ std::string OptionsSheet::Help(const Row& r) const
 			                "Their games are listed like a drive's, from /net/share1/ and the next numbers. Read-only. "
 			                "Mounted when the app starts; boot.log says how it went.";
 #else
-			std::string h = "Cross: the NFS shares, and Add a share with the PS5's keyboard: nfs://<server>/<shared folder> (NFS v3, else "
+			std::string h = "Cross: the NFS shares, and Add a share with the console keyboard: nfs://<server>/<shared folder> (NFS v3, else "
 			                "v4; Windows: WinNFSd or haneWIN). Their games are listed like a drive's, from /nfs/<server>/. Read-only. "
 			                "Mounted when Caliza starts; boot.log says how it went.";
 #endif
@@ -1011,7 +1011,7 @@ std::string OptionsSheet::Help(const Row& r) const
 				summary += (summary.empty() ? "" : " \xC2\xB7 ") + p + " patch";
 			if (!m_has_preset && !m_global)
 				return "Nothing tuned for this game yet: using it makes the game follow the settings for all games.";
-			return "What was tuned and tested on a PS5 Pro: " + (summary.empty() ? std::string("follows the settings for all games") : summary) + ".";
+			return "What was tuned and tested for this build: " + (summary.empty() ? std::string("follows the settings for all games") : summary) + ".";
 		}
 		case Kind::ResetAll:
 			if (m_tab == kTabControls) // vk-285-116

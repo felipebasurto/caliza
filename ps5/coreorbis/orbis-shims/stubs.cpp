@@ -55,7 +55,7 @@ std::unique_ptr<HTTPDownloader> HTTPDownloader::Create(std::string user_agent)
 const CPUInfo& GetCPUInfo()
 {
   // PS5 Pro: 8C/16T Zen2. poc2 measured ncpu=16.
-  static const CPUInfo info = {"AMD Zen2 (PS5 Pro)", 8, 0, 16, 1};
+  static const CPUInfo info = {"AMD Zen2", 8, 0, 16, 1};
   return info;
 }
 

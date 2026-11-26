@@ -133,7 +133,7 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-LGPL-2.1.txt" "$stage/licenses/libnfs-LGPL-2.1.txt"
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-BSD.txt" "$stage/licenses/libnfs-BSD.txt"
     {
-        echo "Caliza is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
+        echo "Caliza is a GPL-3.0-or-later derivative of PCSX2."
         echo "Corresponding source: https://github.com/felipebasurto/caliza"
         echo "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2"
         echo "Build commit: $build_commit"

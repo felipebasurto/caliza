@@ -3,12 +3,12 @@
 
 //#version 420 // Keep it for editor detection
 
-// ORBIS_PRESHARP (PS5 port, vk-285-12): the ShadeBoost pass is repurposed as a
+// ORBIS_PRESHARP (Orbis port): the ShadeBoost pass is repurposed as a
 // native-resolution sharpen (cross unsharp mask) that runs before the upscale, as in the
 // port's GL shadeboost.glsl (eerec-278). The eboot enables ShadeBoost on Vulkan only when
 // this file carries the ORBIS_PRESHARP marker, so the stock shader never desaturates.
 // Strength = params.z = ShadeBoost_Saturation / 50 (e.g. 25 -> 0.5). 0 = passthrough.
-// params.xy = 1 / texture size, set by the eboot (GSDevice::ShadeBoost): the PS5 shader
+// params.xy = 1 / texture size, set by the eboot (GSDevice::ShadeBoost): the Orbis shader
 // compiler has no image queries, so textureSize() is not available.
 
 #ifdef VERTEX_SHADER

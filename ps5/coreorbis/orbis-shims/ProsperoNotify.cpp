@@ -5,7 +5,7 @@
 // Two ways to put a toast on the PS5's screen, both public (the ps5-payload-dev SDK declares them and
 // ships a sample of each):
 //   - the kernel toast, sceKernelSendNotificationRequest(0, request, 0xc30, 0): a 0xc30-byte request whose
-//     text starts at byte 0x2d. It is what the port has used since the start ("PS5SX2: starting"). The
+//     text starts at byte 0x2d. It is what the port has used since the start ("Caliza: starting"). The
 //     PS4 layout (PS4-Notify's documentation) also has a "use icon" byte at 0x2c and an icon URI at
 //     0x42d; whether the PS5 honours them is not known yet.
 //   - the rich toast, libSceNotification's sceNotificationSend(user, logged, json): a JSON payload that
@@ -275,7 +275,7 @@ namespace
 
 #ifdef ORBIS_NOTIFY_RELAY_ELF
 	// The relay payload (Makefile.vk builds it): see notify-relay/notify_relay.c and the comment at the top.
-	constexpr char RELAY_MARKER[] = "PS5SX2-NOTIFY-RELAY-JSON-V1";
+	constexpr char RELAY_MARKER[] = "CALIZA-NOTIFY-RELAY-JSON-V1";
 	constexpr size_t RELAY_ROOM = 16384; // g_payload's size in notify_relay.c
 	constexpr uint16_t RELAY_PORT = 9021; // the ELF loader's port (elfldr, etaHEN's), as the bridge and the README use
 	// The loader keeps the connection until the payload ends (it sleeps 3 s after posting); waiting for that keeps the

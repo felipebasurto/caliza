@@ -29,7 +29,7 @@ layout(push_constant) uniform cb10
 	vec2 u_source_resolution;
 	vec2 u_rcp_source_resolution; // 1 / u_source_resolution
 	float u_time;
-	float u_orbis_sharp; // PS5 port (vk-285-12): DisplayConstantBuffer TimeAndPad.y, RCAS amount
+	float u_orbis_sharp; // Orbis port: DisplayConstantBuffer TimeAndPad.y, RCAS amount
 	float u_orbis_split; // TimeAndPad.z, split-screen x in target pixels (0 = off)
 };
 
@@ -108,7 +108,7 @@ void ps_filter_complex() // triangular
 }
 #endif
 
-// PS5 port: the Lottes CRT shader compiles to ~11.8 KiB of pixel code, more than the
+// Orbis port: the Lottes CRT shader compiles to ~11.8 KiB of pixel code, more than the
 // vk-285-12 driver's stage workspace took (~8 KiB, see FSR_RCAS); with ORBIS_LOTTES 0 the
 // CRT mode is a light scanline pass over the source lines instead.
 #ifndef ORBIS_LOTTES
@@ -422,7 +422,7 @@ void ps_filter_lottes()
 #endif
 
 #if defined(ps_4x_rgss) || defined(ps_automagical_supersampling)
-// PS5 port (vk-285-12): edge-adaptive upscaler for the software renderer's frame,
+// Orbis port: edge-adaptive upscaler for the software renderer's frame,
 // ported from the port's GL present shader (eerec-278).
 // Slot 6 (TVShader=6, was 4xRGSS): FSR1-style EASU upscale (plus RCAS sharpening when
 //   FSR_RCAS is 1 and u_orbis_sharp > 0: four more EASU evaluations per pixel).

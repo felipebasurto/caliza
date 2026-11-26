@@ -1,6 +1,6 @@
-// PS5SX2 (2026-10-05, AI-assisted): the notification relay, a payload that sends one rich toast for the app.
+// Orbis notification relay (2026-10-05): the notification relay, a payload that sends one rich toast for the app.
 //
-// PS5SX2's own process can't load libSceNotification on firmware 11.40 or 12.00: sceKernelLoadStartModule answers
+// The application process can't load libSceNotification on firmware 11.40 or 12.00: sceKernelLoadStartModule answers
 // 0x80020063 (rtld: "syscall load_prx failed due to 0x00000063"), the same refusal libSceKeyboard and libSceMouse
 // get. A payload started by the console's ELF loader runs in a system process, where the library loads (the test
 // payloads on the Pro, 2026-10-05). So ProsperoNotify.cpp embeds this program, writes the toast's JSON over
@@ -18,7 +18,7 @@ int sceNotificationSend(int userId, bool isLogged, const char* payload);
 // The app looks for this marker in the file and writes the JSON over it, NUL-terminated. The array is initialized,
 // so it lies in .data and its whole size is in the file: the room the app may fill. volatile: the compiler must
 // read what the app wrote, not the marker it sees here.
-__attribute__((used)) volatile char g_payload[16384] = "PS5SX2-NOTIFY-RELAY-JSON-V1";
+__attribute__((used)) volatile char g_payload[16384] = "CALIZA-NOTIFY-RELAY-JSON-V1";
 
 int main(void)
 {

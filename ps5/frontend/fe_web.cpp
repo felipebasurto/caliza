@@ -1292,14 +1292,14 @@ void WebServer::ApiReport(const Request& req, Response& res)
 		section(logs + "/emulog" + ss.suffix + ".txt", ss.what, ss.emu, 160 * 1024);
 		section(logs + "/stderr" + ss.suffix + ".log", ss.what, ss.err, 32 * 1024);
 	}
-	section(logs + "/ps5vk-hang.txt", "the last GPU hang the driver caught", 64 * 1024, 32 * 1024);
+	section(logs + "/orbisvk-hang.txt", "the last GPU hang the driver caught", 64 * 1024, 32 * 1024);
 	// vk-285-109: PCSX2's own dump of a GPU hang (GSDeviceVK.cpp), which settings.log points to; the reports
 	// of Driv3r's hangs on vk-285-94 came without it.
 	section(logs + "/vkhang.txt", "the last GPU hang PCSX2 caught", 64 * 1024, 32 * 1024);
 	// vk-285-113: the hang before that one (PCSX2 renames its dump at each hang; the driver's note has a .1 too since the driver patch).
 	// vk-285-112's Hitman hung five times in a row and only the last dump reached the report.
 	section(logs + "/vkhang.1.txt", "the GPU hang before that, PCSX2's dump", 64 * 1024, 16 * 1024);
-	section(logs + "/ps5vk-hang.1.txt", "the GPU hang before that, the driver's note", 64 * 1024, 16 * 1024);
+	section(logs + "/orbisvk-hang.1.txt", "the GPU hang before that, the driver's note", 64 * 1024, 16 * 1024);
 	// vk-285-113: the hung session's own stderr.log and emulog.txt (GSDeviceVK.cpp OrbisKeepLogTail), which the three-session window above loses
 	// when a tester plays on: vk-285-112's Zatch Bell hangs came in a report where two later sessions had pushed them out.
 	section(logs + "/hang-stderr.txt", "stderr.log's end when the last GPU hang closed the app", 128 * 1024, 32 * 1024);

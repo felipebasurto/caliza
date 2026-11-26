@@ -124,7 +124,7 @@ Important caveats already encoded in metadata:
 
 - Renderer and MTVU are `NextLaunch`; the live loader refuses or defers those classes of change.
 - The legacy UI labels the textures folder as a restart-ish setting, but the running frontend polls
-  it through `orbis_ps5opts_from`; the schema marks it `Live` and carries the caveat in `note`.
+  it through the live options reader; the schema marks it `Live` and carries the caveat in `note`.
 - Game folders, BIOS folder and NFS shares are `NextApplicationStart`.
 - Hide/show-hidden games are `NextMenuOpen`.
 - Patch and cheat group changes are live through the explicit patch reload path.
@@ -141,7 +141,7 @@ The schema includes the PS4 web panel's MTVU implementation rows:
   player-owned.
 
 On PS4 the MTVU master row defaults on, renderer choices are Vulkan/paraLLEl-GS/Software, and EE
-cycle-rate labels carry the extra CPU warning. Recommended presets were tuned on a PS5 Pro: the PS4
+cycle-rate labels carry the extra CPU warning. Recommended presets came from a higher-power inherited tuning baseline: the PS4
 `ApplyRecommended` implementation drops preset `upscale_multiplier` and `EECycleRate` lines rather
 than writing overly costly 4x/6x or 130%+ values. The filter applies only to generated recommended
 text, never to the user's existing files.

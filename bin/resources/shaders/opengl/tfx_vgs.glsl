@@ -53,7 +53,7 @@ layout(location = 5) in uint  i_z;
 layout(location = 6) in uint  i_uv_packed;
 layout(location = 7) in vec4  i_f;
 
-// Orbis: the PS5 GL driver only fetches 32-bit vertex attributes (R16G16_UINT
+// Orbis: the Orbis GL driver only fetches 32-bit vertex attributes (R16G16_UINT
 // is unsupported), so XYZ.XY and UV arrive packed as one uint each. Unpack
 // them back into the uvec2 the shader logic expects.
 uvec2 orbis_unpack_u16x2(uint v)

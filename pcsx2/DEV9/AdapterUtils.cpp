@@ -651,9 +651,9 @@ std::vector<IP_Address> AdapterUtils::GetDNS(const Adapter* adapter)
 			collection.push_back(dns);
 	}
 	if (collection.empty())
-		Console.Error("DEV9: the PS5 named no DNS server (set one in the game, or DEV9/Eth/ModeDNS1=Manual and DNS1)");
+		Console.Error("DEV9: the console named no DNS server (set one in the game, or DEV9/Eth/ModeDNS1=Manual and DNS1)");
 	else
-		Console.WriteLn("DEV9: DNS from the PS5: %u.%u.%u.%u%s", collection[0].bytes[0], collection[0].bytes[1],
+		Console.WriteLn("DEV9: DNS from the console: %u.%u.%u.%u%s", collection[0].bytes[0], collection[0].bytes[1],
 			collection[0].bytes[2], collection[0].bytes[3], collection.size() > 1 ? " and a second one" : "");
 	return collection;
 }

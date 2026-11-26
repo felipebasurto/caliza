@@ -214,7 +214,7 @@ namespace
 	// pr9l (2026-10-05, AI-assisted): the game's one-file pack, <game's texture folder>/replacements.pak (OrbisTexturePak.h,
 	// written by the texture pack manager: a new file costs the PS5 app 10 ms to a second, so a pack of 15,000 files took
 	// most of an hour to unpack as files). Open while its replacements are in use; a replacement in it is named
-	// "ps5pak:<generation>:<offset>:<size>/<its path in the pack>" in s_replacement_texture_filenames, and the PS5's loaders
+	// "orbispak:<generation>:<offset>:<size>/<its path in the pack>" in s_replacement_texture_filenames, and the console loaders
 	// (ps5/coreorbis/orbis-shims/ProsperoGS.cpp; GSTextureReplacementLoaders.cpp isn't built) read such a name's bytes with
 	// OrbisPakRead. Needs proper testing.
 	struct OrbisPak
@@ -230,7 +230,7 @@ namespace
 	std::mutex s_orbis_pak_mutex;
 	std::shared_ptr<OrbisPak> s_orbis_pak; // under s_orbis_pak_mutex: the loader thread reads through a copy
 	u32 s_orbis_pak_generation = 0; // the GS thread only
-	constexpr char ORBIS_PAK_PREFIX[] = "ps5pak:";
+	constexpr char ORBIS_PAK_PREFIX[] = "orbispak:";
 	constexpr size_t ORBIS_PAK_PREFIX_LEN = sizeof(ORBIS_PAK_PREFIX) - 1;
 
 	void OrbisPakClose()
@@ -257,7 +257,7 @@ bool OrbisPakName(const std::string& filename)
 	return filename.compare(0, ORBIS_PAK_PREFIX_LEN, ORBIS_PAK_PREFIX) == 0;
 }
 
-// The bytes of a "ps5pak:..." replacement, from the pack open now (false when the game's pack changed since it was named).
+// The bytes of a "orbispak:..." replacement, from the pack open now (false when the game's pack changed since it was named).
 bool OrbisPakRead(const std::string& filename, std::vector<u8>& out)
 {
 	if (!OrbisPakName(filename))
@@ -1056,7 +1056,7 @@ void GSTextureReplacements::PrecacheReplacementTextures()
 #ifdef ORBIS_VULKAN
 	// vk-285-112: loading a whole pack into memory up front doesn't fit the PS5 app's heap (see
 	// ORBIS_CACHE_BUDGET); replacements load when the game first uses them.
-	OrbisDeferredPrintf("[texrep] preloading every replacement is off on the PS5; they load as the game uses them\n");
+	OrbisDeferredPrintf("[texrep] preloading every replacement is off on the console; they load as the game uses them\n");
 	return;
 #endif
 	std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);

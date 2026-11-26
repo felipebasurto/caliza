@@ -1228,7 +1228,7 @@ void SetLanguage(int ps5_language, const std::string& lang_dir)
 		s.clear();
 	for (std::string& s : s_region_over)
 		s.clear();
-	std::printf("[i18n] PS5 language %d: text in %s\n", ps5_language, s_lang->code);
+	std::printf("[i18n] console language %d: text in %s\n", ps5_language, s_lang->code);
 	if (!lang_dir.empty())
 		LoadOverrides(lang_dir + "/" + s_lang->code + ".txt");
 	std::fflush(stdout);

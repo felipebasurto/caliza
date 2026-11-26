@@ -1766,7 +1766,7 @@ void Achievements::SetHardcoreMode(bool enabled, bool force_display_message)
 #ifdef PS5SX2_ACHIEVEMENTS
 	if (enabled)
 	{
-		Console.Warning("Achievements: hardcore mode isn't available on the PS5 (softcore only)");
+		Console.Warning("Achievements: hardcore mode isn't available in this build (softcore only)");
 		enabled = false;
 	}
 #endif
@@ -2642,7 +2642,7 @@ void Achievements::PS5Toast(PS5ToastKind kind, const std::string& title, const s
 				sound = ORBIS_TOAST_SOUND_NONE;
 			break;
 	}
-	Console.WriteLn("Achievements: PS5 toast (%s), picture %s, sound %s", kind == PS5ToastKind::Unlock ? "unlock" :
+	Console.WriteLn("Achievements: console toast (%s), picture %s, sound %s", kind == PS5ToastKind::Unlock ? "unlock" :
 		kind == PS5ToastKind::Mastery ? "mastery" : "info", icon.empty() ? "none" : (icon == image_path ? "cached" : "from the web"),
 		sound ? sound : "default");
 	OrbisNotifyRich(title.c_str(), text.c_str(), icon.c_str(), sound, channel);

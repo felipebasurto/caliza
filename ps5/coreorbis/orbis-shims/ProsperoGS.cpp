@@ -165,7 +165,7 @@ void GSDumpBase::Transfer(int index, const u8* mem, size_t size)
 #include <climits>
 
 // pr9l (2026-10-05, AI-assisted): a replacement inside the game's one-file pack, <texture folder>/replacements.pak, is named
-// "ps5pak:..." (GSTextureReplacements.cpp, pcsx2/OrbisTexturePak.h) and read from there; any other name is a file. Both
+// "orbispak:..." (GSTextureReplacements.cpp, pcsx2/OrbisTexturePak.h) and read from there; any other name is a file. Both
 // loaders below decode from memory. Needs proper testing.
 bool OrbisPakName(const std::string& filename);
 bool OrbisPakRead(const std::string& filename, std::vector<u8>& out);

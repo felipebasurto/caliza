@@ -2725,8 +2725,8 @@ void GSRenderer::EndPresentFrame()
 // /data/caliza/framecap (content optional: "secs=20 every=2 x0=0.5 x1=1 y0=0 y1=1 half=1") records the
 // displayed frame -- the merge output, before the present's scaling -- for `secs` seconds, every `every`th
 // vsync, cropped to [x0,x1) x [y0,y1) of the frame (fractions) and halved on the GPU with half=1, into
-// /data/caliza/framecap.bin: "PS5FCAP1", u32 version 1, u32 header size 16, then per frame twelve u32
-// (magic 'FRM1', vsync, w, h, frame w, frame h, crop x0 y0 x1 y1, microseconds lo, hi) and w*h*3 bytes RGB,
+// /data/caliza/framecap.bin: "CALFCAP1", u32 version 1, u32 header size 16, then per frame twelve u32
+// (magic 'CALFCAP1', vsync, w, h, frame w, frame h, crop x0 y0 x1 y1, microseconds lo, hi) and w*h*3 bytes RGB,
 // rows top down. Frame N's copy is read at vsync N+1, by which time the GPU has normally finished it.
 namespace
 {
@@ -2872,7 +2872,7 @@ static void OrbisFrameCapture(GSTexture* current)
 			return;
 		}
 		setvbuf(c.f, nullptr, _IOFBF, 4u << 20);
-		static const char magic[8] = {'P', 'S', '5', 'F', 'C', 'A', 'P', '1'};
+		static const char magic[8] = {'C', 'A', 'L', 'F', 'C', 'A', 'P', '1'};
 		const u32 ver[2] = {1, 16};
 		fwrite(magic, sizeof(magic), 1, c.f);
 		fwrite(ver, sizeof(ver), 1, c.f);

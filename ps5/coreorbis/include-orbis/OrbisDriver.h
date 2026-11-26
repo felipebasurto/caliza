@@ -10,4 +10,4 @@
 #pragma once
 
 bool OrbisDriverIsRADV();
-const char* OrbisDriverName(); // "RADV" or "ps5vk"
+const char* OrbisDriverName(); // "RADV" or "orbisvk"

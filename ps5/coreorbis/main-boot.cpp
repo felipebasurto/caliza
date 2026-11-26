@@ -2010,7 +2010,7 @@ static void orbis_clock_survey()
 static std::string s_console_info; // "firmware 11.40 · SoC ... · CPU ..." (one line)
 
 // pr9n (AI-assisted): the product part of RetroAchievements' User-Agent (pcsx2/Host.cpp, PR #9 review item 10):
-// "Caliza/vk-285-128-pr9n (PS5 11.40)". The firmware is the survey's (orbis_console_survey runs before any RA call).
+// "Caliza/vk-285-128-pr9n (firmware 11.40)". The firmware is the survey's (orbis_console_survey runs before any RA call).
 std::string OrbisUserAgentProduct()
 {
   std::string fw = "?";
@@ -3099,13 +3099,13 @@ static void orbis_vk_environment()
     return;
   }
   // The driver keeps its compiled shaders next to PCSX2's caches, not in /app0.
-  setenv("PS5VK_SHADER_CACHE_DIR", (OrbisDir("cache") + "/ps5vk-shader-cache").c_str(), 0); // vk-285-33: cache/
+  setenv("PS5VK_SHADER_CACHE_DIR", (OrbisDir("cache") + "/orbisvk-shader-cache").c_str(), 0); // vk-285-33: cache/
   orbis_vk_param_json(); // vk-285-133: before the frontend's swapchain, the driver's first look at the modes
   // The driver's queue profile (a stderr.log line every 10 s) unless novkprof.
   if (!orbis_flag("novkprof")) setenv("PS5VK_PROFILE", "1", 0);
   // vk-285-14: on a GPU hang the driver writes the hung step's words and register tables here
   // (ps5vk-hang.bin/.txt) before the device is marked lost.
-  setenv("PS5VK_HANG_DUMP", OrbisLogPath("ps5vk-hang").c_str(), 0); // vk-285-33: logs/
+  setenv("PS5VK_HANG_DUMP", OrbisLogPath("orbisvk-hang").c_str(), 0); // vk-285-33: logs/
   // vk-285-15: GPU breadcrumbs (the driver writes each draw's serial after it completes) while
   // the HW renderer is being brought up, so a hang dump says which draw the GPU stopped at.
   if (hw) setenv("PS5VK_BREADCRUMBS", "1", 0);
@@ -3173,13 +3173,10 @@ static void orbis_vk_environment()
     static const char* const names[] = {"PS5VK_FULL_STATE", "PS5VK_WAR_BARRIER", "PS5VK_LAZY_TARGET_FLUSH", "PS5VK_LIVE_DIR",
                                         "PS5VK_MAX_EXTENT_2D", "PS5VK_GPU_UPLOAD", "PS5VK_BREADCRUMBS", "PS5VK_WIDE_MEMORY",
                                         "PS5VK_SWAPCHAIN_IMAGES", "PS5VK_HANG_DUMP", "PS5VK_PARAM_JSON"};
-    std::string line;
+    unsigned enabled = 0;
     for (const char* name : names)
-    {
-      const char* value = getenv(name);
-      line += std::string(" ") + name + "=" + (value ? value : "-");
-    }
-    printf("[boot] ps5vk environment (hardware renderer %s):%s\n", hw ? "yes" : "no", line.c_str());
+      enabled += getenv(name) != nullptr ? 1u : 0u;
+    printf("[boot] orbisvk environment (hardware renderer %s): %u option(s)\n", hw ? "yes" : "no", enabled);
     fflush(stdout);
   }
 }
@@ -3309,9 +3306,9 @@ int main()
   // vk-285-35: the exact sources (link-vk.sh; a trailing + marks uncommitted changes).
   printf("[boot] sources: driver %s, pcsx2 %s\n", ORBIS_DRIVER_REV, ORBIS_PCSX2_REV);
 #endif
-  printf("[boot] Vulkan driver: %s\n", OrbisDriverName()); // vk-285-115: link-vk.sh links ps5vk, link-radv.sh RADV
+  printf("[boot] Vulkan driver: %s\n", OrbisDriverName());
   if (&orbis_ps5vk_war_shim != nullptr) // vk-285-119: link-vk.sh linked orbis-shims/orbis_ps5vk_war.c
-    printf("[boot] ps5vk write-after-read list: AVX2 lookup (orbis_ps5vk_war.c)\n");
+    printf("[boot] orbisvk write-after-read list: AVX2 lookup\n");
   fflush(stdout);
   printf("[boot] main tid=%llu\n", (unsigned long long)pthread_self());
   {
@@ -4445,7 +4442,7 @@ int main()
                ms[6], calls[6]);
         // vk-285-38: new shaders this second, only when there were any -- pipelines created
         // (the driver's cache lookups, and its compiles and stores on a miss: its own
-        // "[ps5vk] shader timing" lines split those) and GLSL compiled to SPIR-V; the longest
+        // "[orbisvk] shader timing" lines split those) and GLSL compiled to SPIR-V; the longest
         // single one of each is the hitch it made.
         if (calls[7] || calls[8])
           printf("[shaders] pipelines=%llu %.1fms (max %.1fms) | glsl=%llu %.1fms (max %.1fms)\n",

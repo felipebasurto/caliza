@@ -1178,7 +1178,7 @@ void OrbisApplyGameDbAdditions()
 		s_game_db.emplace(serial, std::move(entry));
 		aliased++;
 	}
-	Console.WriteLn("GameDB: PS5SX2's additions: %d of %zu fan mods given their base game's entry (Budokai Tenkaichi 4 mod "
+	Console.WriteLn("GameDB: Caliza additions: %d of %zu fan mods given their base game's entry (Budokai Tenkaichi 4 mod "
 					"-> Budokai Tenkaichi 3)",
 		aliased, std::size(kOrbisGameDbAliases));
 	for (const OrbisGameFixAddition& add : kOrbisGameFixAdditions) // vk-285-125
@@ -1196,7 +1196,7 @@ void OrbisApplyGameDbAdditions()
 		if (std::find(fixes.begin(), fixes.end(), add.fix) == fixes.end())
 			fixes.push_back(add.fix);
 	}
-	Console.WriteLn("GameDB: PS5SX2's additions: %zu game fixes (Instant DMA for GTA Liberty City Stories, San Andreas, "
+	Console.WriteLn("GameDB: Caliza additions: %zu game fixes (Instant DMA for GTA Liberty City Stories, San Andreas, "
 					"Vice City)",
 		std::size(kOrbisGameFixAdditions));
 	for (const OrbisSpeedHackFix& fix : kOrbisSpeedHackFixes)
@@ -1213,7 +1213,7 @@ void OrbisApplyGameDbAdditions()
 		OrbisSetSpeedHack(iter->second, SpeedHack::MTVU, fix.mtvu);
 		OrbisSetSpeedHack(iter->second, SpeedHack::EECycleRate, fix.ee_cycle_rate);
 	}
-	Console.WriteLn("GameDB: PS5SX2's additions: MTVU off and the EE at 100%% for %zu serials (%d not in GameIndex.yaml)",
+	Console.WriteLn("GameDB: Caliza additions: MTVU off and the EE at 100%% for %zu serials (%d not in GameIndex.yaml)",
 		std::size(kOrbisSpeedHackFixes), added);
 }
 } // namespace

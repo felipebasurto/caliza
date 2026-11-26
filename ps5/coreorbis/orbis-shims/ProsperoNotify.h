@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 
 // The kernel toast (sceKernelSendNotificationRequest): text only, what the port has used since the
-// start ("PS5SX2: starting", "Now playing: ...").
+// start ("Caliza: starting", "Now playing: ...").
 void OrbisNotifyPlain(const char* text);
 
 // Rich toasts posted from now on wait until `seconds` have passed (main-boot, as a game starts: the first two toasts of
