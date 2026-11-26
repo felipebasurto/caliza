@@ -15,6 +15,7 @@
 11. Added executable-memory runtime probes before accepting direct recompiler memory; unexecutable mappings are rejected instead of crashing later.
 12. Fixed WSI semaphore lifetime tracking and debug-allocation wire layout; direct-memory failure paths now unmap/release correctly.
 13. Added opt-in USB keyboard/mouse hardware-test path, accurate audio starvation/output telemetry, complete third-party package notices, and explicit PS4 NFS disablement while libc wrapping is unavailable.
+14. Made PKG output bit-for-bit reproducible for an unchanged tree by pinning GP4/PUBTOOL timestamps to `SOURCE_DATE_EPOCH` or the commit timestamp; repeated clean-tree builds now produce the same PKG SHA-256.
 
 ## Diff classification of inherited `main..ps4-perf`
 
@@ -32,7 +33,7 @@
 ## Validation evidence
 
 - Baseline compile/link/package: `ps4/logs/baseline-build-metrics.txt`.
-- Candidate rebuild: `ps4/logs/candidate1-rebuild-validation.log`.
+- Candidate rebuild: `ps4/logs/candidate50-final-deterministic.log` and repeat evidence in `candidate50-final-deterministic-repeat.log`.
 - Current candidate dynamic imports: 257; unresolved: 0; known PS5-only: none.
 - Host tests: `ps4/logs/host-tests-candidate1.log`.
 - Final candidate package includes `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, and vendored licenses; no BIOS files.
