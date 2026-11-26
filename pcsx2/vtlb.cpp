@@ -936,6 +936,7 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 	if (s_fastmem_virtual_mapping[page] != NO_FASTMEM_MAPPING)
 	{
 		// current mapping needs to be removed
+		const u32 old_mainmem_offset = s_fastmem_virtual_mapping[page];
 		const bool was_coalesced = vtlb_IsHostCoalesced(page);
 
 		s_fastmem_virtual_mapping[page] = NO_FASTMEM_MAPPING;
@@ -943,7 +944,7 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 			Console.Error("Failed to unmap vaddr %08X", vaddr);
 
 		// remove reverse mapping
-		auto range = s_fastmem_physical_mapping.equal_range(mainmem_offset);
+		auto range = s_fastmem_physical_mapping.equal_range(old_mainmem_offset);
 		for (auto it = range.first; it != range.second;)
 		{
 			auto this_it = it++;
@@ -1376,6 +1377,11 @@ void vtlb_ResetFastmem()
 	}
 }
 
+bool vtlb_IsFastmemAvailable()
+{
+	return vtlbdata.fastmem_base != 0;
+}
+
 // Reserves the vtlb core allocation used by various emulation components!
 // [TODO] basemem - request allocating memory at the specified virtual location, which can allow
 //    for easier debugging and/or 3rd party cheat programs.  If 0, the operating system
@@ -1385,17 +1391,20 @@ bool vtlb_Core_Alloc()
 	static constexpr size_t VMAP_SIZE = sizeof(VTLBVirtual) * VTLB_VMAP_ITEMS;
 	static_assert(HostMemoryMap::VTLBVirtualMapSize == VMAP_SIZE);
 
-	pxAssert(!vtlbdata.vmap && !vtlbdata.fastmem_base && !s_fastmem_area);
+	// Reset() may preallocate before the CPU thread repeats Allocate() in the Orbis boot flow.
+	// vmap is only left non-null after successful initialization or is rolled back on failure.
+	if (vtlbdata.vmap)
+		return true;
+	pxAssert(!vtlbdata.fastmem_base && !s_fastmem_area);
 
 	vtlbdata.vmap = reinterpret_cast<VTLBVirtual*>(SysMemory::GetVTLBVirtualMap());
 
-	// Orbis: the 4GB fastmem reservation can fail in the bigapp budget when
-	// fastmem/recompilers are disabled. Interpreter mode never touches it, so
-	// degrade gracefully instead of failing the whole VTLB core allocation.
 	pxAssert(!s_fastmem_area);
 	s_fastmem_area = SharedMemoryMappingArea::Create(FASTMEM_AREA_SIZE);
 	if (!s_fastmem_area)
 	{
+		// CHECK_FASTMEM includes vtlb_IsFastmemAvailable(), so the recompilers and VTLB mapping
+		// paths degrade to non-fastmem accesses instead of dereferencing an empty reservation.
 		Console.Warning("Fastmem area reservation failed (continuing without fastmem).");
 	}
 	else
@@ -1415,6 +1424,7 @@ bool vtlb_Core_Alloc()
 		if (!PageFaultHandler::Install(&error))
 		{
 			Host::ReportErrorAsync("Failed to install page fault handler.", error.GetDescription());
+			vtlb_Core_Free();
 			return false;
 		}
 	}

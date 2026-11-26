@@ -19,7 +19,9 @@ alignas(__pagealignsize) u8 iopHw[Ps2MemSize::IopHardware];
 void iopMemAlloc()
 {
 	// TODO: Move to memmap
-	psxMemWLUT = (uptr*)_aligned_malloc(0x2000 * sizeof(uptr) * 2, 16);
+	// Orbis Reset() can preallocate before the CPU thread repeats Allocate().
+	if (!psxMemWLUT)
+		psxMemWLUT = (uptr*)_aligned_malloc(0x2000 * sizeof(uptr) * 2, 16);
 	if (!psxMemWLUT)
 		pxFailRel("Failed to allocate IOP memory lookup table");
 

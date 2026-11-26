@@ -3830,9 +3830,17 @@ int main()
     fflush(stdout);
     ORBIS_PS4_STEP("CPUThreadInitialize begin");
     if (VMManager::Internal::CPUThreadInitialize())
+    {
       printf("[boot] CPUThreadInitialize OK\n");
+    }
     else
+    {
       printf("[boot] CPUThreadInitialize FAILED\n");
+      fflush(stdout);
+      ORBIS_PS4_STEP("CPUThreadInitialize failed");
+      orbis_eventf("the game didn't start: CPU/memory initialization failed");
+      orbis_exit_quietly(1);
+    }
     fflush(stdout);
     // Orbis: the CPU overlay owns VideoOut and presents the frame the GL
     // renderer reads back (GSDeviceOGL::PresentRect -> orbis_present_frame).
@@ -3870,6 +3878,12 @@ int main()
   const bool pre_memory_reset = SysMemory::Reset();
   printf("[boot] SysMemory::Reset %s\n", pre_memory_reset ? "done" : "FAILED");
   fflush(stdout);
+  if (!pre_memory_reset)
+  {
+    ORBIS_PS4_STEP("SysMemory::Reset failed");
+    orbis_eventf("the game didn't start: VM memory initialization failed");
+    orbis_exit_quietly(1);
+  }
   orbis_wait_for_game_file(params.filename); // vk-285-134
   ORBIS_PS4_STEP("VMManager::Initialize begin");
   const VMBootResult res = VMManager::Initialize(params, &err);

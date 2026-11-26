@@ -135,7 +135,7 @@ namespace
 {
 sigjmp_buf s_orbis_exec_probe_jump;
 pthread_mutex_t s_orbis_exec_probe_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_t s_orbis_exec_probe_thread;
+thread_local volatile sig_atomic_t s_orbis_exec_probe_thread_active = 0;
 volatile sig_atomic_t s_orbis_exec_probe_active = 0;
 struct sigaction s_orbis_exec_probe_old_segv;
 struct sigaction s_orbis_exec_probe_old_bus;
@@ -155,7 +155,10 @@ void orbis_exec_probe_chain(int sig, siginfo_t* info, void* context)
 		old->sa_handler(sig);
 		return;
 	}
-	signal(sig, SIG_DFL);
+	struct sigaction default_action{};
+	default_action.sa_handler = SIG_DFL;
+	sigemptyset(&default_action.sa_mask);
+	sigaction(sig, &default_action, nullptr);
 	raise(sig);
 }
 
@@ -163,7 +166,7 @@ void orbis_exec_probe_fault(int sig, siginfo_t* info, void* context)
 {
 	// The probe runs while the frontend and other emulator threads already exist. A fault in another
 	// thread must still reach the process's real crash handler; only the probing thread may longjmp.
-	if (s_orbis_exec_probe_active && pthread_equal(pthread_self(), s_orbis_exec_probe_thread))
+	if (s_orbis_exec_probe_active && s_orbis_exec_probe_thread_active)
 		siglongjmp(s_orbis_exec_probe_jump, 1);
 	orbis_exec_probe_chain(sig, info, context);
 }
@@ -175,7 +178,7 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 {
 	static const unsigned char ret_instruction[] = {0xC3};
 	pthread_mutex_lock(&s_orbis_exec_probe_mutex);
-	s_orbis_exec_probe_thread = pthread_self();
+	s_orbis_exec_probe_thread_active = 0;
 	s_orbis_exec_probe_active = 0;
 	struct sigaction action{};
 	action.sa_sigaction = orbis_exec_probe_fault;
@@ -191,9 +194,9 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 			sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
 		s_orbis_exec_probe_active = 0;
 		pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
-		printf("[dbg] memmap: executable probe handlers refused; assuming the mapping executes\n");
+		printf("[dbg] memmap: executable probe handlers refused; rejecting the mapping\n");
 		fflush(stdout);
-		return true;
+		return false;
 	}
 	volatile sig_atomic_t ok = 0;
 	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
@@ -202,6 +205,7 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 		// installation and arming still chains to the process's real crash handler. Probe the
 		// first, middle, and last pages rather than assuming offset zero represents the whole
 		// multi-megabyte direct-memory mapping.
+		s_orbis_exec_probe_thread_active = 1;
 		s_orbis_exec_probe_active = 1;
 		const size_t page = 0x1000;
 		size_t offsets[3] = {0, (size / 2) & ~(page - 1), size >= page ? size - page : 0};
@@ -217,6 +221,7 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 	sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
 	sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
 	s_orbis_exec_probe_active = 0;
+	s_orbis_exec_probe_thread_active = 0;
 	pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
 	return ok != 0;
 }
@@ -225,6 +230,11 @@ bool orbis_probe_executable_memory(void* mem, size_t size)
 
 bool SysMemory::AllocateMemoryMap()
 {
+	// Reset() can preallocate before the CPU thread's Allocate() in the Orbis boot flow.
+	// The map is only published after complete success, so an existing pair is a valid map.
+	if (s_data_memory && s_code_memory)
+		return true;
+
 	Console.WriteLn("[dbg] memmap: MainSize=%u CodeSize=%u", HostMemoryMap::MainSize, HostMemoryMap::CodeSize);
 	// Orbis: DATA in kernel direct memory (separate region - thread stacks can
 	// never overlap it; validated by ProsperoAI's direct-memory allocation).
@@ -325,14 +335,19 @@ bool SysMemory::AllocateMemoryMap()
 				fflush(stdout);
 				rcc2 = -1;
 				bool phys2_owned = rcc == 0;
+				bool code_mapped = false;
 #ifdef ORBIS_PS4
 				// PS4: never accept a non-executable fallback. Try both direct-memory permission
 				// transitions (initial RWX, then RW promoted with mprotect) and prove execution before use.
 				if (rcc == 0)
+				{
 					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x07, 0, phys2, align);
+					code_mapped = rcc2 == 0;
+				}
 				if (rcc2 != 0 && rcc == 0)
 				{
 					const int rw_map = sceKernelMapDirectMemory((void**)&code, code_size, 0x03, 0, phys2, align);
+					code_mapped = rw_map == 0;
 					const int rw_prot = rw_map == 0 ? sceKernelMprotect(code, code_size, 0x07) : -1;
 					printf("[dbg] memmap: fallback RW->mprotect code direct map rc=0x%x mprotect rc=0x%x\n", (unsigned)rw_map, (unsigned)rw_prot);
 					fflush(stdout);
@@ -352,7 +367,8 @@ bool SysMemory::AllocateMemoryMap()
 				}
 				else if (rcc == 0)
 				{
-					sceKernelMunmap(code, code_size);
+					if (code_mapped)
+						sceKernelMunmap(code, code_size);
 					sceKernelReleaseDirectMemory(phys2, code_size);
 					phys2_owned = false;
 					rcc = -1;
@@ -380,7 +396,8 @@ bool SysMemory::AllocateMemoryMap()
 				g_orbis_data_size = main_size;
 				g_orbis_code_base = (unsigned long long)code;
 				g_orbis_code_size = code_size;
-				Console.WriteLn("[dbg] memmap: data=%p (direct) code=%p (flexible)", (void*)s_data_memory, (void*)s_code_memory);
+				Console.WriteLn("[dbg] memmap: data=%p (direct) code=%p (%s)", (void*)s_data_memory, (void*)s_code_memory,
+					used_code_direct ? "direct" : "jit/shared");
 				HostMemoryMap::EEmem = (uptr)(s_data_memory + HostMemoryMap::EEmemOffset);
 				HostMemoryMap::IOPmem = (uptr)(s_data_memory + HostMemoryMap::IOPmemOffset);
 				HostMemoryMap::VUmem = (uptr)(s_data_memory + HostMemoryMap::VUmemOffset);
@@ -390,7 +407,7 @@ bool SysMemory::AllocateMemoryMap()
 			sceKernelMunmap(data, main_size);
 			sceKernelReleaseDirectMemory(phys, main_size);
 		}
-		Console.WriteLn("[dbg] memmap: direct alloc failed, falling through");
+		Console.WriteLn("[dbg] memmap: direct memory initialization failed");
 	}
 	s_data_memory_file_handle = HostSys::CreateSharedMemory(HostSys::GetFileMappingName("pcsx2").c_str(), HostMemoryMap::MainSize);
 	if (!s_data_memory_file_handle)
