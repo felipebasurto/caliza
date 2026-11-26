@@ -131,6 +131,11 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     if ev.has("Failed to write MEC") or ev.has("Failed to replace MEC"):
         ev.warnings.append("mechacon-version persistence failure evidence present")
 
+    if ev.has("MDEC backing allocation failed"):
+        ev.failures.append("MDEC backing allocation failed; PS1-mode FMV decode cannot be correct in this run")
+    if ev.has("CDVD: sector cache allocation failed"):
+        ev.warnings.append("CDVD sector cache allocation failed; direct reads remain correct but streaming performance may degrade")
+
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(
         (" (left out)" in line or " (not added to scan)" in line) for line in ev.matching("network share ")

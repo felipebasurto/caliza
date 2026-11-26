@@ -133,6 +133,18 @@ def main() -> int:
         ok &= expect("savestate corruption is fatal", statecorrupt, (), 1,
                      "savestate corruption evidence present")
 
+        mdecfail = root / "mdecfail.log"
+        mdecfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                            "MDEC backing allocation failed; MDEC DMAs will complete without decoded data\n")
+        ok &= expect("MDEC backing failure is fatal", mdecfail, (), 1,
+                     "MDEC backing allocation failed")
+
+        cdvdcachefail = root / "cdvdcachefail.log"
+        cdvdcachefail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                 "CDVD: sector cache allocation failed; using direct reads only\n")
+        ok &= expect("CDVD cache backing failure warns without failing", cdvdcachefail, (), 0,
+                     "WARN CDVD sector cache allocation failed")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
