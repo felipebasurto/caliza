@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <cstdlib>
 #include "Common.h"
 
 #include "Mdec.h"
@@ -24,10 +25,40 @@ struct config_mdec
 };
 struct config_mdec Config;
 
-u32 mdecArr2[0x100000] = {0};
+// PS4 port (AI-assisted): ordinary PS2 sessions never use the PS1 MDEC decoder. Keep its two
+// 4 MiB staging buffers out of BSS and allocate stable zeroed backing only when the first MDEC DMA
+// needs it. needs proper testing with PS1-mode FMV and allocation-failure injection.
+static constexpr size_t MDEC_BUFFER_WORDS = 0x100000;
+static u32* mdecArr2 = nullptr;
+static u32* mdecMem = nullptr;
 
-u32 mdecMem[0x100000]; //watherver large size. //Memory only used to get DMA data and not really for anything else.
-	//Sould be optimized(the funcs. that use it) to read IOP RAM direcly.
+static bool mdecEnsureBacking()
+{
+	if (mdecArr2 && mdecMem)
+		return true;
+
+	u32* arr2 = static_cast<u32*>(std::calloc(MDEC_BUFFER_WORDS, sizeof(u32)));
+	u32* mem = static_cast<u32*>(std::calloc(MDEC_BUFFER_WORDS, sizeof(u32)));
+	if (!arr2 || !mem)
+	{
+		std::free(arr2);
+		std::free(mem);
+		static bool reported = false;
+		if (!reported)
+		{
+			reported = true;
+			Console.Error("MDEC backing allocation failed; MDEC DMAs will complete without decoded data");
+		}
+		return false;
+	}
+
+	mdecArr2 = arr2;
+	mdecMem = mem;
+	if (!mdec.rl)
+		mdec.rl = reinterpret_cast<u16*>(mem);
+	return true;
+}
+
 #define PSXM(x) ((uptr)mdecMem + x)
 
 
@@ -170,7 +201,7 @@ void mdecInit(void)
 
 	Config.Mdec = 0; //XXXXXXXXXXXXXXXXX  0 or 1 // 1 is black and white decoding
 
-	mdec.rl = (u16*)PSXM(0);
+	mdec.rl = mdecMem ? (u16*)PSXM(0) : nullptr;
 	//mdec.rl = (u16*)&psxM[0x100000];
 	mdec.command = 0;
 	mdec.status = 0;
@@ -233,6 +264,12 @@ void psxDma0(u32 adr, u32 bcr, u32 chcr)
 		Console.Error("psxDma0 DMA transfer overflow !");
 		return;
 	}
+	if (!mdecEnsureBacking())
+	{
+		HW_DMA0_CHCR &= ~0x01000000;
+		psxDmaInterrupt(0);
+		return;
+	}
 
 	for (int i = 0; i < (size); i++)
 	{
@@ -274,6 +311,12 @@ void psxDma1(u32 adr, u32 bcr, u32 chcr)
 	{
 		// Need to investigate what happen if the transfer is huge
 		Console.Error("psxDma1 DMA transfer overflow !");
+		return;
+	}
+	if (!mdecEnsureBacking())
+	{
+		HW_DMA1_CHCR &= ~0x01000000;
+		psxDmaInterrupt(1);
 		return;
 	}
 

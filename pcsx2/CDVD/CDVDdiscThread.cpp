@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <queue>
@@ -39,7 +40,34 @@ static std::atomic<bool> cdvd_is_open;
 #define CACHE_SIZE 8
 
 static constexpr u32 CacheSize = 1U << CACHE_SIZE;
-static SectorInfo Cache[CacheSize];
+
+// PS4 port (AI-assisted): keep the 9.6 MiB sector cache out of the ELF's BSS. It is still
+// allocated for normal emulation, but allocation failure can use the existing direct-read path
+// instead of making the whole port impossible to load in a tight bigapp memory budget.
+// needs proper testing with streaming-heavy games and allocation-failure injection.
+static SectorInfo* Cache = nullptr;
+static bool s_cache_allocation_failed = false;
+
+// s_cache_lock must be held. The cache is optional for logical correctness: every caller already
+// has a direct-read fallback when a lookup misses.
+static bool cdvdCacheEnsure()
+{
+	if (Cache)
+		return true;
+	if (s_cache_allocation_failed)
+		return false;
+
+	Cache = static_cast<SectorInfo*>(std::calloc(CacheSize, sizeof(SectorInfo)));
+	if (!Cache)
+	{
+		s_cache_allocation_failed = true;
+		fprintf(stderr, "CDVD: sector cache allocation failed; using direct reads only\n");
+		return false;
+	}
+	for (u32 i = 0; i < CacheSize; i++)
+		Cache[i].lsn = std::numeric_limits<u32>::max();
+	return true;
+}
 
 static u32 cdvdSectorHash(u32 lsn)
 {
@@ -61,6 +89,8 @@ static u32 cdvdSectorHash(u32 lsn)
 static void cdvdCacheUpdate(u32 lsn, u8* data)
 {
 	std::lock_guard<std::mutex> guard(s_cache_lock);
+	if (!cdvdCacheEnsure())
+		return;
 	u32 entry = cdvdSectorHash(lsn);
 
 	memcpy(Cache[entry].data, data, 2352 * sectors_per_read);
@@ -70,6 +100,8 @@ static void cdvdCacheUpdate(u32 lsn, u8* data)
 static bool cdvdCacheCheck(u32 lsn)
 {
 	std::lock_guard<std::mutex> guard(s_cache_lock);
+	if (!cdvdCacheEnsure())
+		return false;
 	u32 entry = cdvdSectorHash(lsn);
 
 	return Cache[entry].lsn == lsn;
@@ -78,6 +110,8 @@ static bool cdvdCacheCheck(u32 lsn)
 static bool cdvdCacheFetch(u32 lsn, u8* data)
 {
 	std::lock_guard<std::mutex> guard(s_cache_lock);
+	if (!cdvdCacheEnsure())
+		return false;
 	u32 entry = cdvdSectorHash(lsn);
 
 	if (Cache[entry].lsn == lsn)
@@ -92,6 +126,8 @@ static bool cdvdCacheFetch(u32 lsn, u8* data)
 static void cdvdCacheReset()
 {
 	std::lock_guard<std::mutex> guard(s_cache_lock);
+	if (!Cache)
+		return;
 	for (u32 i = 0; i < CacheSize; i++)
 	{
 		Cache[i].lsn = std::numeric_limits<u32>::max();
