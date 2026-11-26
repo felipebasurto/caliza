@@ -165,6 +165,13 @@ constexpr const char* kCoverUrl = "https://raw.githubusercontent.com/xlenore/ps2
 class AudioOut
 {
 public:
+	~AudioOut()
+	{
+		// A joinable std::thread member destroyed without Stop() would terminate the process.
+		// Stop() is idempotent after a prior join/detach because the shared handle is reset.
+		Stop();
+	}
+
 	bool Start(Mixer* mixer)
 	{
 		const int init = sceAudioOutInit(); // PCSX2's output calls it again later and ignores the error
