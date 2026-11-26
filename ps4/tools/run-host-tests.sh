@@ -17,6 +17,7 @@ run_cpp test_kbm_map ps5/coreorbis/tests/kbm/test_kbm_map.cpp -I"$ROOT/ps5/coreo
 run_cpp test_pad_map ps5/coreorbis/tests/padmap/test_pad_map.cpp -I"$ROOT/ps5/coreorbis/orbis-shims"
 run_cpp test_texture_roots ps5/coreorbis/tests/textures/textures_test.cpp -I"$ROOT/ps5/coreorbis/orbis-shims"
 run_cpp test_wsi_decision ps4/tests/test_wsi_decision.cpp -I"$ROOT/ps4/include"
+run_cpp test_spu2_pcm_cache ps4/tests/test_spu2_pcm_cache.cpp
 run_py package_stage_validator ps4/tools/test_validate_package_stage.py
 run_py savestate_validator ps4/tools/test_validate_savestate.py
 run_py console_log_analyzer ps4/tools/test_analyze_console_logs.py
