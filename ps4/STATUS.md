@@ -98,7 +98,7 @@ Last updated: 2026-11-26 after commit `364adfd`; binary artifact validated at th
 | P1-FAULTS | Concurrent page-fault handling | implemented, console-unverified | only same-thread handler re-entry is fatal; concurrent faults on other EE/IOP/VU/GS threads now serialize through the handler instead of killing the process |
 | P1-WSI-DECIDE | WSI decision logic testability | implemented/host-tested | pure acquire/flip decision helpers extracted without behavior change; host tests pin round-robin availability, scanout reuse, fallback, and sign semantics |
 | P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
-| P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second |
+| P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second, host-side input dedup caches invalidate when PCSX2 recreates/resets pad objects |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
 | P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/PCSX2/flags/usbkbm` opts in; disconnect/read-failure release logic added |
 | P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry |
@@ -110,11 +110,11 @@ Last updated: 2026-11-26 after commit `364adfd`; binary artifact validated at th
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at commit `364adfd` (includes the RW-only fallback invariant from `3882a5f`):
+Built in the Linux x86_64 OpenOrbis container at the current uncommitted pad-generation fix (includes the RW-only fallback invariant from `3882a5f`):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,095,672 bytes**, SHA-256 `5bcf0ded417dc3985d4499fabbb4141377f36fc99a75c0b58308c5ee30de7c02`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `ac65690bebd5e9b51248684d2445fd0a99a5bc4e979cab9e84c8d32c5b76b28e`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `b8ee9286ad9fc497efd42ce6d38e290b4bc949a13d89a16c38dc5fa90eead290`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,097,584 bytes**, SHA-256 `8121ca845466aa9173b9d2a626dede2ff06e9802e26544f6faa3d24fe4a7b982`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `116848796319e7dcf002295027ed8ae0f44fc2f9873f090630f7a4d9704af26a`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `b5f4605ac489e6e5f6bbb126bbc5de31ffe503aa18b4a77c6e50a2a6a9e30225`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -126,11 +126,11 @@ Built in the Linux x86_64 OpenOrbis container at commit `364adfd` (includes the 
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate64-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate69-pad-generation.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current `364adfd` package is `candidate65/66` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-runner.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current pad-generation package is `candidate69` evidence |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-pad-generation.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |

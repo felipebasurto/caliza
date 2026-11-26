@@ -27,6 +27,7 @@
 
 #include "fmt/format.h"
 
+#include <atomic>
 #include <vector>
 
 //Map of actively pressed keys so that chords work
@@ -57,6 +58,7 @@ namespace Pad
 	static std::array<std::array<MacroButton, NUM_MACRO_BUTTONS_PER_CONTROLLER>, NUM_CONTROLLER_PORTS> s_macro_buttons;
 	static std::array<std::unique_ptr<PadBase>, NUM_CONTROLLER_PORTS> s_controllers;
 	static std::mutex s_orbis_pad_mutex; // Orbis: pad input thread vs controller (re)creation
+	static std::atomic<unsigned> s_controller_generation{0}; // Orbis: invalidates host-side input dedup caches
 
 	bool mtapPort0LastState;
 	bool mtapPort1LastState;
@@ -72,6 +74,12 @@ void Pad::Shutdown()
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	for (auto& port : s_controllers)
 		port.reset();
+	s_controller_generation.fetch_add(1, std::memory_order_release);
+}
+
+unsigned Pad::GetControllerGeneration()
+{
+	return s_controller_generation.load(std::memory_order_acquire);
 }
 
 const char* Pad::ControllerInfo::GetLocalizedName() const
@@ -530,6 +538,7 @@ PadBase* Pad::CreatePad(u8 unifiedSlot, ControllerType controllerType, size_t ej
 			break;
 	}
 
+	s_controller_generation.fetch_add(1, std::memory_order_release);
 	return s_controllers[unifiedSlot].get();
 }
 
@@ -562,7 +571,11 @@ void Pad::SetControllerState(u32 controller, u32 bind, float value)
 
 void Pad::ResetControllerInputs(u32 controller)
 {
-	if (controller >= NUM_CONTROLLER_PORTS || !HasConnectedPad(controller))
+	if (controller >= NUM_CONTROLLER_PORTS)
+		return;
+
+	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
+	if (!HasConnectedPad(controller))
 		return;
 
 	for (InputBindingInfo binding : s_controllers[controller]->GetInfo().bindings)
@@ -578,6 +591,7 @@ void Pad::ResetControllerInputs(u32 controller)
 				break;
 		}
 	}
+	s_controller_generation.fetch_add(1, std::memory_order_release);
 }
 
 void Pad::ResetAllControllerInputs()

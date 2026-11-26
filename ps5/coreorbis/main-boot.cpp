@@ -644,6 +644,12 @@ struct OrbisPadPort
   uint8_t last_stick[4] = {128, 128, 128, 128};
 };
 
+static void orbis_pad_reset_cache(OrbisPadPort &p)
+{
+  std::fill(std::begin(p.last_value), std::end(p.last_value), 0.0f);
+  p.last_stick[0] = p.last_stick[1] = p.last_stick[2] = p.last_stick[3] = 128;
+}
+
 // vk-285-109: whether the controller behind a handle is connected: the byte 76 bytes into the pad data (after
 // the buttons, sticks, triggers, padding, quaternion, velocity, acceleration and touch data; ScePadData's
 // "connected", which the PS5 SDL port reads as PS5_PadData.connected). A second user often stays logged in
@@ -833,11 +839,20 @@ static void *orbis_pad_thread(void *)
     orbis_pad_rumble_mode(extra[i].handle, who); // vk-285-117
   }
   unsigned reads = 0;
+  unsigned pad_generation = ~0u;
   bool port1_connected_seen = false;
   bool extra_connected_seen[3] = {};
   bool port1_layout_logged = false;
   for (;;)
   {
+    const unsigned new_pad_generation = Pad::GetControllerGeneration();
+    if (new_pad_generation != pad_generation)
+    {
+      pad_generation = new_pad_generation;
+      orbis_pad_reset_cache(port1);
+      for (OrbisPadPort &px : extra)
+        orbis_pad_reset_cache(px);
+    }
     if (handle < 0 && user >= 0 && rc_pi == 0 && (reads % 250u) == 0u)
     {
       int retry = scePadOpen(user, 0, 0, nullptr);
