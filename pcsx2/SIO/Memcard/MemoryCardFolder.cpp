@@ -58,12 +58,21 @@ static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
 }
 
 /// A helper function to write a YAML file
-static void SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
+static bool SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
 {
-	auto file = FileSystem::OpenCFile(filename, "w");
+	std::FILE* file = FileSystem::OpenCFile(filename, "w");
+	if (!file)
+	{
+		Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", filename);
+		return false;
+	}
 	ryml::emit_yaml(node, file);
-	std::fflush(file);
-	std::fclose(file);
+	bool ok = std::fflush(file) == 0;
+	if (std::fclose(file) != 0)
+		ok = false;
+	if (!ok)
+		Console.ErrorFmt("FolderMcd: metadata write failed; could not flush/close '{}'", filename);
+	return ok;
 }
 
 static auto last = std::chrono::time_point<std::chrono::system_clock>();
@@ -2275,9 +2284,21 @@ void FileAccessHelper::WriteMetadata(const std::string_view folderName, const Me
 			FileSystem::CreateDirectoryPath(metaDirName.c_str(), false);
 		}
 
-		auto metaFile = FileSystem::OpenManagedCFile(metaFileName.c_str(), "wb");
-		if (metaFile)
-			std::fwrite(entry->raw, sizeof(entry->raw), 1, metaFile.get());
+		std::FILE* metaFile = FileSystem::OpenCFile(metaFileName.c_str(), "wb");
+		if (!metaFile)
+		{
+			Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", metaFileName);
+		}
+		else
+		{
+			bool ok = std::fwrite(entry->raw, sizeof(entry->raw), 1, metaFile) == 1;
+			if (std::fflush(metaFile) != 0)
+				ok = false;
+			if (std::fclose(metaFile) != 0)
+				ok = false;
+			if (!ok)
+				Console.ErrorFmt("FolderMcd: metadata write failed; could not write/flush '{}'", metaFileName);
+		}
 	}
 	else
 	{

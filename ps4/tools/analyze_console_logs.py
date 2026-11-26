@@ -152,6 +152,9 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     folder_close_failures = sum("FolderMcd:" in line and "failed to close" in line for line in ev.lines)
     if folder_close_failures:
         ev.failures.append(f"folder memory-card close failure evidence present in {folder_close_failures} line(s); flushed save data may not have reached storage")
+    folder_metadata_failures = sum("FolderMcd: metadata write failed" in line for line in ev.lines)
+    if folder_metadata_failures:
+        ev.warnings.append(f"folder memory-card metadata write failure evidence present in {folder_metadata_failures} line(s); save ordering/timestamps may be incomplete")
     if ev.has("Failed to save NVRAM"):
         ev.warnings.append("NVRAM save failure evidence present; settings may be lost on exit")
     if ev.has("Failed to write MEC") or ev.has("Failed to replace MEC"):
