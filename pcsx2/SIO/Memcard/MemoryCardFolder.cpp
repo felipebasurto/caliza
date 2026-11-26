@@ -90,7 +90,7 @@ static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const cha
 
 static bool WriteBinaryFileAtomically(const std::string& fileName, const void* data, const size_t size)
 {
-	const std::string tempFileName = fileName + ".tmp";
+	const std::string tempFileName = MetadataTempFileName(fileName);
 	std::FILE* file = FileSystem::OpenCFile(tempFileName.c_str(), "wb");
 	bool ok = file != nullptr;
 	if (file)
@@ -108,7 +108,7 @@ static bool WriteBinaryFileAtomically(const std::string& fileName, const void* d
 /// A helper function to write a YAML file
 static bool SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
 {
-	const std::string tempFileName = std::string(filename) + ".tmp";
+	const std::string tempFileName = MetadataTempFileName(filename);
 	std::FILE* file = FileSystem::OpenCFile(tempFileName.c_str(), "w");
 	if (!file)
 	{
