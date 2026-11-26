@@ -249,7 +249,7 @@ void Host::RequestVMShutdown(bool allow_confirm, bool allow_save_state, bool def
 // vsync on the CPU thread as PCSX2's hotkeys run through RunOnCPUThread. vk-285-48: 3 = back to the
 // menu (the port's main-boot.cpp stops the VM and re-executes the app into its frontend).
 std::atomic<int> g_orbis_state_request{0};
-extern std::atomic<int> g_orbis_fast_speed; // vk-285-118 (main-boot.cpp): Zeruko/FastSpeed
+extern std::atomic<int> g_orbis_fast_speed; // vk-285-118 (main-boot.cpp): Caliza/FastSpeed
 extern std::atomic<int> g_orbis_rb_auto_request; // vk-285-118 (GSRenderer.cpp OrbisReadbackAutoSecond)
 void OrbisReadbackAutoCpu(); // vk-285-118 (main-boot.cpp)
 void OrbisOSDLabel(const char* text);
@@ -345,7 +345,7 @@ void Host::PumpMessagesOnCPUThread()
 	else if (req == 4)
 	{
 		// vk-285-118 (AI-assisted): fast forward on or off (the Controls tab's fast forward combo, experimental: for skipping
-		// videos). Zeruko/FastSpeed: 0 as fast as the console runs it (Unlimited), 2..8 that many times full speed (Turbo).
+		// videos). Caliza/FastSpeed: 0 as fast as the console runs it (Unlimited), 2..8 that many times full speed (Turbo).
 		if (VMManager::GetLimiterMode() != LimiterModeType::Nominal)
 		{
 			VMManager::SetLimiterMode(LimiterModeType::Nominal);

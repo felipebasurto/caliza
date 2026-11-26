@@ -16,7 +16,7 @@ if [ -z "$out" ] || [ -z "${PS4_HOST:-}" ]; then
     exit 2
 fi
 case "${PS4_LOG_ROOT:-caliza}" in
-    caliza) log_root=/data/zeruko ;;
+    caliza) log_root=/data/caliza ;;
     legacy) log_root=/data/PCSX2 ;;
     *) echo "PS4_LOG_ROOT must be caliza or legacy" >&2; exit 2 ;;
 esac

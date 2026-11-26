@@ -1,11 +1,11 @@
-# Zeruko Brand Identity
+# Caliza Brand Identity
 Status: recommended consumer identity for the native PS4 homebrew emulator port. Research date: 2026-11-26; practical naming research, not legal advice or a trademark clearance opinion.
 
 ## 1. Naming
 ### Decision
-**Use `Zeruko` as the product name.**
-Say it **zeh-ROO-koh**. It is short, crisp, and works in both English and Spanish. It is three syllables rather than the preferred two, but it wins decisively on distinctiveness: meaningful two-syllable candidates were already crowded, while Zeruko is ownable, easy to spell after one hearing, and has no exact emulator, console-homebrew, or significant game-software collision found in this research.
-`Zeruko` is a [Basque word](https://hiztegiak.elhuyar.eus/es/celestial) meaning **celestial / of the sky**. That gives the brand a quiet orbital association without copying Sony's Orbis hardware codename. It also fits the emotional promise: an old game library lifted out of storage and placed back on the living-room screen.
+**Use `Caliza` as the product name.**
+Say it **zeh-ROO-koh**. It is short, crisp, and works in both English and Spanish. It is three syllables rather than the preferred two, but it wins decisively on distinctiveness: meaningful two-syllable candidates were already crowded, while Caliza is ownable, easy to spell after one hearing, and has no exact emulator, console-homebrew, or significant game-software collision found in this research.
+`Caliza` is a [Basque word](https://hiztegiak.elhuyar.eus/es/celestial) meaning **celestial / of the sky**. That gives the brand a quiet orbital association without copying Sony's Orbis hardware codename. It also fits the emotional promise: an old game library lifted out of storage and placed back on the living-room screen.
 ### Brand line
 - English: **Your classics, back in orbit.**
 - Spanish: **Tus clásicos, de nuevo en órbita.**
@@ -14,24 +14,24 @@ Use the line in documentation, release notes, and splash artwork. Do not bake it
 Exactly three finalists were retained. Searches combined the exact quoted name with terms such as `software`, `app`, `game`, `emulator`, `console`, and `homebrew`, followed by targeted GitHub and PS4-homebrew-scene checks. Search results can change and absence of evidence is not evidence of absence.
 | Candidate | Pronunciation | Meaning / story | Collision findings | Risk | Verdict |
 |---|---|---|---|---|---|
-| **Zeruko** | zeh-ROO-koh | Basque-derived “celestial”; sky, orbit, blue boot-light atmosphere | No exact emulator/homebrew product or significant commercial software product found. Results were weak: an unofficial fan-made world for the old game *Creatures* ([Creatures Wiki](https://creatures.wiki/Zeruko)) and player handles. `zeruko.com` appears occupied by unrelated non-software use, so do not depend on that exact domain. | **Low-to-moderate** | **Primary recommendation** |
+| **Caliza** | zeh-ROO-koh | Basque-derived “celestial”; sky, orbit, blue boot-light atmosphere | No exact emulator/homebrew product or significant commercial software product found. Results were weak: an unofficial fan-made world for the old game *Creatures* ([Creatures Wiki](https://creatures.wiki/Caliza)) and player handles. `caliza.com` appears occupied by unrelated non-software use, so do not depend on that exact domain. | **Low-to-moderate** | **Primary recommendation** |
 | **Orbel** | OR-bel | Coined from orbital imagery; sounds like a small object circling a light | No game or emulator product found, but Orbel Ingeniería is an active industrial robotics company with its own Orbel System Manager software ([orbelgrupo.com](https://www.orbelgrupo.com/press/)), and `orbel.io` is a personal software portfolio. | **Moderate** | Alternate |
 | **Reorb** | ree-ORB | “Return to orbit”: direct nostalgia/motion meaning | Only small/noncommercial collisions surfaced: a Ludum Dare tower-defense game ([ReOrb](https://jamludumdare.com/events/ludum-dare/46/reorb)) and old/current hobby repositories. No major commercial product found. The final `rb` cluster is awkward in Spanish, and orbit-derived naming is crowded in PS4 homebrew culture. | **Low-to-moderate legally, moderate linguistically** | Alternate |
-### Why Zeruko wins
-1. **Distinct in the actual niche.** No exact match was found among PS4 homebrew emulator names or in direct emulator searches. The scene already contains DuckStation, Flycast, PPSSPP, RetroArchV, GB-JIT, NPS64, PCPS4, EmuSuNi, NX on Orbis, and Orbis Eden; Zeruko does not collide with any of them.
+### Why Caliza wins
+1. **Distinct in the actual niche.** No exact match was found among PS4 homebrew emulator names or in direct emulator searches. The scene already contains DuckStation, Flycast, PPSSPP, RetroArchV, GB-JIT, NPS64, PCPS4, EmuSuNi, NX on Orbis, and Orbis Eden; Caliza does not collide with any of them.
 2. **Safer than orbit-first names.** During elimination, obvious orbit/emotion/constellation names repeatedly collided with existing software or emulators. Examples checked and rejected included Orvo, Orbito, Orbem, Orbyx, Vela, Chroma, Neso, Lume, Leda, Pyxis, Indigo, and Ankaa/Anka-adjacent forms. Several were direct emulator or homebrew collisions.
 3. **More ownable than common celestial words.** It is rare enough to search for, but still pronounceable and only six letters.
 4. **No Sony-derived prefix or mark.** It does not use `PS`, `PlayStation`, `Orbis`, `Prospero`, or a Sony-like product-family structure.
 5. **Bilingual in practice.** The vowels are stable across English and Spanish, and the central `u` prevents the English/Spanish vowel drift seen in names such as Hoshi, Avior, or Lyra.
 ### Digital availability plan
-- Treat `zeruko.com` as unavailable or impractical.
-- Recommended canonical GitHub namespace: **`github.com/zerukoemu/zeruko`**. A targeted exact search for `zerukoemu` found no project using that namespace, but GitHub indexing is not a reservation system. Create/verify the organization before announcing the name.
-- If a web domain is wanted later, prefer a compound such as `zerukoemu.org`, `zeruko-emulator.dev`, or `zerukoemu.dev`; verify availability at purchase time. Do not use a domain implying Sony affiliation.
+- Treat `caliza.com` as unavailable or impractical.
+- Recommended canonical GitHub namespace: **`github.com/calizaemu/caliza`**. A targeted exact search for `calizaemu` found no project using that namespace, but GitHub indexing is not a reservation system. Create/verify the organization before announcing the name.
+- If a web domain is wanted later, prefer a compound such as `calizaemu.org`, `caliza-emulator.dev`, or `calizaemu.dev`; verify availability at purchase time. Do not use a domain implying Sony affiliation.
 - Reserve the name only after a final trademark search in the intended distribution countries. Homebrew distribution is noncommercial, but software-class conflicts can still matter.
 
 ## 2. Visual identity
 ### Personality
-Zeruko should feel like a calm night-sky shelf: precise, quiet, welcoming, and a little magical. It must not imitate Sony system software, the PlayStation logo, XMB waves, controller-symbol iconography, or PCSX2's logo.
+Caliza should feel like a calm night-sky shelf: precise, quiet, welcoming, and a little magical. It must not imitate Sony system software, the PlayStation logo, XMB waves, controller-symbol iconography, or PCSX2's logo.
 Three personality words: **clear**, **weightless**, **reassuring**.
 ### Color palette
 Designed for a dark 10-foot interface. Contrast ratios below are against Void Navy unless noted.
@@ -40,14 +40,14 @@ Designed for a dark 10-foot interface. Contrast ratios below are against Void Na
 | Void Navy | `#080B1A` | Main background | Deep blue-black, not pure black; avoids OLED smearing and harsh contrast. |
 | Nebula Indigo | `#101A36` | Panels, side sheets, paused-game backdrop | Main elevated surface. |
 | Shelf Graphite | `#1A2340` | Tiles, inactive cards, separators | Keep borders subtle; use luminance steps rather than heavy outlines. |
-| Zeruko Blue | `#4DA3FF` | Focus ring, primary action, selected state | 7.45:1 on Void Navy. Use Void Navy text/icons on filled blue. |
+| Caliza Blue | `#4DA3FF` | Focus ring, primary action, selected state | 7.45:1 on Void Navy. Use Void Navy text/icons on filled blue. |
 | Aurora Violet | `#8B5CFF` | Secondary accents, enhancement badges | 4.73:1; use for large text/icons only, not dense body copy. |
 | Phosphor Teal | `#42E8D4` | Success, “tuned”, healthy status | 12.79:1. Use sparingly so success remains meaningful. |
 | Warm Amber | `#FFBF47` | Caution, storage low, experimental features | 11.92:1. Pair with an icon or label; never color alone. |
 | Coral Red | `#FF5D73` | Errors and destructive actions | 6.58:1. Reserve for real errors; do not use decoratively. |
 | Text White | `#F4F7FF` | Primary text | 18.26:1 on Void Navy. |
 | Muted Text | `#A9B4D0` | Secondary text and metadata | 9.44:1 on Void Navy. |
-Recommended proportions: 65% Void Navy/Nebula Indigo, 20% Shelf Graphite, 10% Zeruko Blue, 4% Aurora Violet, 1% status colors. Keep gradients very subtle; flat panels photograph better on televisions.
+Recommended proportions: 65% Void Navy/Nebula Indigo, 20% Shelf Graphite, 10% Caliza Blue, 4% Aurora Violet, 1% status colors. Keep gradients very subtle; flat panels photograph better on televisions.
 ### Typography
 - **Interface:** Inter, with Noto Sans as the multilingual fallback. Both are openly licensed and have strong screen rendering. Use Medium or SemiBold for shelf and menu labels; avoid thin weights.
 - **Wordmark:** custom lettering based on the geometry of Space Grotesk or Inter, then manually adjusted. Do not simply type the name in a recognizable font and call it a logo.
@@ -88,7 +88,7 @@ Execution rules:
 6. **The shelf is the product.** Settings support the shelf; they do not compete with it.
 ### Home layout
 ```text
-Zeruko                                             Storage 42%
+Caliza                                             Storage 42%
 Continue
 
       [small cover] [small cover] [ LARGE COVER ] [small cover]
@@ -165,7 +165,7 @@ Recommended labels:
 Button label: **Tune for this game**
 First-run explanation:
 ```text
-Zeruko will try a few safe performance and picture settings for this game.
+Caliza will try a few safe performance and picture settings for this game.
 Your normal settings are kept. You can stop at any time, and you can undo
 the recommended setup afterwards.
 ```
@@ -208,8 +208,8 @@ Technical terms can appear parenthetically after the plain term when needed for 
 Target: fewer than four required decisions, and no account creation.
 1. **Welcome and language.** Show `English` and `Español` first; more languages can follow. Default to the console language when detectable.
 2. **Controller check.** Ask the user to press Cross once. If input works, continue automatically after a short confirmation.
-3. **Console startup files.** Explain that Zeruko does not include them. Show the exact folder `/data/zeruko/bios/` and a `Scan again` action. Allow the user to continue and finish this later.
-4. **Games.** Show the default folder `/data/zeruko/games/` plus optional network-folder setup. Provide `Scan for games` and `I will do this later`.
+3. **Console startup files.** Explain that Caliza does not include them. Show the exact folder `/data/caliza/bios/` and a `Scan again` action. Allow the user to continue and finish this later.
+4. **Games.** Show the default folder `/data/caliza/games/` plus optional network-folder setup. Provide `Scan for games` and `I will do this later`.
 5. **Scanning.** Show count and current folder, not raw mount details. Let scanning continue in the background after the first usable game appears.
 6. **First success.** Highlight the first ready game with one line: `Press Cross to play.` Do not force the user through tuning.
 7. **Optional tune offer.** After the first successful launch, offer tuning once. If dismissed, do not nag on every launch.
@@ -217,19 +217,19 @@ The first boot may mention legal responsibility in plain language, but do not us
 ### Required empty/error copy
 Use close variants of these strings:
 ```text
-Zeruko needs console startup files from your own PlayStation 2.
-Copy them to /data/zeruko/bios/, then choose Scan again.
+Caliza needs console startup files from your own PlayStation 2.
+Copy them to /data/caliza/bios/, then choose Scan again.
 ```
 ```text
 No games found yet.
-Copy game files you legally own to /data/zeruko/games/, then choose Scan again.
+Copy game files you legally own to /data/caliza/games/, then choose Scan again.
 ```
 ```text
 This game file is missing.
 It may have been moved, renamed, or removed. Choose Scan for games to update the shelf.
 ```
 ```text
-Zeruko is running low on storage.
+Caliza is running low on storage.
 Free some space before copying memory cards, covers, or HD artwork.
 ```
 ```text
@@ -251,49 +251,49 @@ The source headers in this tree use `SPDX-License-Identifier: GPL-3.0+`; use mod
 ### Exact in-app About text
 Use this block verbatim in **Help / About / License**, replacing only the version line as versions change:
 ```text
-Zeruko is free software based on PCSX2 and contains modified PCSX2 code.
+Caliza is free software based on PCSX2 and contains modified PCSX2 code.
 Copyright (C) 2002-2026 PCSX2 Dev Team and contributors.
 
-Zeruko is licensed under the GNU General Public License version 3 or later
+Caliza is licensed under the GNU General Public License version 3 or later
 (SPDX: GPL-3.0-or-later). This program comes with ABSOLUTELY NO WARRANTY.
 This is free software, and you are welcome to redistribute it under certain
 conditions. See COPYING.GPLv3 or the source repository for details.
 
-Source code: https://github.com/felipebasurto/zeruko
+Source code: https://github.com/felipebasurto/caliza
 
 PCSX2 is used under the terms of its license. The PCSX2 project does not
-endorse Zeruko. PlayStation, PS2 and PS4 are trademarks of Sony Interactive
-Entertainment. Zeruko is not affiliated with, endorsed by, or sponsored by
+endorse Caliza. PlayStation, PS2 and PS4 are trademarks of Sony Interactive
+Entertainment. Caliza is not affiliated with, endorsed by, or sponsored by
 Sony Interactive Entertainment.
 
 No BIOS files, games, keys, firmware, or other proprietary console data are
-included with Zeruko.
+included with Caliza.
 ```
 ### Exact package/installer short notice
 Use this where only one short paragraph fits:
 ```text
-Zeruko is based on modified PCSX2 code, licensed GPL-3.0-or-later.
-Source: https://github.com/felipebasurto/zeruko — No BIOS, games or keys included.
+Caliza is based on modified PCSX2 code, licensed GPL-3.0-or-later.
+Source: https://github.com/felipebasurto/caliza — No BIOS, games or keys included.
 ```
 ### Exact GitHub README attribution section
 Use this verbatim as the README `Licence and attribution` section:
 ```markdown
 ## Licence and attribution
 
-Zeruko is based on [PCSX2](https://github.com/PCSX2/pcsx2) and contains
+Caliza is based on [PCSX2](https://github.com/PCSX2/pcsx2) and contains
 modified PCSX2 code. PCSX2 is copyright 2002-2026 the PCSX2 Dev Team and
-contributors. Zeruko is licensed under the GNU General Public License version
+contributors. Caliza is licensed under the GNU General Public License version
 3 or later (`GPL-3.0-or-later`); see [COPYING.GPLv3](COPYING.GPLv3).
 
-Zeruko also incorporates or builds upon work from
+Caliza also incorporates or builds upon work from
 [PS5SX2](https://github.com/Swordpdf/PS5SX2), the
 [OpenOrbis PS4 toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain),
 [Mesa](https://www.mesa3d.org/) RADV, and optional paraLLEl-GS components.
 See the credits and third-party notices for their respective licenses.
 
 The PCSX2 name is used only to identify the upstream project; the PCSX2
-project does not endorse Zeruko. PlayStation, PS2 and PS4 are trademarks of
-Sony Interactive Entertainment. Zeruko is independent homebrew and is not
+project does not endorse Caliza. PlayStation, PS2 and PS4 are trademarks of
+Sony Interactive Entertainment. Caliza is independent homebrew and is not
 affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment.
 
 No BIOS files, games, keys, firmware, or other proprietary console data are
@@ -308,13 +308,13 @@ included in this repository or its release packages.
 
 ## 5. Repository identity
 ### Canonical repository
-- **Organization/owner:** `zerukoemu` — *deferred: GitHub organizations can only be created in the web UI, so the initial canonical home is `github.com/felipebasurto/zeruko`. GitHub redirects transferred repositories automatically, so moving under a future `zerukoemu` organization will not break links baked into packages or the About screen.*
-- **Repository:** `zeruko`
-- **Canonical URL (initial):** `https://github.com/felipebasurto/zeruko`
-- **Display title:** `Zeruko`
+- **Organization/owner:** `calizaemu` — *deferred: GitHub organizations can only be created in the web UI, so the initial canonical home is `github.com/felipebasurto/caliza`. GitHub redirects transferred repositories automatically, so moving under a future `calizaemu` organization will not break links baked into packages or the About screen.*
+- **Repository:** `caliza`
+- **Canonical URL (initial):** `https://github.com/felipebasurto/caliza`
+- **Display title:** `Caliza`
 - **Short description:** `Couch-friendly PlayStation 2 emulator for jailbroken PlayStation 4 consoles, based on PCSX2.`
-- **README badge alt text:** `Zeruko`, not a Sony-like acronym.
-Verify the organization name before public announcement. If it is unavailable, use `zerukoemu` plus a controlled personal namespace rather than inventing a second product name.
+- **README badge alt text:** `Caliza`, not a Sony-like acronym.
+Verify the organization name before public announcement. If it is unavailable, use `calizaemu` plus a controlled personal namespace rather than inventing a second product name.
 ### GitHub topics
 Use these topics:
 ```text
@@ -335,12 +335,12 @@ Do not use topics that imply piracy, official Sony status, or commercial console
 Use this order:
 1. Logo/banner and one-sentence product description.
 2. Status warning: experimental, expected performance range, supported consoles.
-3. What Zeruko does in three bullets: shelf, gamepad-only control, per-game tuning.
+3. What Caliza does in three bullets: shelf, gamepad-only control, per-game tuning.
 4. What is not included: BIOS, games, keys, firmware, proprietary data.
 5. Requirements: jailbroken console capable of installing homebrew packages, own legally dumped startup files, own legally dumped game files.
-6. Install: package installation, `/data/zeruko/bios/`, `/data/zeruko/games/`, first scan.
+6. Install: package installation, `/data/caliza/bios/`, `/data/caliza/games/`, first scan.
 7. Controls: one small table with Cross/Circle/Triangle/Options.
-8. Storage layout: full `/data/zeruko/` tree.
+8. Storage layout: full `/data/caliza/` tree.
 9. Features: Smart tune, memory cards, HD artwork, extra in-between frames, network folders.
 10. Compatibility and performance expectations.
 11. Building from source.
@@ -349,52 +349,52 @@ Use this order:
 14. Licence and attribution (exact section above).
 ### Release naming
 - Git tag: `v0.1.0`, then semantic versions.
-- Release title: `Zeruko v0.1.0`
-- Package asset: `zeruko-v0.1.0-ps4.pkg`
-- Checksums asset: `zeruko-v0.1.0-SHA256SUMS.txt`
+- Release title: `Caliza v0.1.0`
+- Package asset: `caliza-v0.1.0-ps4.pkg`
+- Checksums asset: `caliza-v0.1.0-SHA256SUMS.txt`
 - Do not use `PS4SX2`, `PCSX2`, or a `PS` prefix in consumer-facing asset names.
 
 ## 6. Naming in code and on disk
 | Use | Exact value |
 |---|---|
-| Display name | `Zeruko` |
-| Lowercase machine name | `zeruko` |
-| Canonical repository | `zerukoemu/zeruko` |
-| Internal bundle identifier | `io.github.zerukoemu.zeruko` |
+| Display name | `Caliza` |
+| Lowercase machine name | `caliza` |
+| Canonical repository | `calizaemu/caliza` |
+| Internal bundle identifier | `io.github.calizaemu.caliza` |
 | PS4 title id prefix | `ZERU` |
 | Example PS4 title id | `ZERU00001` |
-| Package display title | `Zeruko` |
-| Data directory | `/data/zeruko/` |
-| BIOS directory | `/data/zeruko/bios/` |
-| Default games directory | `/data/zeruko/games/` |
-| Patch directory | `/data/zeruko/patches/` |
-| Cover/artwork cache | `/data/zeruko/covers/` |
-| Memory-card directory | `/data/zeruko/memcards/` |
-| Per-game settings directory | `/data/zeruko/gamesettings/` |
-| Log directory | `/data/zeruko/logs/` |
-| Log prefix | `[ZERUKO]` |
-| Config file stem | `zeruko` |
-| Temporary directory | `/data/zeruko/tmp/` |
-| Crash dump directory | `/data/zeruko/crashes/` |
-The platform may still require executable filenames such as `eboot.bin`; those are packaging details, not brand names. Internal process names and CMake targets may use lowercase `zeruko`, but user-facing strings must use `Zeruko`.
+| Package display title | `Caliza` |
+| Data directory | `/data/caliza/` |
+| BIOS directory | `/data/caliza/bios/` |
+| Default games directory | `/data/caliza/games/` |
+| Patch directory | `/data/caliza/patches/` |
+| Cover/artwork cache | `/data/caliza/covers/` |
+| Memory-card directory | `/data/caliza/memcards/` |
+| Per-game settings directory | `/data/caliza/gamesettings/` |
+| Log directory | `/data/caliza/logs/` |
+| Log prefix | `[CALIZA]` |
+| Config file stem | `caliza` |
+| Temporary directory | `/data/caliza/tmp/` |
+| Crash dump directory | `/data/caliza/crashes/` |
+The platform may still require executable filenames such as `eboot.bin`; those are packaging details, not brand names. Internal process names and CMake targets may use lowercase `caliza`, but user-facing strings must use `Caliza`.
 ### Migration from the development identity
 The current development tree uses PS4SX2/PCSX2-style paths. Do not silently abandon user data:
-1. On first run, if `/data/PCSX2/` exists and `/data/zeruko/` does not, offer **Copy existing settings and memory cards**.
+1. On first run, if `/data/PCSX2/` exists and `/data/caliza/` does not, offer **Copy existing settings and memory cards**.
 2. Copy; never move or delete the old directory automatically.
 3. Mark migrated per-game settings as `Not checked yet` until each game has run once.
 4. Keep one small migration note in the release notes so experienced users understand where files went.
 
 ## 7. Immediate action checklist
-1. Verify and reserve `github.com/zerukoemu` before announcing the brand.
-2. Run a proper trademark screening for `Zeruko` in software/game-emulation classes.
+1. Verify and reserve `github.com/calizaemu` before announcing the brand.
+2. Run a proper trademark screening for `Caliza` in software/game-emulation classes.
 3. Replace the consumer display name everywhere outside technical attribution; keep PCSX2 attribution visible.
 4. Design the Orbiting Z master icon at 512×512 and test it at 48/32 px.
-5. Implement `/data/zeruko/` with migration import from `/data/PCSX2/`.
+5. Implement `/data/caliza/` with migration import from `/data/PCSX2/`.
 6. Rewrite first-run and empty-state strings using the exact plain-language patterns above.
 7. Add the exact licence text to the app's About/License screen and README.
-8. Use `ZERU` as the title-id prefix and `/data/zeruko/` as the data root.
+8. Use `ZERU` as the title-id prefix and `/data/caliza/` as the data root.
 
 ## Resumen en español
-La recomendación principal es **Zeruko**: se pronuncia «ze-RU-ko», significa aproximadamente «celestial» y no usa marcas ni prefijos de Sony. Las alternativas son **Orbel** y **Reorb**, pero ambas tienen desventajas: Orbel ya aparece en software/robótica industrial y Reorb termina en un grupo consonántico incómodo en español.
+La recomendación principal es **Caliza**: se pronuncia «ze-RU-ko», significa aproximadamente «celestial» y no usa marcas ni prefijos de Sony. Las alternativas son **Orbel** y **Reorb**, pero ambas tienen desventajas: Orbel ya aparece en software/robótica industrial y Reorb termina en un grupo consonántico incómodo en español.
 La identidad visual debe ser una interfaz oscura, tranquila y legible desde el sofá, con azul `#4DA3FF` como color principal. El logotipo recomendado es una «z» cruzada por un anillo orbital muy fino. La interfaz se controla solo con mando: Cruz confirma o inicia, Círculo vuelve, Triángulo abre opciones del juego y Options abre ajustes. La documentación y la interfaz deben evitar jerga: «archivos de arranque de la consola» en lugar de BIOS como primera explicación, «partida instantánea» en lugar de save state y «carpeta de red» en lugar de NFS.
-El repositorio recomendado es `github.com/zerukoemu/zeruko`. El identificador interno es `io.github.zerukoemu.zeruko`; el prefijo de title id es `ZERU`; la carpeta de datos es `/data/zeruko/`; y el prefijo de registro es `[ZERUKO]`. La atribución a PCSX2 y la licencia GPL-3.0-or-later deben aparecer exactamente en la pantalla Acerca de y en el README, junto con el aviso de que no se incluyen BIOS, juegos, claves ni firmware.
+El repositorio recomendado es `github.com/calizaemu/caliza`. El identificador interno es `io.github.calizaemu.caliza`; el prefijo de title id es `ZERU`; la carpeta de datos es `/data/caliza/`; y el prefijo de registro es `[CALIZA]`. La atribución a PCSX2 y la licencia GPL-3.0-or-later deben aparecer exactamente en la pantalla Acerca de y en el README, junto con el aviso de que no se incluyen BIOS, juegos, claves ni firmware.

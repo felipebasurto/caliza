@@ -522,7 +522,7 @@ namespace fe
 
 			std::string request = spec.method + " " + u.path + " HTTP/1.1\r\nHost: " + u.host +
 								  (u.port != 443 ? ":" + std::to_string(u.port) : std::string()) + "\r\nUser-Agent: " +
-								  (spec.user_agent.empty() ? std::string("Zeruko/1.0") : spec.user_agent) +
+								  (spec.user_agent.empty() ? std::string("Caliza/1.0") : spec.user_agent) +
 								  "\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n";
 			if (ranged)
 				request += "Range: bytes=" + std::to_string(offset) + "-" + std::to_string(offset + length - 1) + "\r\n";
@@ -747,7 +747,7 @@ namespace fe
 		ret = mbedtls_entropy_add_source(&m->entropy, Impl::Entropy, m.get(), 32, MBEDTLS_ENTROPY_SOURCE_STRONG);
 		if (ret == 0)
 		{
-			static const char kPersonal[] = "Zeruko https";
+			static const char kPersonal[] = "Caliza https";
 			ret = mbedtls_ctr_drbg_seed(&m->drbg, mbedtls_entropy_func, &m->entropy, reinterpret_cast<const unsigned char*>(kPersonal),
 				sizeof(kPersonal) - 1);
 		}

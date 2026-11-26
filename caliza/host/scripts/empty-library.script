@@ -1,0 +1,11 @@
+# Empty library and its non-destructive add-folder path.
+games 0
+wait 1400
+expect-screen home
+press cross
+expect-screen library
+press right
+shot @OUT@/13-library-empty.png
+press cross
+expect-screen folder-picker
+shot @OUT@/14-folder-picker-add-library.png

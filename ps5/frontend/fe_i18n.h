@@ -22,22 +22,22 @@ enum class Str : int
 	HintBrowse,         // "Browse"
 	HintJump,           // "Jump"
 	NoNetwork,          // "Game settings: no network"
-	NoGames,            // "No games in /data/zeruko/games"
+	NoGames,            // "No games in /data/caliza/games"
 	DownloadingCovers,  // "Downloading covers  %d / %d"
 	SizeGB,             // "%s GB"
 	SizeMB,             // "%s MB"
 	Decimal,            // "."
-	NotifyStarting,     // "Zeruko: starting"
-	NotifyStartingTest, // "Zeruko (testing build): starting"
-	NotifyCoversOne,    // "Zeruko: downloading %d cover"
-	NotifyCoversMany,   // "Zeruko: downloading %d covers"
+	NotifyStarting,     // "Caliza: starting"
+	NotifyStartingTest, // "Caliza (testing build): starting"
+	NotifyCoversOne,    // "Caliza: downloading %d cover"
+	NotifyCoversMany,   // "Caliza: downloading %d covers"
 	NotifyNowPlaying,   // "Now playing: %s\n%s · have fun!" (the title, then how it runs)
 	HowNative,          // "native %s" (%s: Vulkan)
 	HowSoftware,        // "software renderer"
-	NotifyNoGame,       // "Zeruko: no game to start. ..."
-	NotifyNotStarted,   // "Zeruko: the game didn't start.\n%s" (%s: PCSX2's reason, in English)
-	NotifyMenuFailed,   // "Zeruko: couldn't open the menu, back to the game"
-	NotifyStopped,      // "Zeruko: the game stopped"
+	NotifyNoGame,       // "Caliza: no game to start. ..."
+	NotifyNotStarted,   // "Caliza: the game didn't start.\n%s" (%s: PCSX2's reason, in English)
+	NotifyMenuFailed,   // "Caliza: couldn't open the menu, back to the game"
+	NotifyStopped,      // "Caliza: the game stopped"
 	// vk-285-114: the options sheet (Square on the shelf).
 	HintSettings,       // "Settings"
 	HintMove,           // "Move"
@@ -47,8 +47,8 @@ enum class Str : int
 	SheetThisGame,      // "This game"
 	SheetAllGames,      // "All games"
 	// vk-285-115: the two commonest failed starts, said briefly (PCSX2's own BIOS text is four paragraphs).
-	NotifyNoBios,       // "Zeruko: no PS2 BIOS found. Copy your BIOS file ... to %s ..." (%s: the BIOS folder)
-	NotifyGsFailed,     // "Zeruko: the game's graphics didn't start. ..."
+	NotifyNoBios,       // "Caliza: no PS2 BIOS found. Copy your BIOS file ... to %s ..." (%s: the BIOS folder)
+	NotifyGsFailed,     // "Caliza: the game's graphics didn't start. ..."
 	// vk-285-116: the sheet's second tab (L2 and R2 switch: "Settings" is HintSettings).
 	SheetControls,      // "Controls"
 	// vk-285-118: Triangle on the shelf shows the QR code large.
@@ -121,9 +121,9 @@ enum class Str : int
 	RaUnsent,           // "An unlock couldn't be sent to RetroAchievements before closing ..." (back to the shelf, offline)
 	ShelfNoBios,        // vk-285-134: "No PS2 BIOS found: games can't start. Copy your BIOS file ... to %s" (the shelf's line)
 	// GPLv3 attribution: the global settings sheet's About row and its overlay footer. The licence text itself stays in English.
-	AboutTitle,         // "About Zeruko"
+	AboutTitle,         // "About Caliza"
 	AboutValue,         // "Licence and credits"
-	AboutHint,          // "Who made Zeruko, what it is built on, and the licence it is shared under."
+	AboutHint,          // "Who made Caliza, what it is built on, and the licence it is shared under."
 	AboutCircleBack,    // "Circle: back"
 	Count
 };

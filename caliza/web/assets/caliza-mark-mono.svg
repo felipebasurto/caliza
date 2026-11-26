@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 112" role="img" aria-label="Caliza">
+  <!-- Monochrome silhouette of the three-strata mark, for small and high-contrast uses. -->
+  <g fill="#EEF4FF">
+    <path d="M34 27 L99 6 L128 18 L125 28 L69 46 L34 36 Z"/>
+    <path d="M20 59 L105 28 L139 42 L135 55 L64 82 L20 69 Z" opacity="0.82"/>
+    <path d="M38 88 L108 62 L133 74 L130 86 L75 108 L38 98 Z" opacity="0.92"/>
+  </g>
+</svg>

@@ -1,0 +1,10 @@
+# BIOS recovery, folder picker, and empty/add-folder flow.
+bios 0
+wait 1400
+expect-screen first-run
+shot @OUT@/00-first-run-bios-recovery.png
+press cross
+expect-screen folder-picker
+shot @OUT@/12-folder-picker-bios.png
+press circle
+expect-screen first-run

@@ -616,7 +616,7 @@ public:
 	// Test build 1 (vk-285-55): draws sTex over the frame being presented, blended by its alpha
 	// (the testing watermark). Only between BeginPresent and EndPresent.
 	void OrbisPresentBlend(GSTexture* sTex, const GSVector4& sRect, const GSVector4& dRect);
-	// 2026-10-08 (AI-assisted): frame generation (Zeruko/FrameGeneration; GSDeviceVK.cpp, "frame generation"). Record: outside
+	// 2026-10-08 (AI-assisted): frame generation (Caliza/FrameGeneration; GSDeviceVK.cpp, "frame generation"). Record: outside
 	// a present, for a frame of the game: draws it as the present would into the interpolator's frame and makes the frame
 	// between it and the last one; returns how many presents of the generated frame should go before the game's (0: none).
 	// Draw: between BeginPresent and EndPresent, the generated frame over the whole screen. Release: before the device goes.

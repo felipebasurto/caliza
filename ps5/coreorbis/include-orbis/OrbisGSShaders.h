@@ -1,6 +1,6 @@
 // PS5 port (vk-285-115): built-in copies of the shader sources the GS reads from resources/shaders.
 //
-// PCSX2 reads its Vulkan shaders as text from EmuFolders::Resources (/data/zeruko/resources) when the GS device is
+// PCSX2 reads its Vulkan shaders as text from EmuFolders::Resources (/data/caliza/resources) when the GS device is
 // made. A console without that folder (the eboot copied over by hand) failed every game with "Failed to initialize
 // GS." (1.50's logs: 77 starts on 7 consoles, "Failed to read shaders/vulkan/tfx.glsl."). The eboot now carries the
 // same files from bin/resources/shaders (orbis-shims/orbis_gs_shaders.cpp); the folder's own files still come first.

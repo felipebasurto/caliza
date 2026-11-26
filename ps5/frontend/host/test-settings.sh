@@ -36,7 +36,7 @@ common+=("$work/common/lz4.o" "$work/common/chd_stub.o")
 # The older page, as it was built then, with the retired brand and ini section renamed to this tree's.
 # The rebrand is deliberately not backwards compatible; normalising it keeps this a behavioural comparison.
 git -C "$pcsx2" show "$old_rev:ps5/frontend/fe_web.cpp" |
-  sed -e 's/PS5SX2/Zeruko/g' -e 's/PS4SX2/Zeruko/g' -e 's|/data/PCSX2|/data/zeruko|g' -e 's/ps5sx2/zeruko/g' -e 's/ps4sx2/zeruko/g' \
+  sed -e 's/PS5SX2/Caliza/g' -e 's/PS4SX2/Caliza/g' -e 's|/data/PCSX2|/data/caliza|g' -e 's/ps5sx2/caliza/g' -e 's/ps4sx2/caliza/g' \
   > "$work/old/fe_web.cpp"
 "$CXX" -std=c++20 "${flags[@]}" "$here/settings_test.cpp" "$work/old/fe_web.cpp" "${common[@]}" -o "$work/settings_test_old" -lz -lpthread
 

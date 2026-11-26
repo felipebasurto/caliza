@@ -32,7 +32,7 @@ extern "C" void orbis_present_frame(const unsigned char* pixels, int width, int 
 
 #include <cinttypes>
 #include <unistd.h>
-bool g_ps5_nopbo = (access("/data/zeruko/nopbo", 0) == 0);
+bool g_ps5_nopbo = (access("/data/caliza/nopbo", 0) == 0);
 #include <chrono>
 #include <fstream>
 #include <sstream>
@@ -295,7 +295,7 @@ static void orbis_gt_check(const char* name, int w, int h, const std::vector<u32
 }
 static void orbis_gl_selftest()
 {
-	if (access("/data/zeruko/nogltest", 0) == 0) return;
+	if (access("/data/caliza/nogltest", 0) == 0) return;
 	printf("[gltest] start\n"); fflush(stdout);
 	if (!glTexStorage2D || !glGenVertexArrays || !glReadPixels || !glCreateShader) { printf("[gltest] missing GL entry points\n"); fflush(stdout); return; }
 	const char* vs = "#version 330 core\nlayout(location=0) in vec2 p; out vec2 uv; void main(){ uv = p*0.5+0.5; gl_Position = vec4(p,0.0,1.0); }\n";
@@ -1387,7 +1387,7 @@ GSDevice::PresentResult GSDeviceOGL::BeginPresent(bool frame_skip)
 
 static void ps5_gl_frame_dump(int w, int h)
 {
-	static const bool enabled = (access("/data/zeruko/gldump", 0) == 0);
+	static const bool enabled = (access("/data/caliza/gldump", 0) == 0);
 	static unsigned presents = 0, files = 0;
 	if (!enabled || w <= 0 || h <= 0 || files >= 80 || (++presents % 250) != 0)
 		return;
@@ -1452,7 +1452,7 @@ static void ps5_gl_frame_dump(int w, int h)
 		}
 	}
 	char name[64];
-	std::snprintf(name, sizeof(name), "/data/zeruko/gl_%03u.bmp", files++);
+	std::snprintf(name, sizeof(name), "/data/caliza/gl_%03u.bmp", files++);
 	if (FILE* f = std::fopen(name, "wb")) { std::fwrite(bmp.data(), 1, bmp.size(), f); std::fclose(f); }
 	std::printf("[gldump] %s present=%u %dx%d alpha0=%llu nonblack=%llu\n", name, presents, w, h,
 		(unsigned long long)a0, (unsigned long long)nonblack);
@@ -2466,7 +2466,7 @@ void OrbisPresentGLFrame()
 				// BMP so the game's own output can be inspected offline.
 				if ((n % 240) == 0 && disp.PSM == 0 && disp.FBW != 0)
 				{
-					FILE* gf = fopen("/data/zeruko/gsframe.bmp", "wb");
+					FILE* gf = fopen("/data/caliza/gsframe.bmp", "wb");
 					if (gf)
 					{
 						const int gw = 512, gh = 512;
@@ -2518,7 +2518,7 @@ void OrbisPresentGLFrame()
 		fflush(stdout);
 
 		// Full-frame dump for offline inspection.
-		FILE* f = fopen("/data/zeruko/glframe.bmp", "wb");
+		FILE* f = fopen("/data/caliza/glframe.bmp", "wb");
 		if (f)
 		{
 			unsigned char hdr[54] = {0};
@@ -3903,7 +3903,7 @@ void GSDeviceOGL::SendHWDraw(const GSHWDrawConfig& config,
 #endif
 
 	// eerec-240 onebarrier
-	static const bool s_ps5_fullbarrier = (access("/data/zeruko/fullbarrier", 0) == 0);
+	static const bool s_ps5_fullbarrier = (access("/data/caliza/fullbarrier", 0) == 0);
 	if (full_barrier && m_features.texture_barrier && !s_ps5_fullbarrier)
 	{
 		g_perfmon.Put(GSPerfMon::Barriers, 1);

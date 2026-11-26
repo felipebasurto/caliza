@@ -1,10 +1,10 @@
 // PS5 port (vk-285-30): the game selector.
 //
-// At start, before PCSX2 owns the display, the port lists the disc images in /data/zeruko (*.iso, *.chd)
+// At start, before PCSX2 owns the display, the port lists the disc images in /data/caliza (*.iso, *.chd)
 // and lets the DualSense pick one: D-pad or left stick to move (held: repeats), L1/R1 a page,
 // X or OPTIONS to start. It draws on the VideoOut OVERLAY bus with the boot overlay's CPU canvas
 // (demo_renderer.cpp) and gives the bus and its memory back before the Vulkan device opens the
-// MAIN bus. The game started last is kept in /data/zeruko/lastgame.txt and preselected next time.
+// MAIN bus. The game started last is kept in /data/caliza/lastgame.txt and preselected next time.
 // One image: no menu. None: the caller's default. The nomenu flag: the last game, no menu.
 // vk-285-33: the images are looked for in games/ and then in the top folder (older setups).
 //
@@ -207,7 +207,7 @@ void DrawMenu(Canvas& c, const void* user) noexcept
 	const int n = static_cast<int>(games.size());
 	c.fill_screen(kBackground);
 
-	c.label(kLeft, 96, "ZERUKO", 10, kTitle); // vk-285-50's shelf title (one word since the rebrand, so no second accent half)
+	c.label(kLeft, 96, "CALIZA", 10, kTitle); // vk-285-50's shelf title (one word since the rebrand, so no second accent half)
 	char count[32];
 	std::snprintf(count, sizeof(count), "%d / %d", m.selected + 1, n);
 	c.label(kRight - ps5::demo::label_width(count, 4), 138, count, 4, kDim);

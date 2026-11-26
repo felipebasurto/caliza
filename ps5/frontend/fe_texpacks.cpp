@@ -893,7 +893,7 @@ bool TexturePackManager::Stop(int wait_ms)
 }
 
 // pr9h (2026-10-05) took the folder above the textures folder as the textures folder when the textures folder wasn't there
-// (main-boot's OrbisDir fallback): its downloads, its unpacking and its installed packs went into /data/zeruko itself.
+// (main-boot's OrbisDir fallback): its downloads, its unpacking and its installed packs went into /data/caliza itself.
 // This moves what it left where it belongs: the downloads folder (so a download carries on), the unpacking folder (the
 // next unpack clears it) and serial folders that carry this manager's marker. Renames only, nothing else is touched.
 void TexturePackManager::MoveFromParent()
@@ -911,7 +911,7 @@ void TexturePackManager::MoveFromParent()
 	};
 	if (m_work.compare(0, m_textures.size() + 1, m_textures + "/") == 0)
 		move(parent + m_work.substr(m_textures.size()), m_work);
-	move(parent + "/.zeruko-unpack", m_textures + "/.zeruko-unpack");
+	move(parent + "/.caliza-unpack", m_textures + "/.caliza-unpack");
 	if (DIR* d = opendir(parent.c_str()))
 	{
 		std::vector<std::string> names;
@@ -929,14 +929,14 @@ void TexturePackManager::MoveFromParent()
 	}
 }
 
-// `path` renamed to <textures>/.zeruko-old-<time>-<n>, for EmptySetAside. False when it isn't there or can't be renamed
+// `path` renamed to <textures>/.caliza-old-<time>-<n>, for EmptySetAside. False when it isn't there or can't be renamed
 // (then the caller deletes it itself).
 bool TexturePackManager::SetAside(const std::string& path)
 {
 	if (!Exists(path))
 		return false;
 	static std::atomic<unsigned> counter{0};
-	const std::string aside = m_textures + "/.zeruko-old-" + std::to_string(static_cast<long long>(std::time(nullptr))) + "-" +
+	const std::string aside = m_textures + "/.caliza-old-" + std::to_string(static_cast<long long>(std::time(nullptr))) + "-" +
 		std::to_string(counter++);
 	const bool ok = rename(path.c_str(), aside.c_str()) == 0;
 	Log(ok ? "set aside " + path + " as " + aside + ", to delete later" : "couldn't set aside " + path);
@@ -951,7 +951,7 @@ void TexturePackManager::EmptySetAside()
 	if (DIR* d = opendir(m_textures.c_str()))
 	{
 		while (dirent* e = readdir(d))
-			if (std::strncmp(e->d_name, ".zeruko-old-", 12) == 0)
+			if (std::strncmp(e->d_name, ".caliza-old-", 12) == 0)
 				old.emplace_back(m_textures + "/" + e->d_name);
 		closedir(d);
 	}
@@ -1218,7 +1218,7 @@ void TexturePackManager::Process(const Job& job)
 		if (c)
 		{
 			DeleteJobFiles(job);
-			RemoveTree(m_textures + "/.zeruko-unpack");
+			RemoveTree(m_textures + "/.caliza-unpack");
 			std::lock_guard<std::mutex> lock(m_mutex);
 			m_progress.erase(job.serial);
 			Log("cancelled " + job.name);
@@ -1242,7 +1242,7 @@ void TexturePackManager::Process(const Job& job)
 		Log("not enough room to unpack: " + FormatBytes(room) + " free, " + FormatBytes(need) + " wanted");
 		return;
 	}
-	const std::string staging = m_textures + "/.zeruko-unpack";
+	const std::string staging = m_textures + "/.caliza-unpack";
 	// pr9l: an unpack cut short by an older build left thousands of files here: renamed now, deleted when the worker is idle.
 	if (!SetAside(staging))
 		RemoveTree(staging);
@@ -1649,7 +1649,7 @@ void TexturePackManager::Finish(const Job& job, uint32_t files)
 	std::tm tm{};
 	gmtime_r(&now, &tm);
 	std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M UTC", &tm);
-	const std::string marker = "# Installed by Zeruko from archive.org's PCSX2 HD Texture Packs. Removing it from the sheet\n"
+	const std::string marker = "# Installed by Caliza from archive.org's PCSX2 HD Texture Packs. Removing it from the sheet\n"
 	                           "# (Square, HD texture pack, Triangle twice) deletes this folder.\n"
 	                           "name=" +
 		OneLine(job.name) + "\nsource=https://archive.org/details/" + kTexturePackItem + "\nmd5=" + job.md5 + "\nfiles=" +

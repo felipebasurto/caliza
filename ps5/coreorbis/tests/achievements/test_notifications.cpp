@@ -35,7 +35,7 @@ void OrbisNotifyRich(const char* title, const char* description, const char* ico
 int main()
 {
 	// The picture: a cached file wins, an https URL stands in for one not cached yet, anything else is left out.
-	char cached[] = "/tmp/zeruko-toast-XXXXXX";
+	char cached[] = "/tmp/caliza-toast-XXXXXX";
 	const int fd = mkstemp(cached);
 	assert(fd >= 0);
 	const ssize_t written = write(fd, "\x89PNG", 4);
@@ -44,8 +44,8 @@ int main()
 	close(fd);
 	const std::string url = "https://media.retroachievements.org/Badge/100000.png";
 	assert(OrbisToastIcon(cached, url) == cached);
-	assert(OrbisToastIcon("/data/zeruko/cache/achievement_images/missing.png", url) == url);
-	assert(OrbisToastIcon("/data/zeruko/cache/achievement_images/missing.png", "http://insecure.example/a.png").empty());
+	assert(OrbisToastIcon("/data/caliza/cache/achievement_images/missing.png", url) == url);
+	assert(OrbisToastIcon("/data/caliza/cache/achievement_images/missing.png", "http://insecure.example/a.png").empty());
 	assert(OrbisToastIcon("", "").empty());
 	assert(OrbisToastIcon("/tmp", url) == url); // a folder is not a picture
 

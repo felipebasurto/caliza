@@ -8,13 +8,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fe_ps5.h"
+#include "caliza/native/ps4_shell.h"
 
-#include "fe_app.h"
 #include "fe_covers.h"
 #include "fe_games.h"
 #include "fe_i18n.h"
-#include "fe_renderer.h"
-#include "fe_sound.h"
 #include "fe_text.h"
 #include "fe_https.h"
 #include "fe_texpacks.h"
@@ -104,11 +102,6 @@ int sceNetCtlInit(void);
 void sceNetCtlTerm(void);
 int sceNetCtlGetState(int* state);
 
-// libSceAudioOut, as orbis-shims/ProsperoAudio.cpp declares it for PCSX2's own output.
-int sceAudioOutInit(void);
-int sceAudioOutOpen(int userId, int type, int index, unsigned int len, unsigned int freq, unsigned int param);
-int sceAudioOutOutput(int handle, const void* p);
-int sceAudioOutClose(int handle);
 }
 
 // The fonts, embedded: PCSX2's Roboto (Apache-2.0) and PromptFont (OFL-1.1), from its resources.
@@ -140,18 +133,32 @@ extern "C" const uint8_t fe_font_text[], fe_font_text_end[], fe_font_icons[], fe
 			".global " #sym "_end\n" #sym "_end:\n" \
 			".byte 0\n" \
 			".previous\n")
-FE_INCBIN_ASSET(fe_font_brands, "fonts/fa-brands-400.otf");
-FE_INCBIN_ASSET(fe_web_page, "web/index.html");
-FE_INCBIN_ASSET(fe_web_discord, "web/discord.svg");
-FE_INCBIN_ASSET(fe_web_x, "web/x-twitter.svg");
-#ifdef ORBIS_PS4
-FE_INCBIN_ASSET(fe_web_caliza_css, "web/caliza-ps2ui.css");
-extern "C" const uint8_t fe_web_caliza_css[], fe_web_caliza_css_end[];
+#ifndef CALIZA_WEB_DIR
+#error "CALIZA_WEB_DIR must name the canonical Caliza web panel source"
 #endif
+#define CALIZA_INCBIN_ASSET(sym, file) \
+	__asm__(".section .rodata." #sym ",\"a\",@progbits\n" \
+			".balign 16\n" \
+			".global " #sym "\n" #sym ":\n" \
+			".incbin \"" CALIZA_WEB_DIR "/" file "\"\n" \
+			".global " #sym "_end\n" #sym "_end:\n" \
+			".byte 0\n" \
+			".previous\n")
+FE_INCBIN_ASSET(fe_font_brands, "fonts/fa-brands-400.otf");
+CALIZA_INCBIN_ASSET(fe_web_page, "index.html");
+CALIZA_INCBIN_ASSET(fe_web_css, "caliza.css");
+CALIZA_INCBIN_ASSET(fe_web_app, "app.js");
+CALIZA_INCBIN_ASSET(fe_web_mark, "assets/caliza-mark.svg");
+CALIZA_INCBIN_ASSET(fe_web_mark_mono, "assets/caliza-mark-mono.svg");
+CALIZA_INCBIN_ASSET(fe_web_strata, "assets/strata-ornament.svg");
+CALIZA_INCBIN_ASSET(fe_web_source_sans, "assets/fonts/source-sans-3-latin.woff2");
+CALIZA_INCBIN_ASSET(fe_web_source_sans_ext, "assets/fonts/source-sans-3-latin-ext.woff2");
 // vk-285-51: the recommended settings the page's Recommended button restores.
 FE_INCBIN_ASSET(fe_presets, "presets.ini");
-extern "C" const uint8_t fe_font_brands[], fe_font_brands_end[], fe_web_page[], fe_web_page_end[], fe_web_discord[],
-	fe_web_discord_end[], fe_web_x[], fe_web_x_end[], fe_presets[], fe_presets_end[];
+extern "C" const uint8_t fe_font_brands[], fe_font_brands_end[], fe_web_page[], fe_web_page_end[], fe_web_css[], fe_web_css_end[],
+	fe_web_app[], fe_web_app_end[], fe_web_mark[], fe_web_mark_end[], fe_web_mark_mono[], fe_web_mark_mono_end[], fe_web_strata[],
+	fe_web_strata_end[], fe_web_source_sans[], fe_web_source_sans_end[], fe_web_source_sans_ext[], fe_web_source_sans_ext_end[],
+	fe_presets[], fe_presets_end[];
 
 // main-boot.cpp (2026-10-05): the folder the emulator would take a game's texture pack from (a USB drive, the settings
 // page's folder, /data), for the HD texture pack row.
@@ -164,111 +171,6 @@ using namespace fe;
 // xlenore/ps2-covers, the default set: <serial>.jpg, 512x736 (the same source as the user's Twiso).
 constexpr const char* kCoverUrl = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg";
 
-// The key sounds' output: a port on the main output, float stereo at 48 kHz in 256-frame grains,
-// opened the way PCSX2's own output opens it once the game runs (system user, main port, format 4),
-// and a thread that mixes whatever is playing into each grain. sceAudioOutOutput blocks until the
-// previous grain has been consumed, which paces the thread.
-class AudioOut
-{
-public:
-	~AudioOut()
-	{
-		// A joinable std::thread member destroyed without Stop() would terminate the process.
-		// Stop() is idempotent after a prior join/detach because the shared handle is reset.
-		Stop();
-	}
-
-	bool Start(Mixer* mixer)
-	{
-		const int init = sceAudioOutInit(); // PCSX2's output calls it again later and ignores the error
-		m_shared->handle = sceAudioOutOpen(255, 0, 0, kGrain, SoundBank::kRate, 4);
-		std::printf("[frontend] sound: sceAudioOutInit %x, port %x\n", static_cast<unsigned>(init), static_cast<unsigned>(m_shared->handle));
-		if (m_shared->handle < 0)
-			return false;
-		m_mixer = mixer;
-		m_thread = std::thread([this, shared = m_shared]() { Run(shared); });
-		return true;
-	}
-
-	void Stop()
-	{
-		auto& sh = *m_shared;
-		sh.quit.store(true, std::memory_order_release);
-		sh.owner_alive.store(false, std::memory_order_seq_cst);
-		if (m_thread.joinable())
-		{
-			// The lease is released before the blocking sceAudioOutOutput call, so in_object can
-			// only be nonzero during userspace mixing. Draining it is scheduler-bound and must
-			// finish before the mixer is destroyed by the caller. needs proper testing.
-			while (sh.in_object.load(std::memory_order_seq_cst) != 0)
-				usleep(1000);
-			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-			while (!sh.exited.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
-				usleep(1000);
-			if (sh.exited.load(std::memory_order_acquire))
-			{
-				m_thread.join();
-				if (sh.handle >= 0)
-					sceAudioOutClose(sh.handle);
-			}
-			else
-			{
-				// sceAudioOutOutput appears stuck. Detach and deliberately abandon the port:
-				// the worker only touches shared state afterwards and exits on its own.
-				m_thread.detach();
-				std::printf("[frontend] sound worker stuck in output; detached, leaving port %d open\n", sh.handle);
-			}
-		}
-		else if (sh.handle >= 0)
-			sceAudioOutClose(sh.handle);
-		sh.handle = -1;
-	}
-
-private:
-	static constexpr unsigned kGrain = 256;
-
-	// Shared with the worker, which may outlive this object after a stuck-output detach.
-	struct Shared
-	{
-		std::atomic<bool> quit{false};
-		std::atomic<bool> owner_alive{true};
-		std::atomic<int> in_object{0};
-		std::atomic<bool> exited{false};
-		int handle = -1;
-	};
-
-	static bool AcquireMixAccess(Shared* sh)
-	{
-		if (!sh->owner_alive.load(std::memory_order_seq_cst))
-			return false;
-		sh->in_object.fetch_add(1, std::memory_order_seq_cst);
-		if (!sh->owner_alive.load(std::memory_order_seq_cst))
-		{
-			sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
-			return false;
-		}
-		return true;
-	}
-
-	void Run(std::shared_ptr<Shared> sh)
-	{
-		alignas(64) float buf[kGrain * 2];
-		while (!sh->quit.load(std::memory_order_relaxed))
-		{
-			if (!AcquireMixAccess(sh.get()))
-				break;
-			m_mixer->Mix(buf, static_cast<int>(kGrain));
-			sh->in_object.fetch_sub(1, std::memory_order_seq_cst);
-			sceAudioOutOutput(sh->handle, buf);
-		}
-		sh->exited.store(true, std::memory_order_release);
-	}
-
-	Mixer* m_mixer = nullptr;
-	std::shared_ptr<Shared> m_shared = std::make_shared<Shared>();
-	std::thread m_thread;
-};
-
 // libScePad's state, as game_select.cpp and main-boot.cpp read it.
 struct PadData
 {
@@ -276,12 +178,6 @@ struct PadData
 	uint8_t lx, ly, rx, ry, l2, r2, pad0, pad1;
 	uint8_t rest[256];
 };
-constexpr uint32_t kPadRight = 0x20, kPadLeft = 0x80, kPadCross = 0x4000, kPadOptions = 0x8, kPadL1 = 0x400,
-				   kPadR1 = 0x800;
-// vk-285-114: the options sheet's buttons.
-constexpr uint32_t kPadUp = 0x10, kPadDown = 0x40, kPadTriangle = 0x1000, kPadCircle = 0x2000, kPadSquare = 0x8000;
-constexpr uint32_t kPadL2 = 0x100, kPadR2 = 0x200; // vk-285-116: the sheet's tabs
-
 double Now()
 {
 	timespec ts;
@@ -563,7 +459,7 @@ struct Display
 		}
 		const char* inst_ext[2] = {"VK_KHR_surface", "VK_KHR_display"};
 		VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
-		ai.pApplicationName = "Zeruko";
+		ai.pApplicationName = "Caliza";
 		ai.apiVersion = VK_API_VERSION_1_1;
 		VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
 		ici.pApplicationInfo = &ai;
@@ -1140,11 +1036,11 @@ std::vector<std::string> orbis_usb_game_dirs(const char* when)
 			entries++;
 			isos += IsDiscImageName(e->d_name) ? 1 : 0;
 			const std::string lower = LowerAscii(e->d_name);
-			if (lower == "dvd" || lower == "cd" || lower == "zeruko" || lower == "games")
+			if (lower == "dvd" || lower == "cd" || lower == "caliza" || lower == "games")
 				subs.push_back(e->d_name);
-			// vk-285-118 (AI-assisted): a drive laid out like /data/zeruko (testers: "games in the games/ folder on the external
-			// drive are NOT detected", while PCSX2/textures there works): PCSX2/games/, and zeruko/games/, also DVD/ and CD/ in them.
-			if (lower == "pcsx2" || lower == "zeruko")
+			// vk-285-118 (AI-assisted): a drive laid out like /data/caliza (testers: "games in the games/ folder on the external
+			// drive are NOT detected", while PCSX2/textures there works): PCSX2/games/, and caliza/games/, also DVD/ and CD/ in them.
+			if (lower == "pcsx2" || lower == "caliza")
 			{
 				const std::string parent = std::string(root) + "/" + e->d_name;
 				if (DIR* pd = opendir(parent.c_str()))
@@ -1432,12 +1328,15 @@ bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag)
 	cfg.assets = {
 		{"/", "text/html; charset=utf-8", fe_web_page, static_cast<size_t>(fe_web_page_end - fe_web_page)},
 		{"/fonts/roboto.ttf", "font/ttf", fe_font_text, static_cast<size_t>(fe_font_text_end - fe_font_text)},
-		{"/icons/discord.svg", "image/svg+xml", fe_web_discord, static_cast<size_t>(fe_web_discord_end - fe_web_discord)},
-		{"/icons/x-twitter.svg", "image/svg+xml", fe_web_x, static_cast<size_t>(fe_web_x_end - fe_web_x)},
-#ifdef ORBIS_PS4
-		{"/caliza-ps2ui.css", "text/css; charset=utf-8", fe_web_caliza_css,
-			static_cast<size_t>(fe_web_caliza_css_end - fe_web_caliza_css)},
-#endif
+		{"/caliza.css", "text/css; charset=utf-8", fe_web_css, static_cast<size_t>(fe_web_css_end - fe_web_css)},
+		{"/app.js", "text/javascript; charset=utf-8", fe_web_app, static_cast<size_t>(fe_web_app_end - fe_web_app)},
+		{"/assets/caliza-mark.svg", "image/svg+xml", fe_web_mark, static_cast<size_t>(fe_web_mark_end - fe_web_mark)},
+		{"/assets/caliza-mark-mono.svg", "image/svg+xml", fe_web_mark_mono, static_cast<size_t>(fe_web_mark_mono_end - fe_web_mark_mono)},
+		{"/assets/strata-ornament.svg", "image/svg+xml", fe_web_strata, static_cast<size_t>(fe_web_strata_end - fe_web_strata)},
+		{"/assets/fonts/source-sans-3-latin.woff2", "font/woff2", fe_web_source_sans,
+			static_cast<size_t>(fe_web_source_sans_end - fe_web_source_sans)},
+		{"/assets/fonts/source-sans-3-latin-ext.woff2", "font/woff2", fe_web_source_sans_ext,
+			static_cast<size_t>(fe_web_source_sans_ext_end - fe_web_source_sans_ext)},
 	};
 	fe::WebServer* server = new fe::WebServer();
 	if (!server->Start(cfg))
@@ -1506,6 +1405,122 @@ void orbis_web_log_next_requests(int n)
 		g_web->LogNextRequests(n);
 }
 
+namespace
+{
+fe::TexturePackManager* g_texture_packs = nullptr;
+fe::OnlinePatches* g_online_patches = nullptr;
+bool g_texture_pack_worker_detached = false;
+bool g_online_patch_worker_detached = false;
+} // namespace
+
+bool orbis_frontend_services_start(const OrbisFrontendPaths& paths, fe::TexturePackService* texture_packs,
+	fe::OnlinePatchService* online_patches)
+{
+	if (texture_packs)
+		*texture_packs = fe::TexturePackService();
+	if (online_patches)
+		*online_patches = fe::OnlinePatchService();
+	// HD texture packs from archive.org. The worker belongs to the menu process boundary rather
+	// than one renderer object; if a slow stop ever has to be abandoned, the next menu reuses it.
+	if (paths.texture_packs && !paths.textures_dir.empty() && texture_packs)
+	{
+		if (!g_texture_packs)
+		{
+			fe::TexturePackPlatform tp;
+			tp.get_text = [](const std::string& url, std::string& body) {
+				body.clear();
+				return g_texhttp.Get(url, false, 0, 0, [&body](const void* data, size_t size) {
+					if (body.size() + size > (8u << 20))
+						return false;
+					body.append(static_cast<const char*>(data), size);
+					return true;
+				});
+			};
+			tp.get_range = [](const std::string& url, uint64_t offset, uint64_t length,
+							   const std::function<bool(const void*, size_t)>& sink) { return g_texhttp.Get(url, true, offset, length, sink); };
+			tp.abort = [] { g_texhttp.Abort(); };
+			tp.free_bytes = [](const std::string& dir) { return TexturePackFreeBytes(dir); };
+			tp.thread_start = [](const char* role) { TexturePackThreadStart(role); };
+			tp.existing_pack = [](const std::string& serial) {
+				std::string how;
+				return OrbisTexturesGameDir(serial, how);
+			};
+			tp.log = [](const std::string& line) {
+				std::printf("%s\n", line.c_str());
+				std::fflush(stdout);
+			};
+			tp.notify = [](const std::string& game, bool ok, const std::string& detail) {
+				const std::string sub = detail.empty() ? game : game + " \xC2\xB7 " + detail;
+				OrbisNotifyRich(fe::Tr(ok ? fe::Str::HdTexturesReady : fe::Str::HdTexturesFailed), sub.c_str(), "");
+			};
+			tp.now = [] { return Now(); };
+			const std::string textures = paths.textures_dir;
+			g_texture_packs = new fe::TexturePackManager(tp, textures, textures + "/.caliza-downloads", paths.texture_pack_list);
+			g_texture_packs->Start();
+			g_texture_pack_worker_detached = false;
+		}
+		*texture_packs = g_texture_packs->Service();
+	}
+	if (paths.online_patches && !paths.patches_dir.empty() && !paths.cheats_dir.empty() && online_patches)
+	{
+		if (!g_online_patches)
+		{
+			fe::OnlinePatchPlatform op;
+			op.get_text = [](const std::string& url, std::string& body) {
+				body.clear();
+				return g_patchhttp.Get(url, false, 0, 0, [&body](const void* data, size_t size) {
+					if (body.size() + size > (2u << 20))
+						return false;
+					body.append(static_cast<const char*>(data), size);
+					return true;
+				});
+			};
+			op.log = [](const std::string& line) {
+				std::printf("%s\n", line.c_str());
+				std::fflush(stdout);
+			};
+			op.thread_start = [] { TexturePackThreadStart("online patches"); };
+			g_online_patches = new fe::OnlinePatches(op, paths.patches_dir, paths.cheats_dir, paths.online_patch_manifest);
+			g_online_patch_worker_detached = false;
+		}
+		*online_patches = g_online_patches->Service();
+	}
+	return (texture_packs && static_cast<bool>(*texture_packs)) || (online_patches && static_cast<bool>(*online_patches));
+}
+
+void orbis_frontend_services_stop()
+{
+	if (g_texture_packs && !g_texture_pack_worker_detached)
+	{
+		if (g_texture_packs->Stop(1500))
+		{
+			delete g_texture_packs;
+			g_texture_packs = nullptr;
+			g_texhttp.Term();
+		}
+		else
+		{
+			g_texture_pack_worker_detached = true;
+			std::printf("[frontend] a texture pack job is still stopping; leaving it to end on its own\n");
+		}
+	}
+	if (g_online_patches && !g_online_patch_worker_detached)
+	{
+		g_patchhttp.Abort();
+		if (g_online_patches->Stop(1500))
+		{
+			delete g_online_patches;
+			g_online_patches = nullptr;
+			g_patchhttp.Term();
+		}
+		else
+		{
+			g_online_patch_worker_detached = true;
+			std::printf("[frontend] an online patch request is still stopping; leaving it to end on its own\n");
+		}
+	}
+}
+
 int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budget_s, void (*notify)(const char*))
 {
 	if (!paths.allow_download)
@@ -1547,423 +1562,27 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 
 std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* build_tag, bool* ran)
 {
-	*ran = false;
-	const double t0 = Now();
-	SetSerialCacheFile(paths.serial_cache); // vk-285-108
-	SetGameDbFile(paths.gamedb_file);       // vk-285-113
-	std::vector<std::string> dirs = {paths.games_dir, paths.top_dir};
-	dirs.insert(dirs.end(), paths.usb_dirs.begin(), paths.usb_dirs.end()); // test build 1: USB drives
-	std::vector<GameInfo> games = ScanGames(dirs);
-	int on_usb = 0;
-	for (GameInfo& g : games)
+	// Caliza's menu is a validated boot-selection shell. main-boot remains the owner of PCSX2 creation,
+	// BIOS execution, save-state policy, disc transport and the re-exec return path.
+	const caliza::ps4shell::ShellResult shell = caliza::ps4shell::RunEstratos(paths, build_tag);
+	if (ran)
+		*ran = shell.ui_ran;
+	if (shell.kind == caliza::ps4shell::ShellResult::Kind::Game)
 	{
-		g.serial = ReadSerial(g.path);
-		// vk-285-113: a CHD (or an ISO) named after its file shows the game's name from the game database.
-		const std::string file_title = g.title;
-		const bool renamed = ApplyGameDbTitle(g);
-		ReadBadges(g, paths.settings_dir, paths.gs_ini, paths.patches_dir);
-		on_usb += OnUsb(g.path) ? 1 : 0;
-		if (renamed)
-			std::printf("[frontend] %s: titled \"%s\" (the file name gave \"%s\")\n", g.file.c_str(), g.title.c_str(), file_title.c_str());
-		// Test build 1: the size too (a disc image of an odd size is often a bad dump), and the folder.
-		std::printf("[frontend] %s | %s | %s | %llu bytes | %s\n", g.file.c_str(), g.serial.empty() ? "no serial" : g.serial.c_str(),
-			g.title.c_str(), static_cast<unsigned long long>(g.bytes), g.path.substr(0, g.path.rfind('/')).c_str());
-		// vk-285-109: a CHD without a serial says what it is.
-		if (g.serial.empty())
-		{
-			const std::string what = DescribeImage(g.path);
-			if (!what.empty())
-				std::printf("[frontend]   chd: %s\n", what.c_str());
-			// vk-285-134: libchdr's "invalid file/data" (or a version it doesn't read) is a damaged image; a CHD that needs
-			// its parent isn't (PCSX2 finds the parent itself).
-			const std::string cant = "libchdr can't open it: ";
-			if (what.rfind(cant, 0) == 0 && what.find("parent") == std::string::npos)
-				g.damaged = what.substr(cant.size());
-		}
-	}
-	SortGames(games); // vk-285-113: by the titles the game database may have changed
-	std::printf("[frontend] %zu disc image(s), %d on USB, scanned in %.0f ms\n", games.size(), on_usb, (Now() - t0) * 1000.0);
-	std::fflush(stdout);
-	WriteUsbList(paths.usb_list, games);
-	// Keep the shelf available without games too, for settings and account sign-in.
-	const std::string last = ReadLastGame(paths.top_dir);
-	int preselect = 0;
-	for (size_t i = 0; i < games.size(); i++)
-		if (games[i].file == last)
-			preselect = static_cast<int>(i);
-	// vk-285-69: one game opens the shelf too, not the game straight away: the shelf's QR code is how
-	// testers reach the settings page and its Download logs (swordpdf, 2026-09-26).
-
-	int32_t user = -1;
-	(void)sceUserServiceInitialize(nullptr);
-	(void)sceUserServiceGetInitialUser(&user);
-	(void)scePadInit();
-	const int pad = user >= 0 ? scePadOpen(user, 0, 0, nullptr) : -1;
-	if (pad < 0)
-	{
-		std::printf("[frontend] no controller (%d); the plain list takes over\n", pad);
-		return {};
-	}
-
-	// Heap objects, so a download still running at the end can be left to finish on its own.
-	Display* display = new Display();
-	if (!display->Init())
-	{
-		display->Destroy();
-		delete display;
-		scePadClose(pad);
-		return {};
-	}
-	Fonts* fonts = new Fonts();
-	Renderer renderer;
-	if (!fonts->Init(fe_font_text, static_cast<size_t>(fe_font_text_end - fe_font_text), fe_font_icons,
-			static_cast<size_t>(fe_font_icons_end - fe_font_icons), fe_font_brands,
-			static_cast<size_t>(fe_font_brands_end - fe_font_brands)) ||
-		!renderer.Init(&display->vk, display->pd, display->device, display->qf, display->queue, display->extent.width,
-			display->extent.height, VK_FORMAT_B8G8R8A8_UNORM, display->images, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR))
-	{
-		std::printf("[frontend] renderer: %s\n", renderer.error().c_str());
-		renderer.Shutdown();
-		display->Destroy();
-		delete display;
-		delete fonts;
-		scePadClose(pad);
-		return {};
-	}
-
-	CoverService* covers = new CoverService();
-	CoverConfig cc;
-	cc.manual_dir = paths.covers_dir;
-	cc.cache_dir = paths.cache_dir;
-	cc.url_template = kCoverUrl;
-	cc.allow_download = paths.allow_download;
-	cc.download_usb_only = true; // vk-285-110: the rest came from the prefetch, before the jailbreak
-	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) { return g_coverhttp.Get(url, out); });
-
-	// The key sounds (vk-285-47). Without an audio port the shelf is simply quiet.
-	Mixer* mixer = nullptr;
-	AudioOut* audio = nullptr;
-	if (paths.sound)
-	{
-		const double s0 = Now();
-		mixer = new Mixer();
-		mixer->Build();
-		audio = new AudioOut();
-		if (!audio->Start(mixer))
-		{
-			delete audio;
-			audio = nullptr;
-			delete mixer;
-			mixer = nullptr;
-		}
-		std::printf("[frontend] sound %s (%.0f ms)\n", audio ? "on" : "off", (Now() - s0) * 1000.0);
-	}
-	else
-		std::printf("[frontend] sound off (nomenusound)\n");
-
-	App app;
-	AppConfig acfg;
-#ifdef PS5SX2_ACHIEVEMENTS
-	acfg.achievements = OrbisAchievementsAccountService();
-	acfg.game_achievements = OrbisAchievementsBrowserService();
-	g_ime.user = user;
-	acfg.text_entry.open = SystemKeyboardOpen;
-	acfg.text_entry.poll = SystemKeyboardPoll;
-#endif
-	acfg.build_tag = build_tag ? build_tag : "";
-	acfg.test_build = paths.test_build;   // test build 1: the TESTING watermark
-	acfg.build_label = paths.build_label;
-	acfg.test_note = paths.test_note; // vk-285-105
-	acfg.preselect = preselect;
-	acfg.sound = mixer;
-	// vk-285-114: the options sheet (Square) edits the files the settings page does, and logs as it does.
-	acfg.options.settings_dir = paths.settings_dir;
-	acfg.options.gs_ini = paths.gs_ini;
-	acfg.options.patches_dir = paths.patches_dir;
-	acfg.options.memcards_dir = paths.memcards_dir;
-	acfg.options.bios_dir = paths.bios_dir; // PS4 port (AI-assisted): the sheet's BIOS row
-	acfg.options.presets.assign(reinterpret_cast<const char*>(fe_presets), static_cast<size_t>(fe_presets_end - fe_presets));
-	{
-		const std::string log_path = paths.settings_log;
-		acfg.options.log = [log_path](const std::string& line) { AppendSettingsLog(log_path, line); };
-	}
-	acfg.refresh_game = [paths](GameInfo& g) {
-		g.badges.clear();
-		ReadBadges(g, paths.settings_dir, paths.gs_ini, paths.patches_dir);
-	};
-	// 2026-10-05 (AI-assisted): HD texture packs from archive.org, on the sheet's row (fe_texpacks.h). The worker runs while
-	// the shelf is up; a download left unfinished goes on at the next shelf.
-	TexturePackManager* texpacks = nullptr;
-	if (paths.texture_packs && !paths.textures_dir.empty())
-	{
-		TexturePackPlatform tp;
-		tp.get_text = [](const std::string& url, std::string& body) {
-			body.clear();
-			return g_texhttp.Get(url, false, 0, 0, [&body](const void* d, size_t n) {
-				if (body.size() + n > (8u << 20))
-					return false;
-				body.append(static_cast<const char*>(d), n);
-				return true;
-			});
-		};
-		tp.get_range = [](const std::string& url, uint64_t offset, uint64_t length, const std::function<bool(const void*, size_t)>& sink) {
-			return g_texhttp.Get(url, true, offset, length, sink);
-		};
-		tp.abort = [] { g_texhttp.Abort(); };
-		tp.free_bytes = [](const std::string& dir) { return TexturePackFreeBytes(dir); };
-		tp.thread_start = [](const char* role) { TexturePackThreadStart(role); };
-		tp.existing_pack = [](const std::string& serial) {
-			std::string how;
-			return OrbisTexturesGameDir(serial, how);
-		};
-		tp.log = [](const std::string& line) {
-			std::printf("%s\n", line.c_str());
-			std::fflush(stdout);
-		};
-		tp.notify = [](const std::string& game, bool ok, const std::string& detail) {
-			const std::string sub = detail.empty() ? game : game + " \xC2\xB7 " + detail;
-			OrbisNotifyRich(Tr(ok ? Str::HdTexturesReady : Str::HdTexturesFailed), sub.c_str(), "");
-		};
-		tp.now = [] { return Now(); };
-		const std::string textures = paths.textures_dir;
-		texpacks = new TexturePackManager(tp, textures, textures + "/.zeruko-downloads", paths.texture_pack_list);
-		texpacks->Start();
-		acfg.texture_packs = texpacks->Service();
-	}
-	// 2026-10-08 (AI-assisted): a game's patches and cheats from GitHub, on the sheet's "Get patches and cheats" row
-	// (fe_patchdl.h), over its own HTTPS client. One small file a source; the worker ends when it has nothing to do.
-	OnlinePatches* online = nullptr;
-	if (paths.online_patches && !paths.patches_dir.empty() && !paths.cheats_dir.empty())
-	{
-		OnlinePatchPlatform op;
-		op.get_text = [](const std::string& url, std::string& body) {
-			body.clear();
-			return g_patchhttp.Get(url, false, 0, 0, [&body](const void* d, size_t n) {
-				if (body.size() + n > (2u << 20))
-					return false;
-				body.append(static_cast<const char*>(d), n);
-				return true;
-			});
-		};
-		op.log = [](const std::string& line) {
-			std::printf("%s\n", line.c_str());
-			std::fflush(stdout);
-		};
-		op.thread_start = [] { TexturePackThreadStart("online patches"); };
-		online = new OnlinePatches(op, paths.patches_dir, paths.cheats_dir, paths.online_patch_manifest);
-		acfg.online_patches = online->Service();
-		acfg.options.cheats_dir = paths.cheats_dir;
-	}
-	acfg.system_menu = true; // 2026-10-08: the sheet for all games offers the PS2 system menu (main-boot.cpp boots it)
-	// vk-285-135: the places the sheet's folder picker starts from (those that are folders when it opens).
-	acfg.folder_places = {{"Zeruko's folder", "/data/zeruko"}};
-	for (int i = 0; i < 8; i++)
-		acfg.folder_places.push_back({"USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i)});
-	acfg.folder_places.push_back({"Extended storage", "/mnt/ext0"});
-	acfg.folder_places.push_back({"Extended storage 2", "/mnt/ext1"});
-#ifdef ORBIS_PS4
-	acfg.folder_places.push_back({"Network shares", "/net"}); // CEMUPS4 netfs: a folder while shares are set
-	acfg.folder_places.push_back({"PS4Mount NAS", "/data/ps4mount/nas"}); // PS4Mount's stable NAS symlink, when installed
-#else
-	acfg.folder_places.push_back({"NFS shares", "/nfs"}); // OrbisNfs.cpp: a folder while shares are set
-#endif
-	acfg.bios_present = paths.bios_check; // vk-285-134
-	acfg.bios_problem = paths.bios_problem;
-	acfg.bios_dir = paths.bios_dir;
-	bool ok = app.Init(&renderer, fonts, games, covers, acfg);
-	std::printf("[frontend] up in %.0f ms (%s)\n", (Now() - t0) * 1000.0, ok ? "ok" : renderer.error().c_str());
-	std::fflush(stdout);
-	// vk-285-50: the QR tile's address, looked up again every few seconds in case the IP changes.
-	double web_checked = -1e9;
-	auto refresh_web = [&](double now) {
-		if (!g_web || now - web_checked < 3.0)
-			return;
-		web_checked = now;
-		std::string url, shown;
-		g_web->Address(url, shown);
-		app.SetWebUrl(url, shown);
-	};
-
-	std::printf("[frontend] shelf thread: %s\n", ThreadPlace().c_str()); // 2026-10-05: see TexturePackThreadStart
-	FrameDesc frame;
-	double last_t = Now(), report_t = last_t;
-	unsigned frames = 0, slot = 0;
-	double worst = 0;
-	bool first_shown = false;
-	while (ok && !app.Done())
-	{
-		const double now = Now();
-		refresh_web(now);
-		const double dt = now - last_t;
-		last_t = now;
-		worst = std::max(worst, dt);
-		PadData pd;
-		std::memset(&pd, 0, sizeof(pd));
-		pd.lx = pd.ly = 128;
-		Input in;
-		if (scePadReadState(pad, &pd) == 0)
-		{
-			in.left = (pd.buttons & kPadLeft) || pd.lx < 48;
-			in.right = (pd.buttons & kPadRight) || pd.lx > 208;
-			in.cross = pd.buttons & kPadCross;
-			in.options = pd.buttons & kPadOptions;
-			in.l1 = pd.buttons & kPadL1;
-			in.r1 = pd.buttons & kPadR1;
-			in.up = (pd.buttons & kPadUp) || pd.ly < 48; // vk-285-114
-			in.down = (pd.buttons & kPadDown) || pd.ly > 208;
-			in.square = pd.buttons & kPadSquare;
-			in.triangle = pd.buttons & kPadTriangle;
-			in.circle = pd.buttons & kPadCircle;
-			in.l2 = (pd.buttons & kPadL2) || pd.l2 > 160; // vk-285-116
-			in.r2 = (pd.buttons & kPadR2) || pd.r2 > 160;
-		}
-		app.Update(dt, in);
-		app.Build(frame, Clock());
-		if (!renderer.WaitForSlot())
-		{
-			ok = false;
-			break;
-		}
-		uint32_t index = 0;
-		VkResult r = display->vk.vkAcquireNextImageKHR(display->device, display->swapchain, UINT64_MAX,
-			display->acquired[slot], VK_NULL_HANDLE, &index);
-		if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR)
-		{
-			std::printf("[frontend] vkAcquireNextImageKHR: %d\n", static_cast<int>(r));
-			ok = false;
-			break;
-		}
-		if (!renderer.Render(frame, index, display->acquired[slot], display->rendered[slot]))
-		{
-			std::printf("[frontend] render: %s\n", renderer.error().c_str());
-			ok = false;
-			break;
-		}
-		VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-		pi.waitSemaphoreCount = 1;
-		pi.pWaitSemaphores = &display->rendered[slot];
-		pi.swapchainCount = 1;
-		pi.pSwapchains = &display->swapchain;
-		pi.pImageIndices = &index;
-		r = display->vk.vkQueuePresentKHR(display->queue, &pi);
-		if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR)
-		{
-			std::printf("[frontend] vkQueuePresentKHR: %d\n", static_cast<int>(r));
-			ok = false;
-			break;
-		}
-#ifdef ORBIS_PS4
-		g_probe_shelf_frames.fetch_add(1, std::memory_order_relaxed);
-#endif
-		slot ^= 1;
-		frames++;
-		if (!first_shown)
-		{
-			first_shown = true;
-			// vk-285-53: the launch screen (sce_sys/pic1.dds) covers the app until it is hidden; with
-			// it, 52 stayed on the launch screen with the shelf running behind it. Hidden once the
-			// shelf's first frame is up, so the screen goes from one straight to the other.
-			const int hide = orbis_hide_splash();
-			std::printf("[frontend] first frame on screen %.0f ms after start; launch screen hidden (%d)\n", (Now() - t0) * 1000.0,
-				hide);
-			std::fflush(stdout);
-		}
-		if (now - report_t >= 5.0)
-		{
-			// 2026-10-05: not while a texture pack is being unpacked, installed or removed: its thousands of files keep the
-			// disk busy, and this write from the menu's thread then waited for the file system's commits (frames of up to
-			// 0.95 s during pr9h's unpack, in a pattern that followed a ~20 s commit cycle).
-			bool disk_busy = false;
-			if (texpacks)
-			{
-				const TexturePackActivity a = texpacks->Activity();
-				disk_busy = a.active && (a.state == TexturePackStatus::State::Unpacking || a.state == TexturePackStatus::State::Installing ||
-											a.state == TexturePackStatus::State::Removing);
-			}
-			if (!disk_busy)
-			{
-				std::printf("[frontend] %u frames in %.1f s, worst %.1f ms\n", frames, now - report_t, worst * 1000.0);
-				std::fflush(stdout);
-			}
-			frames = 0;
-			worst = 0;
-			report_t = now;
-		}
-	}
-
-	const int chosen = app.Chosen();
-	const bool picked = ok && app.Done();
-	const bool system_menu = app.SystemMenuChosen(); // 2026-10-08
-	renderer.WaitIdle();
-	app.Shutdown();
-	// The worker may be inside a download: stop it from starting another, fail the one in flight,
-	// give it a moment, then leave it behind if need be.
-	covers->RequestStop();
-	g_coverhttp.Abort();
-	// 2026-10-05: the texture packs stop with the shelf: a download keeps its part for the next one.
-	if (texpacks)
-	{
-		if (texpacks->Stop(1500))
-		{
-			delete texpacks;
-			g_texhttp.Term();
-		}
-		else
-			std::printf("[frontend] a texture pack job is still stopping; leaving it to end on its own\n");
-	}
-	// 2026-10-08: the online patches stop with the shelf (a request in flight is failed; the job is asked again later).
-	if (online)
-	{
-		g_patchhttp.Abort();
-		if (online->Stop(1500))
-		{
-			delete online;
-			g_patchhttp.Term();
-		}
-		else
-			std::printf("[frontend] an online patch request is still stopping; leaving it to end on its own\n");
-	}
-	const bool stopped = covers->Stop(1500);
-	renderer.Shutdown();
-	display->Destroy();
-	delete display;
-	if (stopped)
-	{
-		delete covers;
-		delete fonts;
-		g_coverhttp.Term();
-	}
-	else
-		std::printf("[frontend] a cover download is still running; leaving it to finish\n");
-	scePadClose(pad);
-	if (audio)
-	{
-		// Let the launch sound ring out: it lasts about 0.8 s, the shelf closes 0.6 s after the press.
-		const double s0 = Now();
-		while (!mixer->Idle() && Now() - s0 < 0.4)
-			usleep(5000);
-		audio->Stop();
-		delete audio;
-		delete mixer;
-	}
-
-	if (!picked)
-	{
-		std::printf("[frontend] stopped without a pick; the plain list takes over\n");
+		std::printf("[estratos] boot selection: %s\n", shell.path.c_str());
 		std::fflush(stdout);
-		return {};
+		return shell.path;
 	}
-	*ran = true;
-	if (system_menu)
+	if (shell.kind == caliza::ps4shell::ShellResult::Kind::SystemMenu)
 	{
-		// 2026-10-08: the PS2's own menu, no disc (main-boot.cpp boots the BIOS for kOrbisSystemMenuPath). The last game stays.
-		std::printf("[frontend] picked the PS2 system menu (no disc)\n");
+		std::printf("[estratos] boot selection: PS2 system menu\n");
 		std::fflush(stdout);
 		return kOrbisSystemMenuPath;
 	}
-	const GameInfo& g = games[static_cast<size_t>(chosen)];
-	WriteLastGame(paths.top_dir, g.file);
-	std::printf("[frontend] picked %s (%s)\n", g.file.c_str(), g.serial.c_str());
+	if (!shell.error.empty())
+		std::printf("[estratos] shell ended without a boot selection: %s\n", shell.error.c_str());
+	else
+		std::printf("[estratos] shell ended without a boot selection\n");
 	std::fflush(stdout);
-	return g.path;
+	return {};
 }

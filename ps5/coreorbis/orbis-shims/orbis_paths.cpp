@@ -1,4 +1,4 @@
-// PS5 port (vk-285-33): the /data/zeruko folder layout (include-orbis/OrbisPaths.h).
+// PS5 port (vk-285-33): the /data/caliza folder layout (include-orbis/OrbisPaths.h).
 //
 // Copyright (C) 2026 swordpdf
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -17,7 +17,7 @@
 
 namespace
 {
-constexpr const char* kRoot = "/data/zeruko";
+constexpr const char* kRoot = "/data/caliza";
 
 bool IsDir(const std::string& path)
 {
@@ -195,7 +195,7 @@ extern "C" bool ps5vk_live_flag_hook(const char* path, bool* on)
 }
 
 extern "C" {
-char g_orbis_pf_log[160] = "/data/zeruko/pf.log";
+char g_orbis_pf_log[160] = "/data/caliza/pf.log";
 }
 
 std::string OrbisLogPath(const char* name)

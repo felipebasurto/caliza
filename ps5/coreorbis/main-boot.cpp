@@ -52,7 +52,7 @@ extern volatile unsigned long long g_orbis_map_addr;
 #include "common/MemorySettingsInterface.h"
 #include "common/SettingsWrapper.h" // eerec-285
 #include "debug_overlay.h"
-#include "OrbisPaths.h" // vk-285-33: the /data/zeruko folder layout
+#include "OrbisPaths.h" // vk-285-33: the /data/caliza folder layout
 #include "OrbisDriver.h" // vk-285-115: ps5vk or RADV
 #include "SIO/Pad/Pad.h"
 #include "SIO/Pad/PadDualshock2.h"
@@ -69,6 +69,8 @@ extern volatile unsigned long long g_orbis_map_addr;
 #include "ps4_wsi_stats.h"
 #endif
 #include "OrbisNfs.h"                     // vk-285-135: games on NFS shares
+#include "caliza/core/data_root.h"
+#include "caliza/core/legacy_compat.h"
 #include <mutex>
 #include <set> // vk-285-134
 // vk-285-108 (GSRenderer.cpp): the helper threads' CPUs and the ticker's heartbeat for the GS thread's watchdog.
@@ -81,7 +83,7 @@ extern "C" int sceKernelGetCurrentCpu(void);
 #include <dlfcn.h>
 
 // Orbis: DualSense -> PCSX2 port 1 DualShock2 via libScePad (polled on its own thread).
-// eerec-278: SW renderer frames presented by GSDeviceOGL (GPU upscale) when /data/zeruko/swgl exists.
+// eerec-278: SW renderer frames presented by GSDeviceOGL (GPU upscale) when /data/caliza/swgl exists.
 bool g_orbis_sw_on_gl = false;
 // eerec-278: bumped by the pad thread when L3+R3 are held ~0.4 s (cycles the present filter).
 std::atomic<int> g_orbis_filter_cycle{0};
@@ -266,302 +268,60 @@ static void orbis_boot_log_hold()
 #define ORBIS_STDOUT_BUFFERING _IOFBF
 #endif
 
-static constexpr char kOrbisDataRoot[] = "/data/zeruko";
+static constexpr char kOrbisDataRoot[] = "/data/caliza";
 static constexpr char kOrbisLegacyDataRoot[] = "/data/PCSX2";
-static constexpr long long kOrbisMigrateFileLimit = 64LL * 1024 * 1024;
-static constexpr int kOrbisMigrateMaxDepth = 4;
-
-struct OrbisMigrateCounts
+static const char* orbis_migration_status_name(caliza::dataroot::MigrationStatus status)
 {
-  unsigned long long copied = 0;
-  unsigned long long skipped = 0;
-  unsigned long long failed = 0;
-};
-
-static void orbis_migrate_add(OrbisMigrateCounts& total, const OrbisMigrateCounts& add)
-{
-  total.copied += add.copied;
-  total.skipped += add.skipped;
-  total.failed += add.failed;
+  using caliza::dataroot::MigrationStatus;
+  switch (status)
+  {
+  case MigrationStatus::Completed: return "completed";
+  case MigrationStatus::CompletedWithIssues: return "completed with issues";
+  case MigrationStatus::Interrupted: return "interrupted";
+  case MigrationStatus::NoSource: return "no source";
+  case MigrationStatus::InvalidRequest: return "invalid request";
+  case MigrationStatus::Failed: return "failed";
+  }
+  return "unknown";
 }
 
-static bool orbis_migrate_ensure_dir(const std::string& path, int* error)
-{
-  if (mkdir(path.c_str(), 0777) == 0)
-    return true;
-  const int mkdir_error = errno;
-  if (mkdir_error == EEXIST)
-  {
-    struct stat st = {};
-    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
-      return true;
-  }
-  if (error)
-    *error = mkdir_error;
-  return false;
-}
-
-// One file, streamed through a fixed 256 KiB buffer. A partial destination is removed on failure; it is always
-// under the newly created /data/zeruko, never under /data/PCSX2.
-static bool orbis_migrate_copy_file(const std::string& from, const std::string& to, int* error)
-{
-  int copy_error = 0;
-  FILE* in = fopen(from.c_str(), "rb");
-  if (!in)
-  {
-    copy_error = errno;
-    if (error)
-      *error = copy_error;
-    return false;
-  }
-  FILE* out = fopen(to.c_str(), "wb");
-  if (!out)
-  {
-    copy_error = errno;
-    fclose(in);
-    if (error)
-      *error = copy_error;
-    return false;
-  }
-
-  static char buffer[256 * 1024];
-  bool ok = true;
-  for (;;)
-  {
-    errno = 0;
-    const size_t n = fread(buffer, 1, sizeof(buffer), in);
-    const int read_error = errno;
-    if (n == 0)
-    {
-      if (ferror(in))
-      {
-        ok = false;
-        copy_error = read_error ? read_error : EIO;
-      }
-      break;
-    }
-    size_t done = 0;
-    while (done < n)
-    {
-      errno = 0;
-      const size_t written = fwrite(buffer + done, 1, n - done, out);
-      const int write_error = errno;
-      if (written == 0)
-      {
-        ok = false;
-        copy_error = write_error ? write_error : EIO;
-        break;
-      }
-      done += written;
-    }
-    if (!ok)
-      break;
-  }
-  if (ok && ferror(out))
-  {
-    ok = false;
-    copy_error = errno ? errno : EIO;
-  }
-  errno = 0;
-  const int close_rc = fclose(out);
-  const int close_error = errno;
-  fclose(in);
-  if (ok && close_rc != 0)
-  {
-    ok = false;
-    copy_error = close_error ? close_error : EIO;
-  }
-  const size_t new_root_len = sizeof(kOrbisDataRoot) - 1;
-  const bool in_new_root = to.size() > new_root_len && to.compare(0, new_root_len, kOrbisDataRoot) == 0 &&
-                           to[new_root_len] == '/';
-  if (!ok && in_new_root)
-    remove(to.c_str());
-  if (error)
-    *error = copy_error;
-  return ok;
-}
-
-// `st` must be from lstat(): symlinks are skipped without reading their targets.
-static void orbis_migrate_copy_regular(const std::string& from, const std::string& to, const struct stat& st,
-  OrbisMigrateCounts& counts)
-{
-  if (S_ISLNK(st.st_mode))
-  {
-    counts.skipped++;
-    printf("[migrate] %s skipped: a symlink\n", from.c_str());
-    return;
-  }
-  if (!S_ISREG(st.st_mode))
-  {
-    counts.skipped++;
-    printf("[migrate] %s skipped: not a regular file\n", from.c_str());
-    return;
-  }
-  if (st.st_size > kOrbisMigrateFileLimit)
-  {
-    counts.skipped++;
-    printf("[migrate] %s skipped: %lld bytes is over the 64 MiB limit\n", from.c_str(), (long long)st.st_size);
-    return;
-  }
-  int copy_error = 0;
-  if (orbis_migrate_copy_file(from, to, &copy_error))
-  {
-    counts.copied++;
-    return;
-  }
-  counts.failed++;
-  printf("[migrate] %s: copy failed (errno %d, %s); continuing\n", from.c_str(), copy_error, std::strerror(copy_error));
-}
-
-static void orbis_migrate_copy_tree(const std::string& from, const std::string& to, int depth, OrbisMigrateCounts& counts)
-{
-  int mkdir_error = 0;
-  if (!orbis_migrate_ensure_dir(to, &mkdir_error))
-  {
-    counts.failed++;
-    printf("[migrate] %s: can't create %s (errno %d, %s); this folder skipped\n", from.c_str(), to.c_str(), mkdir_error,
-      std::strerror(mkdir_error));
-    return;
-  }
-  DIR* dir = opendir(from.c_str());
-  if (!dir)
-  {
-    const int open_error = errno;
-    counts.failed++;
-    printf("[migrate] %s: can't open the folder (errno %d, %s); its files skipped\n", from.c_str(), open_error,
-      std::strerror(open_error));
-    return;
-  }
-
-  int read_error = 0;
-  for (;;)
-  {
-    errno = 0;
-    const dirent* entry = readdir(dir);
-    if (!entry)
-    {
-      read_error = errno;
-      break;
-    }
-    if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0)
-      continue;
-    const std::string src = from + "/" + entry->d_name;
-    const std::string dst = to + "/" + entry->d_name;
-    struct stat st = {};
-    if (lstat(src.c_str(), &st) != 0)
-    {
-      const int stat_error = errno;
-      counts.failed++;
-      printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
-      continue;
-    }
-    if (S_ISDIR(st.st_mode))
-    {
-      if (depth >= kOrbisMigrateMaxDepth)
-      {
-        counts.skipped++;
-        printf("[migrate] %s skipped: deeper than the 4-folder limit\n", src.c_str());
-        continue;
-      }
-      orbis_migrate_copy_tree(src, dst, depth + 1, counts);
-      continue;
-    }
-    orbis_migrate_copy_regular(src, dst, st, counts);
-  }
-  closedir(dir);
-  if (read_error)
-  {
-    counts.failed++;
-    printf("[migrate] %s: reading the folder failed (errno %d, %s); part of it may be missing\n", from.c_str(), read_error,
-      std::strerror(read_error));
-  }
-}
-
-// The rebrand's one-time copy from the old data root. Only the small user data is copied: games and texture packs are
-// too big, while cache, logs and flags are machine- or build-specific. The old folder is only ever a copy source, so if
-// copying stops halfway its data is still intact. Needs proper testing on hardware.
-static void orbis_migrate_legacy_data()
+// Copy one older data root into /data/caliza with the shared resumable migration engine. The source is
+// never written or deleted; large games/texture packs stay referenced in place rather than being duplicated.
+static void orbis_migrate_one_data_root(const std::string& source, const char* label)
 {
   struct stat st = {};
-  if (stat(kOrbisDataRoot, &st) == 0)
-    return; // already set up: the copy is one-time whether or not it is a folder
-  const int target_error = errno;
-  if (target_error != ENOENT)
-    return; // before the jailbreak /data can be unreachable; the post-jailbreak call decides then
-  if (stat(kOrbisLegacyDataRoot, &st) != 0 || !S_ISDIR(st.st_mode))
+  if (stat(source.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
     return;
 
-  printf("[migrate] copying your settings and memory cards from the old /data/PCSX2 folder\n");
+  caliza::dataroot::MigrationOptions options;
+  options.source_root = source;
+  options.destination_root = kOrbisDataRoot;
+  options.large_data_strategy = caliza::dataroot::MigrationLargeDataStrategy::ReferenceOnly;
+  printf("[migrate] copying user data from %s (%s)\n", source.c_str(), label);
   fflush(stdout);
-  if (mkdir(kOrbisDataRoot, 0777) != 0)
+  const caliza::dataroot::MigrationResult result = caliza::dataroot::MigrateDataRoot(options);
+  printf("[migrate] %s: %s; %u copied, %u identical, %u collisions, %u rejected, %llu bytes\n", source.c_str(),
+    orbis_migration_status_name(result.status), result.files_copied, result.files_already_identical, result.collisions,
+    result.rejected, (unsigned long long)result.bytes_copied);
+  if (!result.large_data_exceptions.empty())
   {
-    const int mkdir_error = errno;
-    printf("[migrate] warning: can't create /data/zeruko (errno %d, %s); boot continues without the copy\n", mkdir_error,
-      std::strerror(mkdir_error));
-    fflush(stdout);
-    return;
+    for (const caliza::dataroot::MigrationException& exception : result.large_data_exceptions)
+      printf("[migrate] large data left in place: %s (%llu bytes, %s)\n", exception.path.c_str(),
+        (unsigned long long)exception.bytes, exception.reason.c_str());
   }
-
-  OrbisMigrateCounts total;
-  static const char* const kDirs[] = {"bios", "memcards", "settings", "savestates", "patches", "cheats", "covers"};
-  for (const char* name : kDirs)
-  {
-    OrbisMigrateCounts counts;
-    const std::string src = std::string(kOrbisLegacyDataRoot) + "/" + name;
-    const std::string dst = std::string(kOrbisDataRoot) + "/" + name;
-    struct stat entry_st = {};
-    const bool present = lstat(src.c_str(), &entry_st) == 0;
-    if (!present)
-    {
-      const int stat_error = errno;
-      if (stat_error != ENOENT)
-      {
-        counts.failed++;
-        printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
-      }
-    }
-    else if (S_ISDIR(entry_st.st_mode))
-    {
-      orbis_migrate_copy_tree(src, dst, 0, counts);
-    }
-    else
-    {
-      counts.skipped++;
-      printf("[migrate] %s skipped: %s\n", src.c_str(), S_ISLNK(entry_st.st_mode) ? "a symlink" : "not a folder");
-    }
-    if (present || counts.copied || counts.skipped || counts.failed)
-    {
-      printf("[migrate] %s/: %llu files copied, %llu skipped, %llu failed\n", name, counts.copied, counts.skipped, counts.failed);
-      fflush(stdout);
-    }
-    orbis_migrate_add(total, counts);
-  }
-
-  OrbisMigrateCounts files;
-  static const char* const kFiles[] = {"gs.ini", "live.ini", "playtime.dat", "lastgame.txt"};
-  for (const char* name : kFiles)
-  {
-    const std::string src = std::string(kOrbisLegacyDataRoot) + "/" + name;
-    struct stat entry_st = {};
-    if (lstat(src.c_str(), &entry_st) != 0)
-    {
-      const int stat_error = errno;
-      if (stat_error != ENOENT)
-      {
-        files.failed++;
-        printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
-      }
-      continue;
-    }
-    orbis_migrate_copy_regular(src, std::string(kOrbisDataRoot) + "/" + name, entry_st, files);
-  }
-  printf("[migrate] top-level files: %llu files copied, %llu skipped, %llu failed\n", files.copied, files.skipped, files.failed);
-  orbis_migrate_add(total, files);
-
-  if (total.failed)
-    printf("[migrate] warning: %llu files or folders could not be copied; boot continues with the partial copy\n", total.failed);
-  printf("[migrate] done: %llu files copied, %llu skipped\n", total.copied, total.skipped + total.failed);
+  if (result.collisions)
+    printf("[migrate] collisions kept the existing /data/caliza files; the source remains untouched\n");
+  if (!result.message.empty())
+    printf("[migrate] detail: %s\n", result.message.c_str());
   fflush(stdout);
+}
+
+// Newer installation data wins collision precedence, so migrate the immediately previous root first and the
+// older PCSX2 root second as a gap filler. Migration is safe to retry after interruption.
+static void orbis_migrate_legacy_data()
+{
+  orbis_migrate_one_data_root(caliza::legacy::RetiredDataRoot(), "previous installation");
+  orbis_migrate_one_data_root(kOrbisLegacyDataRoot, "PCSX2 data");
 }
 
 static void orbis_boot_log_release(const char* when)
@@ -569,7 +329,7 @@ static void orbis_boot_log_release(const char* when)
   if (!g_boot_held.load(std::memory_order_acquire))
     return;
   struct stat st = {};
-  if (stat("/data/zeruko", &st) != 0 || !S_ISDIR(st.st_mode))
+  if (stat("/data/caliza", &st) != 0 || !S_ISDIR(st.st_mode))
     return; // still not there
   OrbisBootLogHold* h = g_boot_hold;
   fflush(stdout);
@@ -701,14 +461,14 @@ static std::string orbis_ini_summary(const std::string& path)
 // vk-285-113: rumble. PCSX2's DualShock 2 hands its two motors (the big one's strength, the small one on or off) to
 // InputManager::SetPadVibrationIntensity, which went nowhere with no input source bound. Input/InputManager.cpp now
 // passes the values of PS2 ports 1 and 2 to orbis_pad_vibration; the pad thread sends the changes to the controllers
-// with scePadSetVibration. Zeruko/Rumble=false (the settings page's Controller group) turns it off.
+// with scePadSetVibration. Caliza/Rumble=false (the settings page's Controller group) turns it off.
 static std::atomic<u32> g_orbis_rumble_state[8]; // (big << 8) | small, each 0..255; by PCSX2's pad index (vk-285-118: all 8)
 static std::atomic<int> g_orbis_rumble_on{1};
-// vk-285-118: Zeruko/RumbleStrength (0.25..2, the Controller group's Strength): each motor's value times this, at most full.
+// vk-285-118: Caliza/RumbleStrength (0.25..2, the Controller group's Strength): each motor's value times this, at most full.
 static std::atomic<int> g_orbis_rumble_pct{100};
-// vk-285-118: Zeruko/FastSpeed, how fast fast forward runs: 0 as fast as it can, else that many times full speed (StubHost.cpp).
+// vk-285-118: Caliza/FastSpeed, how fast fast forward runs: 0 as fast as it can, else that many times full speed (StubHost.cpp).
 std::atomic<int> g_orbis_fast_speed{0};
-// vk-285-116 (AI-assisted): the controller remapping (orbis-shims/OrbisPadMap.h: Zeruko/Button*, SwapSticks, InvertLeft,
+// vk-285-116 (AI-assisted): the controller remapping (orbis-shims/OrbisPadMap.h: Caliza/Button*, SwapSticks, InvertLeft,
 // InvertRight, LeftStickDpad; vk-285-117: the save and load state combos, SaveButton1/2, LoadButton1/2, StateHold; the
 // Controls tab). orbis_ps5opts_from sets it at boot and at every live apply; the pad thread copies it when the version
 // moves.
@@ -856,7 +616,7 @@ static int32_t orbis_initial_or_foreground_user(int *rc_out = nullptr)
   return user >= 0 ? user : -1;
 }
 
-// ---- Orbis sampling profiler (flag /data/zeruko/prof): ITIMER_PROF -> SIGPROF on the running thread,
+// ---- Orbis sampling profiler (flag /data/caliza/prof): ITIMER_PROF -> SIGPROF on the running thread,
 // histogram of interrupted RIP (PS5 mcontext: rip at ctx+0xe0). Reports every 20 s.
 #include <sys/time.h>
 static constexpr unsigned long long kProfElfBase = 0x400000ULL, kProfElfSize = 0x2000000ULL;
@@ -942,7 +702,7 @@ static void orbis_prof_start()
 // at game start, PS2 port 2 gets a DualShock 2 and the pad thread reads that user's controller too (a
 // tester: "No second controller recognized in Fifa Street 2"). -1: one user, port 2 stays empty.
 static int32_t g_orbis_second_user = -1;
-// vk-285-118 (AI-assisted): players 2..4, Zeruko/Multitap (0 off, 1 a multitap in PS2 port 1, 2 in port 2; read at game
+// vk-285-118 (AI-assisted): players 2..4, Caliza/Multitap (0 off, 1 a multitap in PS2 port 1, 2 in port 2; read at game
 // start). Off: player 2 on port 2, as vk-285-109. Port 1: players 1..4 on 1A..1D (PCSX2's pad indices 0, 2, 3, 4). Port 2:
 // player 1 on port 1, players 2..4 on 2A..2C (1, 5, 6). Each extra player is the next logged-in user, with their controller.
 static int g_orbis_multitap = 0;
@@ -1299,7 +1059,7 @@ static void *orbis_pad_thread(void *)
     if (pad1_on)
     {
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
-      // held together for Zeruko/StateHold; orbis-shims/OrbisPadMap.h ComboWatch). By default L3+R3 + D-pad up saves and
+      // held together for Caliza/StateHold; orbis-shims/OrbisPadMap.h ComboWatch). By default L3+R3 + D-pad up saves and
       // + D-pad down loads, at once, as since eerec-282 (now the D-pad press that does it is kept from the game). The
       // touchpad's sides are eerec-284's zones (1.51's touch + Cross is TouchLeft/TouchRight + Cross here). They read the
       // controller's real buttons (and the keyboard's), before the remapping.
@@ -1516,7 +1276,7 @@ static constexpr GSRendererType ORBIS_GPU_RENDERER = GSRendererType::VK;
 static constexpr GSRendererType ORBIS_GPU_RENDERER = GSRendererType::OGL;
 #endif
 // PS4 port (AI-assisted): paraLLEl-GS (the GS in Vulkan compute, GSRendererPGS.cpp) instead of GSDeviceVK, for the
-// games whose GS thread is CPU-bound: Zeruko/Renderer = paraLLEl in gs.ini or a game's settings file, PCSX2's
+// games whose GS thread is CPU-bound: Caliza/Renderer = paraLLEl in gs.ini or a game's settings file, PCSX2's
 // EmuCore/GS/Renderer = 18, or the flag file pgs. Read at game start. Needs proper testing on the console.
 static bool g_orbis_pgs = false;
 static GSRendererType orbis_gpu_renderer()
@@ -1533,10 +1293,10 @@ static GSRendererType orbis_gpu_renderer()
 // fixed; eerec-83 tests the driver patch that removes the per-draw pipeline
 // drain and the 1ms poll floor.
 static bool g_use_gl_renderer = true;
-// Orbis test switches (files in /data/zeruko, read once at boot):
+// Orbis test switches (files in /data/caliza, read once at boot):
 //   sw_renderer  -> PCSX2 software rasterizer (GL device still presents)
 //   nospeedhacks -> vu1Instant/vuFlagHack off
-// vk-285-32: per-game settings. /data/zeruko/settings/<the disc image's name>.ini (e.g.
+// vk-285-32: per-game settings. /data/caliza/settings/<the disc image's name>.ini (e.g.
 // "settings/Ratchet & Clank 3.ini") holds lines like gs.ini's and is applied after it, so its values
 // win. Its path is set once the game selector has picked the image; GSRenderer.cpp's live reload
 // watches it next to gs.ini (OrbisGameIniPath).
@@ -1607,7 +1367,7 @@ static void orbis_apply_ini_file(MemorySettingsInterface& si, const char* path, 
 
 static void orbis_apply_gs_ini(MemorySettingsInterface& si, bool quiet = false)
 {
-  orbis_apply_ini_file(si, "/data/zeruko/gs.ini", "gs.ini", quiet);
+  orbis_apply_ini_file(si, "/data/caliza/gs.ini", "gs.ini", quiet);
   if (!s_game_ini_path.empty()) // vk-285-32: then the game's own
     orbis_apply_ini_file(si, s_game_ini_path.c_str(), "game ini", quiet);
 #ifdef PS5SX2_ACHIEVEMENTS
@@ -1823,14 +1583,14 @@ static bool orbis_vu1_speed_from(const SettingsInterface& si)
   return false;
 }
 
-// vk-285-113: Zeruko/Overlay, Zeruko/FpsGraph and Zeruko/Rumble from gs.ini and the game's file, live (the settings
+// vk-285-113: Caliza/Overlay, Caliza/FpsGraph and Caliza/Rumble from gs.ini and the game's file, live (the settings
 // page's Overlay and Controller groups). Overlay: 0 no box, 1 FPS, 2 FPS and the EE/GS/VU loads; unset, or anything
 // else: live.ini's fps= and perf= decide, as before. GSRenderer.cpp draws the box and the graph; the pad thread sends
 // the rumble.
 extern std::atomic<int> g_orbis_overlay_mode;
 extern std::atomic<int> g_orbis_fps_graph;
-extern std::atomic<int> g_orbis_ra_challenge; // 2026-10-08: Zeruko/RAChallengeIcons (GSRenderer.cpp OrbisDrawChallengeIcons)
-// 2026-10-08 (AI-assisted): the overlay picture (GSRenderer.cpp OrbisDrawBezel): Zeruko/Bezel and Zeruko/BezelDir, live.
+extern std::atomic<int> g_orbis_ra_challenge; // 2026-10-08: Caliza/RAChallengeIcons (GSRenderer.cpp OrbisDrawChallengeIcons)
+// 2026-10-08 (AI-assisted): the overlay picture (GSRenderer.cpp OrbisDrawBezel): Caliza/Bezel and Caliza/BezelDir, live.
 extern std::atomic<int> g_orbis_bezel;
 extern std::atomic<u32> g_orbis_bezel_gen;
 static std::mutex g_orbis_bezel_mutex;
@@ -1850,13 +1610,13 @@ static void orbis_set_bezel(bool on, const std::string& dir)
     g_orbis_bezel.store(on ? 1 : 0, std::memory_order_relaxed);
   }
   g_orbis_bezel_gen.fetch_add(1, std::memory_order_release);
-  printf("[boot] overlay picture %s (Zeruko/Bezel), from %s\n", on ? "on" : "off",
-    dir.empty() ? "/data/zeruko/overlays" : (dir + ", then /data/zeruko/overlays (Zeruko/BezelDir)").c_str());
+  printf("[boot] overlay picture %s (Caliza/Bezel), from %s\n", on ? "on" : "off",
+    dir.empty() ? "/data/caliza/overlays" : (dir + ", then /data/caliza/overlays (Caliza/BezelDir)").c_str());
   fflush(stdout);
 }
 
-// vk-285-113: a game's texture pack outside /data/zeruko/textures: Zeruko/TexturesDir/<serial>, or a USB drive's
-// zeruko/textures, PCSX2/textures or textures folder (orbis-shims/OrbisTextureRoots.h; GSTextureReplacements.cpp asks
+// vk-285-113: a game's texture pack outside /data/caliza/textures: Caliza/TexturesDir/<serial>, or a USB drive's
+// caliza/textures, PCSX2/textures or textures folder (orbis-shims/OrbisTextureRoots.h; GSTextureReplacements.cpp asks
 // when a game starts). The setting is kept here under a lock: the GS thread asks, the CPU thread reads the files.
 static std::mutex g_orbis_textures_mutex;
 static std::string g_orbis_textures_dir;
@@ -1866,7 +1626,7 @@ static void orbis_set_textures_dir(const std::string& dir)
   if (dir == g_orbis_textures_dir)
     return;
   g_orbis_textures_dir = dir;
-  printf("[boot] Zeruko/TexturesDir=%s\n", dir.empty() ? "(not set: USB drives, then /data/zeruko/textures)" : dir.c_str());
+  printf("[boot] Caliza/TexturesDir=%s\n", dir.empty() ? "(not set: USB drives, then /data/caliza/textures)" : dir.c_str());
   fflush(stdout);
 }
 std::string OrbisTexturesGameDir(const std::string& serial, std::string& how)
@@ -1880,9 +1640,9 @@ std::string OrbisTexturesGameDir(const std::string& serial, std::string& how)
   if (!found.empty())
     return found;
 
-  // Last-priority rebrand fallback: a pack already installed under /data/zeruko/textures wins; only when that serial
+  // Last-priority rebrand fallback: a pack already installed under /data/caliza/textures wins; only when that serial
   // has no folder there is the old root used. Texture packs are far too big to copy, and new installs still go to
-  // /data/zeruko/textures. OrbisTextureRoots.h is shared with host tests, so the console-specific legacy rule stays here.
+  // /data/caliza/textures. OrbisTextureRoots.h is shared with host tests, so the console-specific legacy rule stays here.
   if (!OrbisTextures::WalkDirs(std::string(kOrbisDataRoot) + "/textures", {serial}).empty())
     return std::string();
   const std::string legacy_root = std::string(kOrbisLegacyDataRoot) + "/textures";
@@ -1904,22 +1664,22 @@ std::string OrbisTexturesGameDir(const std::string& serial, std::string& how)
 static void orbis_ps5opts_from(const SettingsInterface& si)
 {
   s32 overlay = -1;
-  if (!si.GetIntValue("Zeruko", "Overlay", &overlay) || overlay < 0 || overlay > 2)
+  if (!si.GetIntValue("Caliza", "Overlay", &overlay) || overlay < 0 || overlay > 2)
     overlay = -1;
   bool graph = false, rumble = true, challenge = true;
-  si.GetBoolValue("Zeruko", "FpsGraph", &graph);
-  si.GetBoolValue("Zeruko", "Rumble", &rumble);
-  si.GetBoolValue("Zeruko", "RAChallengeIcons", &challenge); // 2026-10-08 (AI-assisted): the RetroAchievements challenge icons
+  si.GetBoolValue("Caliza", "FpsGraph", &graph);
+  si.GetBoolValue("Caliza", "Rumble", &rumble);
+  si.GetBoolValue("Caliza", "RAChallengeIcons", &challenge); // 2026-10-08 (AI-assisted): the RetroAchievements challenge icons
   {
     bool bezel = false; // 2026-10-08 (AI-assisted): the overlay picture
     std::string bezel_dir;
-    si.GetBoolValue("Zeruko", "Bezel", &bezel);
-    si.GetStringValue("Zeruko", "BezelDir", &bezel_dir);
+    si.GetBoolValue("Caliza", "Bezel", &bezel);
+    si.GetStringValue("Caliza", "BezelDir", &bezel_dir);
     orbis_set_bezel(bezel, bezel_dir);
   }
   if (g_orbis_ra_challenge.exchange(challenge ? 1 : 0, std::memory_order_relaxed) != (challenge ? 1 : 0))
   {
-    printf("[boot] RetroAchievements challenge icons %s (Zeruko/RAChallengeIcons)\n", challenge ? "on" : "off");
+    printf("[boot] RetroAchievements challenge icons %s (Caliza/RAChallengeIcons)\n", challenge ? "on" : "off");
     fflush(stdout);
   }
   const int old_overlay = g_orbis_overlay_mode.exchange(overlay, std::memory_order_relaxed);
@@ -1928,7 +1688,7 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
   int rumble_pct = 100;
   {
     std::string v;
-    if (si.GetStringValue("Zeruko", "RumbleStrength", &v))
+    if (si.GetStringValue("Caliza", "RumbleStrength", &v))
     {
       char *end = nullptr;
       const double k = std::strtod(v.c_str(), &end);
@@ -1938,21 +1698,21 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
   }
   const int old_rumble_pct = g_orbis_rumble_pct.exchange(rumble_pct, std::memory_order_relaxed);
   {
-    const int fast = si.GetIntValue("Zeruko", "FastSpeed", 0);
+    const int fast = si.GetIntValue("Caliza", "FastSpeed", 0);
     g_orbis_fast_speed.store(fast >= 2 && fast <= 8 ? fast : 0, std::memory_order_relaxed);
   }
-  std::string textures_dir; // vk-285-113: Zeruko/TexturesDir, where a game's texture packs are besides USB drives
-  si.GetStringValue("Zeruko", "TexturesDir", &textures_dir);
+  std::string textures_dir; // vk-285-113: Caliza/TexturesDir, where a game's texture packs are besides USB drives
+  si.GetStringValue("Caliza", "TexturesDir", &textures_dir);
   orbis_set_textures_dir(textures_dir);
-  // vk-285-113: the USB keyboard and mouse as the PS2 controller (orbis-shims/ProsperoKbdMouse.cpp): Zeruko/KeyboardMouse
+  // vk-285-113: the USB keyboard and mouse as the PS2 controller (orbis-shims/ProsperoKbdMouse.cpp): Caliza/KeyboardMouse
   // 0 Auto, 1 Controller only, 2 USB devices only, 3 Off; MouseAim 0 nothing, 1 right stick, 2 left stick; MouseSpeed 1..4;
   // MouseButtons 0 R1 and L1, 1 R2 and L2.
-  OrbisKbdMouseConfigure(si.GetIntValue("Zeruko", "KeyboardMouse", 0), si.GetIntValue("Zeruko", "MouseAim", 1),
-    si.GetIntValue("Zeruko", "MouseSpeed", 2), si.GetIntValue("Zeruko", "MouseButtons", 0));
+  OrbisKbdMouseConfigure(si.GetIntValue("Caliza", "KeyboardMouse", 0), si.GetIntValue("Caliza", "MouseAim", 1),
+    si.GetIntValue("Caliza", "MouseSpeed", 2), si.GetIntValue("Caliza", "MouseButtons", 0));
   // vk-285-116 (AI-assisted): the remapping and (vk-285-117) the save and load combos (the Controls tab).
   {
     const orbis_padmap::Config map = orbis_padmap::FromSettings([&](const char* key, std::string& value) {
-      return si.GetStringValue("Zeruko", key, &value);
+      return si.GetStringValue("Caliza", key, &value);
     });
     bool changed = false;
     {
@@ -1966,27 +1726,27 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
     if (changed)
     {
       g_orbis_padmap_version.fetch_add(1, std::memory_order_release);
-      printf("[boot] controls: %s (Zeruko/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, SaveButton*, LoadButton*, StateHold)\n",
+      printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, SaveButton*, LoadButton*, StateHold)\n",
         orbis_padmap::Describe(map).c_str());
       fflush(stdout);
     }
   }
   if (old_overlay != overlay || old_graph != (graph ? 1 : 0) || old_rumble != (rumble ? 1 : 0) || old_rumble_pct != rumble_pct)
   {
-    printf("[boot] on-screen box %s, FPS graph %s, rumble %s at %d%% (Zeruko/Overlay, FpsGraph, Rumble, RumbleStrength)\n",
+    printf("[boot] on-screen box %s, FPS graph %s, rumble %s at %d%% (Caliza/Overlay, FpsGraph, Rumble, RumbleStrength)\n",
       overlay < 0 ? "as live.ini says" : overlay == 0 ? "off" : overlay == 1 ? "FPS" : "FPS and loads", graph ? "on" : "off",
       rumble ? "on" : "off", rumble_pct);
     fflush(stdout);
   }
 }
 
-// vk-285-113: Zeruko/KeyboardMouse 1 (Controller only) and 3 (Off) take the PS2's USB keyboard and mouse off the ports
+// vk-285-113: Caliza/KeyboardMouse 1 (Controller only) and 3 (Off) take the PS2's USB keyboard and mouse off the ports
 // (0 Auto and 2 USB devices only leave them where boot put them: USB1 hidkbd, USB2 hidmouse, unless the game's own file
 // says otherwise). Applied to the base settings at boot and to every live reload, so the setting plugs them in and out of
 // a running game.
 static void orbis_usb_kbm_for_mode(SettingsInterface& si)
 {
-  const int mode = si.GetIntValue("Zeruko", "KeyboardMouse", 0);
+  const int mode = si.GetIntValue("Caliza", "KeyboardMouse", 0);
   if (mode != 1 && mode != 3)
     return;
   std::string type;
@@ -2250,7 +2010,7 @@ static void orbis_clock_survey()
 static std::string s_console_info; // "firmware 11.40 · SoC ... · CPU ..." (one line)
 
 // pr9n (AI-assisted): the product part of RetroAchievements' User-Agent (pcsx2/Host.cpp, PR #9 review item 10):
-// "Zeruko/vk-285-128-pr9n (PS5 11.40)". The firmware is the survey's (orbis_console_survey runs before any RA call).
+// "Caliza/vk-285-128-pr9n (PS5 11.40)". The firmware is the survey's (orbis_console_survey runs before any RA call).
 std::string OrbisUserAgentProduct()
 {
   std::string fw = "?";
@@ -2260,7 +2020,7 @@ std::string OrbisUserAgentProduct()
     fw = s_console_info.substr(at + 9);
     fw = fw.substr(0, fw.find(' '));
   }
-  return std::string("Zeruko/") + ORBIS_BUILD_TAG + " (PS5 " + fw + ")";
+  return std::string("Caliza/") + ORBIS_BUILD_TAG + " (PS5 " + fw + ")";
 }
 
 static std::string orbis_console_survey()
@@ -2465,15 +2225,15 @@ static void orbis_back_to_menu()
 static std::vector<std::string> s_usb_dirs;
 
 // 2026-10-08 (AI-assisted; testers: "have users select their bios and games scan path (across the entire possible paths)
-// some people want ext/usb or m2"): gs.ini's Zeruko/GameFolders, folders separated by ';' (the settings page, all games),
-// listed like the drives' (with one level of folders in them), and Zeruko/BiosFolder, where the BIOS is looked for first.
+// some people want ext/usb or m2"): gs.ini's Caliza/GameFolders, folders separated by ';' (the settings page, all games),
+// listed like the drives' (with one level of folders in them), and Caliza/BiosFolder, where the BIOS is looked for first.
 // The drives themselves (/mnt/usb0-7, /mnt/ext0-1) are looked through without them (orbis_usb_game_dirs, BiosTools.cpp).
 static std::string orbis_gs_ini_string(const char* key)
 {
   MemorySettingsInterface peek;
-  orbis_apply_ini_file(peek, "/data/zeruko/gs.ini", "gs.ini", true);
+  orbis_apply_ini_file(peek, "/data/caliza/gs.ini", "gs.ini", true);
   std::string value;
-  peek.GetStringValue("Zeruko", key, &value);
+  peek.GetStringValue("Caliza", key, &value);
   return value;
 }
 
@@ -2498,7 +2258,7 @@ static std::vector<std::string> orbis_extra_game_folders(const char* when)
     struct stat st = {};
     const bool ok = dir[0] == '/' && stat(dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
     if (when)
-      printf("[boot] %s: game folder %s (Zeruko/GameFolders)%s\n", when, dir.c_str(), ok ? "" : ": not a folder here, skipped");
+      printf("[boot] %s: game folder %s (Caliza/GameFolders)%s\n", when, dir.c_str(), ok ? "" : ": not a folder here, skipped");
     if (ok && std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
       dirs.push_back(dir);
   }
@@ -2512,7 +2272,7 @@ extern "C" void ps4_netfs_mount(const char* name, const char* url, const char* u
 extern "C" int ps4_netfs_check(const char* name, char* message, size_t size);
 #endif
 
-// vk-285-135 (AI-assisted; testers: "nfs mounting"): gs.ini's Zeruko/NfsShares, nfs:// addresses separated by ';' (the
+// vk-285-135 (AI-assisted; testers: "nfs mounting"): gs.ini's Caliza/NfsShares, nfs:// addresses separated by ';' (the
 // settings page's Folders group, the shelf's folder picker). PS5 uses OrbisNfs and mounts under /nfs; PS4 reuses
 // CEMUPS4 netfs under /net. PS5 checks all shares at once with a 5 s budget; PS4 checks independent mounts with a
 // small bounded worker set because one network mount cannot be interrupted once its kernel/RPC wait begins.
@@ -2718,7 +2478,7 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
   std::vector<std::string> problems;
   OrbisNfs::SetShares(list, &problems);
   for (const std::string& p : problems)
-    printf("[boot] %s: NFS share left out (Zeruko/NfsShares): %s\n", when, p.c_str());
+    printf("[boot] %s: NFS share left out (Caliza/NfsShares): %s\n", when, p.c_str());
   const auto t0 = std::chrono::steady_clock::now();
   for (const OrbisNfs::ShareInfo& s : OrbisNfs::MountAll(5000))
   {
@@ -2751,7 +2511,7 @@ static void orbis_scan_usb(const char* when)
     }
   }
   // The rebrand left the disc images where they were: they are far too big to copy. The old folder is only another
-  // scan root (read-only in practice); ScanGames dedupes equal file names, with /data/zeruko's roots earlier in the list.
+  // scan root (read-only in practice); ScanGames dedupes equal file names, with /data/caliza's roots earlier in the list.
   const std::string legacy_games = std::string(kOrbisLegacyDataRoot) + "/games";
   struct stat legacy_st = {};
   if (stat(legacy_games.c_str(), &legacy_st) == 0 && S_ISDIR(legacy_st.st_mode) &&
@@ -2780,7 +2540,7 @@ static std::string orbis_report_header()
 
 // The frontend's folders (vk-285-44: used twice, for the cover prefetch and for the shelf).
 // vk-285-134 (AI-assisted): the BIOS before the shelf (build 130's logs: 961 starts on 235 consoles without one). When PCSX2
-// finds none, a BIOS in a .zip/.rar/.7z in the BIOS folder, /data/zeruko or a drive is taken out into the BIOS folder; when
+// finds none, a BIOS in a .zip/.rar/.7z in the BIOS folder, /data/caliza or a drive is taken out into the BIOS folder; when
 // there's still none, s_bios_problem says what was found instead, and the shelf shows it and won't start a game.
 static std::string s_bios_problem;
 static std::set<std::string> s_bios_archives_tried;
@@ -2793,8 +2553,8 @@ static bool orbis_is_bios(const std::string& path)
 static std::vector<std::string> orbis_bios_places()
 {
   std::vector<std::string> dirs = {EmuFolders::Bios};
-  if (EmuFolders::Bios != "/data/zeruko")
-    dirs.push_back("/data/zeruko");
+  if (EmuFolders::Bios != "/data/caliza")
+    dirs.push_back("/data/caliza");
   for (int i = 0; i < 10; i++)
   {
     const std::string root = i < 8 ? "/mnt/usb" + std::to_string(i) : "/mnt/ext" + std::to_string(i - 8);
@@ -2824,7 +2584,7 @@ static bool orbis_check_bios()
       return true;
     }
   }
-  s_bios_problem = fe::DescribeBiosProblem(EmuFolders::Bios, "/data/zeruko", orbis_bios_places(), orbis_is_bios);
+  s_bios_problem = fe::DescribeBiosProblem(EmuFolders::Bios, "/data/caliza", orbis_bios_places(), orbis_is_bios);
   printf("[bios] no PS2 BIOS: %s\n", s_bios_problem.c_str());
   fflush(stdout);
   return false;
@@ -2835,7 +2595,7 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   OrbisFrontendPaths fe;
   // vk-285-134: the BIOS, for the shelf's line and its check at each start.
   fe.bios_check = []() { return orbis_check_bios(); };
-  fe.bios_dir = EmuFolders::Bios == "/data/zeruko" ? "/data/zeruko/bios" : EmuFolders::Bios;
+  fe.bios_dir = EmuFolders::Bios == "/data/caliza" ? "/data/caliza/bios" : EmuFolders::Bios;
   fe.bios_problem = [](){ return s_bios_problem; };
   // Test build 1 (vk-285-55): USB drives, the testing label and the logs download.
   fe.usb_dirs = s_usb_dirs;
@@ -2853,9 +2613,9 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   fe.logs_dir = OrbisDir("logs");
   fe.report_header = orbis_report_header();
   fe.games_dir = OrbisDir("games");
-  fe.top_dir = "/data/zeruko";
-  fe.settings_dir = "/data/zeruko/settings";
-  fe.gs_ini = "/data/zeruko/gs.ini";
+  fe.top_dir = "/data/caliza";
+  fe.settings_dir = "/data/caliza/settings";
+  fe.gs_ini = "/data/caliza/gs.ini";
   fe.patches_dir = OrbisDir("patches");
   fe.covers_dir = OrbisDir("covers");
   fe.cache_dir = OrbisDir("cache") + "/covers";
@@ -2863,10 +2623,10 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   fe.sound = !orbis_flag("nomenusound"); // vk-285-47
   fe.settings_log = OrbisLogPath("settings.log"); // vk-285-51
   // 2026-10-05: HD texture packs from archive.org, in the folder PCSX2 reads them from (EmuFolders::Textures, set below
-  // to /data/zeruko/textures). Not OrbisDir("textures"): that answers /data/zeruko itself when the folder isn't there yet
-  // (swordpdf's PS5 had none), and pr9h installed a pack as /data/zeruko/<serial> where no game looks. The manager makes
+  // to /data/caliza/textures). Not OrbisDir("textures"): that answers /data/caliza itself when the folder isn't there yet
+  // (swordpdf's PS5 had none), and pr9h installed a pack as /data/caliza/<serial> where no game looks. The manager makes
   // the folder when it first needs it.
-  fe.textures_dir = "/data/zeruko/textures";
+  fe.textures_dir = "/data/caliza/textures";
   fe.texture_pack_list = OrbisDir("cache") + "/texture-packs.json";
   fe.texture_packs = !orbis_flag("notexpacks");
   // 2026-10-08 (AI-assisted): a game's patches and cheats from GitHub (the sheet's "Get patches and cheats"), into the
@@ -2877,8 +2637,8 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   return fe;
 }
 
-// 2026-10-08 (AI-assisted): an ELF's disc image (Zeruko/ElfDisc in its settings file): a full path, or a file name the shelf
-// lists, looked for in the folders it lists games from (games/, /data/zeruko, the drives' and the extra folders) and one folder
+// 2026-10-08 (AI-assisted): an ELF's disc image (Caliza/ElfDisc in its settings file): a full path, or a file name the shelf
+// lists, looked for in the folders it lists games from (games/, /data/caliza, the drives' and the extra folders) and one folder
 // down in each, the first found winning as on the shelf. "" when unset or not found.
 static std::string orbis_find_image(const std::string& want, const char* what);
 static std::string orbis_elf_disc()
@@ -2888,7 +2648,7 @@ static std::string orbis_elf_disc()
   MemorySettingsInterface peek;
   orbis_apply_ini_file(peek, s_game_ini_path.c_str(), "game ini", true);
   std::string want;
-  if (!peek.GetStringValue("Zeruko", "ElfDisc", &want) || want.empty())
+  if (!peek.GetStringValue("Caliza", "ElfDisc", &want) || want.empty())
     return {};
   return orbis_find_image(want, "the ELF's disc");
 }
@@ -2906,7 +2666,7 @@ static std::string orbis_find_image(const std::string& want, const char* what)
     printf("[boot] %s %s isn't there\n", what, want.c_str());
     return {};
   }
-  std::vector<std::string> dirs = {OrbisDir("games"), "/data/zeruko"};
+  std::vector<std::string> dirs = {OrbisDir("games"), "/data/caliza"};
   dirs.insert(dirs.end(), s_usb_dirs.begin(), s_usb_dirs.end());
   for (const std::string& dir : dirs)
   {
@@ -2938,7 +2698,7 @@ static std::string orbis_find_image(const std::string& want, const char* what)
 
 // vk-285-139 (AI-assisted; swordpdf: "multi-disc and disc-change support (to even support gameshark iso)", the cheat disc "would
 // have to be disc 1 at all times"). The discs the running game can change to: the cheat disc first when the game starts from
-// it (Zeruko/CheatDiscStart, its own file or gs.ini; Zeruko/CheatDisc in gs.ini), then the game's own (fe::DiscSet: "(Disc N)"
+// it (Caliza/CheatDiscStart, its own file or gs.ini; Caliza/CheatDisc in gs.ini), then the game's own (fe::DiscSet: "(Disc N)"
 // beside it, or an .m3u). The change disc combo (request 6) puts the next one in, the settings page any image (request 5).
 // Needs proper testing on the console (a GameShark's disc swap, a two-disc game).
 static std::mutex s_disc_mutex;
@@ -3024,15 +2784,15 @@ static std::string orbis_disc_boot(const std::string& game)
   std::vector<std::string> set = fe::DiscSet(game);
   std::string start = game;
   MemorySettingsInterface peek;
-  orbis_apply_ini_file(peek, "/data/zeruko/gs.ini", "gs.ini", true);
+  orbis_apply_ini_file(peek, "/data/caliza/gs.ini", "gs.ini", true);
   if (!s_game_ini_path.empty())
     orbis_apply_ini_file(peek, s_game_ini_path.c_str(), "game ini", true);
   std::string on, want;
-  if (peek.GetStringValue("Zeruko", "CheatDiscStart", &on) && (on == "true" || on == "1"))
+  if (peek.GetStringValue("Caliza", "CheatDiscStart", &on) && (on == "true" || on == "1"))
   {
     MemorySettingsInterface global;
-    orbis_apply_ini_file(global, "/data/zeruko/gs.ini", "gs.ini", true);
-    if (!global.GetStringValue("Zeruko", "CheatDisc", &want) || want.empty())
+    orbis_apply_ini_file(global, "/data/caliza/gs.ini", "gs.ini", true);
+    if (!global.GetStringValue("Caliza", "CheatDisc", &want) || want.empty())
       printf("[disc] Start from the cheat disc is on, but no cheat disc is set (Cheat disc, the sheet for all games)\n");
     else
     {
@@ -3067,9 +2827,9 @@ static std::string orbis_disc_boot(const std::string& game)
 static void orbis_log_flag_access(const char* when)
 {
   struct stat st{};
-  const int rc = stat("/data/zeruko/flags", &st);
+  const int rc = stat("/data/caliza/flags", &st);
   const int stat_errno = rc ? errno : 0;
-  const int acc = access("/data/zeruko/flags", R_OK | X_OK);
+  const int acc = access("/data/caliza/flags", R_OK | X_OK);
   const int acc_errno = acc ? errno : 0;
   printf("[boot] flags folder %s: stat rc=%d errno=%d mode=%o uid=%u, access rc=%d errno=%d\n", when, rc,
          stat_errno, rc ? 0u : (unsigned)(st.st_mode & 07777), rc ? 0u : (unsigned)st.st_uid, acc, acc_errno);
@@ -3093,7 +2853,7 @@ static const char* const kOrbisReleaseFlags[] = {"fastmem", "jitdirect", "sw_ren
 
 static void orbis_ensure_data_layout()
 {
-  static const char kRoot[] = "/data/zeruko";
+  static const char kRoot[] = "/data/caliza";
   struct stat st{};
   if (stat(kRoot, &st) != 0 || !S_ISDIR(st.st_mode))
   {
@@ -3107,18 +2867,18 @@ static void orbis_ensure_data_layout()
     const int rc = mkdir(games.c_str(), 0777);
     printf("[boot] data layout: created %s (rc=%d errno=%d)\n", games.c_str(), rc, rc ? errno : 0);
     if (rc == 0)
-      orbis_eventf("created /data/zeruko/games/ for the disc images");
+      orbis_eventf("created /data/caliza/games/ for the disc images");
   }
   // vk-285-121 (AI-assisted): settings/ as well. The shelf's sheet and the settings page write a game's own settings
   // there and nothing made the folder: two testers' 1.7 logs had every save fail with errno 2 ("[web] writing
-  // /data/zeruko/settings/... failed (errno 2)"). The writers make it too now (fe_settings.cpp, WriteFileAtomic).
+  // /data/caliza/settings/... failed (errno 2)"). The writers make it too now (fe_settings.cpp, WriteFileAtomic).
   const std::string settings = std::string(kRoot) + "/settings";
   if (stat(settings.c_str(), &st) != 0)
   {
     const int rc = mkdir(settings.c_str(), 0777);
     printf("[boot] data layout: created %s (rc=%d errno=%d)\n", settings.c_str(), rc, rc ? errno : 0);
     if (rc == 0)
-      orbis_eventf("created /data/zeruko/settings/ for the games' own settings");
+      orbis_eventf("created /data/caliza/settings/ for the games' own settings");
   }
   const std::string flags = std::string(kRoot) + "/flags";
   const bool have_dir = stat(flags.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
@@ -3190,7 +2950,7 @@ static void orbis_ensure_data_layout()
            added, already, failed, total);
     fflush(stdout);
     if (added > 0)
-      orbis_eventf("flags/: Zeruko added %d missing release switch files; the files already there were kept", added);
+      orbis_eventf("flags/: Caliza added %d missing release switch files; the files already there were kept", added);
   }
 }
 
@@ -3483,7 +3243,7 @@ int main()
   // into memory until it is (orbis_boot_log_release, after the jailbreak).
   if (!orbis_boot_log_open(true))
     orbis_boot_log_hold();
-  // The rebrand copy runs before the folders, flags, language files and frontend look in /data/zeruko. stdout is
+  // The rebrand copy runs before the folders, flags, language files and frontend look in /data/caliza. stdout is
   // opened or held first only so the [migrate] lines reach boot.log; when this created the folder, release them now.
   orbis_migrate_legacy_data();
   orbis_boot_log_release("after the PCSX2 data migration");
@@ -3564,7 +3324,7 @@ int main()
   }
   fflush(stdout);
   {
-    FILE* f = fopen("/data/zeruko/pid.txt", "w");
+    FILE* f = fopen("/data/caliza/pid.txt", "w");
     if (f) { fprintf(f, "%d", (int)getpid()); fclose(f); }
     printf("[boot] pid=%d\n", (int)getpid());
     fflush(stdout);
@@ -3714,7 +3474,7 @@ int main()
           continue; // still being written: keep the original baseline and re-check
         printf("[boot] new eboot detected (%lld bytes), restarting into it\n", (long long)st2.st_size);
         fflush(stdout);
-        sys_notify("Zeruko: new build, restarting");
+        sys_notify("Caliza: new build, restarting");
         ps5::debug::set_line(2, "NEW BUILD - RESTARTING");
         sleep(1);
         orbis_output_default();
@@ -3726,12 +3486,12 @@ int main()
     }).detach();
   }
   ps5::debug::set_line(2, "setting up folders...");
-  EmuFolders::AppRoot = "/data/zeruko";
-  EmuFolders::DataRoot = "/data/zeruko";
+  EmuFolders::AppRoot = "/data/caliza";
+  EmuFolders::DataRoot = "/data/caliza";
   // vk-285-33: sub-folders when they exist, else the top folder as before (OrbisPaths.h).
   EmuFolders::Bios = OrbisDir("bios");
   {
-    // 2026-10-08 (AI-assisted): Zeruko/BiosFolder (gs.ini, the settings page), when it is a folder, is looked through first.
+    // 2026-10-08 (AI-assisted): Caliza/BiosFolder (gs.ini, the settings page), when it is a folder, is looked through first.
     std::string dir = orbis_gs_ini_string("BiosFolder");
     while (dir.size() > 1 && dir.back() == '/')
       dir.pop_back();
@@ -3739,7 +3499,7 @@ int main()
     if (!dir.empty())
     {
       const bool ok = dir[0] == '/' && stat(dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
-      printf("[boot] BIOS folder %s (Zeruko/BiosFolder)%s\n", dir.c_str(), ok ? "" : ": not a folder here, /data/zeruko/bios instead");
+      printf("[boot] BIOS folder %s (Caliza/BiosFolder)%s\n", dir.c_str(), ok ? "" : ": not a folder here, /data/caliza/bios instead");
       if (ok)
         EmuFolders::Bios = dir;
       fflush(stdout);
@@ -3747,10 +3507,10 @@ int main()
   }
 #ifdef ORBIS_PS4
   {
-    // PS4 port (AI-assisted): the BIOS files built into the package (/app0/bios, ps4/build-ps4.sh's ZERUKO_PS4_BIOS_DIR) go
-    // into /data/zeruko/bios, where PCSX2 can write their .NVM and .MEC next to them. A file already there is left as it is
+    // PS4 port (AI-assisted): the BIOS files built into the package (/app0/bios, ps4/build-ps4.sh's CALIZA_PS4_BIOS_DIR) go
+    // into /data/caliza/bios, where PCSX2 can write their .NVM and .MEC next to them. A file already there is left as it is
     // (the console's own NVM settings stay). The shelf's BIOS row then picks among them. Needs proper testing on the console.
-    const std::string from = "/app0/bios", to = "/data/zeruko/bios";
+    const std::string from = "/app0/bios", to = "/data/caliza/bios";
     FileSystem::FindResultsArray files;
     if (FileSystem::FindFiles(from.c_str(), "*", FILESYSTEM_FIND_FILES, &files) && !files.empty())
     {
@@ -3769,12 +3529,12 @@ int main()
       }
       printf("[boot] BIOS from the package: %d files copied to %s, %d already there\n", copied, to.c_str(), kept);
       fflush(stdout);
-      if (EmuFolders::Bios == "/data/zeruko")
+      if (EmuFolders::Bios == "/data/caliza")
         EmuFolders::Bios = to;
     }
   }
 #endif
-  EmuFolders::Settings = "/data/zeruko";
+  EmuFolders::Settings = "/data/caliza";
   EmuFolders::Logs = OrbisDir("logs");
   EmuFolders::MemoryCards = OrbisDir("memcards");
   EmuFolders::Snapshots = OrbisDir("snapshots");
@@ -3783,13 +3543,13 @@ int main()
   EmuFolders::Patches = OrbisDir("patches");
   EmuFolders::Cache = OrbisDir("cache");
   EmuFolders::Covers = OrbisDir("covers");
-  EmuFolders::GameSettings = "/data/zeruko";
-  EmuFolders::Textures = "/data/zeruko/textures"; // vk-285-12: packs in textures/<serial>/replacements (HW renderer only)
-  EmuFolders::InputProfiles = "/data/zeruko";
+  EmuFolders::GameSettings = "/data/caliza";
+  EmuFolders::Textures = "/data/caliza/textures"; // vk-285-12: packs in textures/<serial>/replacements (HW renderer only)
+  EmuFolders::InputProfiles = "/data/caliza";
   // Orbis: GL renderer loads shaders from <Resources>/shaders/opengl/*.glsl.
   EmuFolders::Resources = OrbisDir("resources"); // vk-285-33: GameIndex.yaml, shaders/
 #ifdef ORBIS_PS4
-  // PS4 port (AI-assisted): the resources ship in the package (ps4/build-ps4.sh); a resources folder in /data/zeruko
+  // PS4 port (AI-assisted): the resources ship in the package (ps4/build-ps4.sh); a resources folder in /data/caliza
   // with a GameIndex.yaml in it is used instead.
   if (!FileSystem::FileExists((EmuFolders::Resources + "/GameIndex.yaml").c_str()))
     EmuFolders::Resources = "/app0/resources";
@@ -3812,12 +3572,12 @@ int main()
   // orbis_log_flag_access).
   orbis_vk_environment();
 #endif
-  // vk-285-30: the game selector (orbis-shims/game_select.cpp): the disc images in /data/zeruko on a
+  // vk-285-30: the game selector (orbis-shims/game_select.cpp): the disc images in /data/caliza on a
   // screen of their own, before PCSX2 opens the display. Ratchet & Clank when there are none.
   // vk-285-40: after the driver's environment above, because the frontend runs on the same driver.
   extern std::string orbis_select_game(const char* games_dir, const char* top_dir, const char* build_tag);
 #ifdef PS5SX2_ACHIEVEMENTS
-  OrbisAchievementsInit(s_base_si, "/data/zeruko");
+  OrbisAchievementsInit(s_base_si, "/data/caliza");
 #endif
   ps5::debug::set_line(2, "game selector...");
 #ifdef ORBIS_VULKAN
@@ -3852,7 +3612,7 @@ int main()
   OrbisAchievementsStopBrowser(); // pr9n: the shelf's achievement list isn't needed now (was: wait out its requests)
 #endif
   if (!frontend_ran)
-    s_game_path = orbis_select_game(OrbisDir("games").c_str(), "/data/zeruko", ORBIS_BUILD_TAG); // vk-285-33: games/ too
+    s_game_path = orbis_select_game(OrbisDir("games").c_str(), "/data/caliza", ORBIS_BUILD_TAG); // vk-285-33: games/ too
   if (s_game_path.empty())
   {
     // vk-285-109: no game to start (none found, or none picked). This fell back to games/Ratchet & Clank.iso,
@@ -3873,7 +3633,7 @@ int main()
     s_game_path.clear();
     s_game_ini_path.clear();
     printf("[boot] the PS2 system menu (no disc); settings: gs.ini only\n");
-    orbis_eventf("game start: the PS2 system menu (no disc) | all games (gs.ini): %s", orbis_ini_summary("/data/zeruko/gs.ini").c_str());
+    orbis_eventf("game start: the PS2 system menu (no disc) | all games (gs.ini): %s", orbis_ini_summary("/data/caliza/gs.ini").c_str());
     fflush(stdout);
   }
   else
@@ -3883,7 +3643,7 @@ int main()
     const size_t dot = stem.rfind('.');
     if (dot != std::string::npos && dot > 0)
       stem.erase(dot);
-    s_game_ini_path = "/data/zeruko/settings/" + stem + ".ini";
+    s_game_ini_path = "/data/caliza/settings/" + stem + ".ini";
   }
 #ifdef ORBIS_VULKAN
   if (!system_menu)
@@ -3899,14 +3659,14 @@ int main()
     const std::string from = dir == OrbisDir("games") ? std::string() : " (from " + dir + ")";
     orbis_eventf("game start: %s%s | its settings: %s | all games (gs.ini): %s", // vk-285-51
       s_game_path.substr(s_game_path.rfind('/') + 1).c_str(), from.c_str(), orbis_ini_summary(s_game_ini_path).c_str(),
-      orbis_ini_summary("/data/zeruko/gs.ini").c_str());
+      orbis_ini_summary("/data/caliza/gs.ini").c_str());
   }
   // Smart tune (AI-assisted): the shelf's smart-tune row leaves flags/smarttune in place for this
   // launch; consume it exactly once so a crash or a later normal launch never re-arms the tuner.
   // The thread counts down its lead-in while the user reaches real gameplay. needs proper testing.
-  if (!system_menu && access("/data/zeruko/flags/smarttune", F_OK) == 0)
+  if (!system_menu && access("/data/caliza/flags/smarttune", F_OK) == 0)
   {
-    if (remove("/data/zeruko/flags/smarttune") == 0)
+    if (remove("/data/caliza/flags/smarttune") == 0)
     {
       void OrbisSmartTuneStart();
       OrbisSmartTuneStart();
@@ -3933,7 +3693,7 @@ int main()
   }
 #endif
 
-  // vk-285-118 (AI-assisted): Zeruko/Renderer per game (or for all games in gs.ini): Hardware or Software, read at game
+  // vk-285-118 (AI-assisted): Caliza/Renderer per game (or for all games in gs.ini): Hardware or Software, read at game
   // start (the renderer can't change while a game runs here). Software renders on the CPU and GSDeviceVK presents it, as
   // swgl does; PCSX2's own EmuCore/GS/Renderer=13 in those files means the same. Unset: the flags decide, as before.
   bool sw_by_setting = false;
@@ -3941,7 +3701,7 @@ int main()
     MemorySettingsInterface peek;
     orbis_apply_gs_ini(peek, true);
     std::string r;
-    peek.GetStringValue("Zeruko", "Renderer", &r);
+    peek.GetStringValue("Caliza", "Renderer", &r);
     const int pcsx2_renderer = peek.GetIntValue("EmuCore/GS", "Renderer", -1);
     if (r == "Software" || r == "software" || r == "sw" || (r.empty() && pcsx2_renderer == static_cast<int>(GSRendererType::SW)))
     {
@@ -3965,7 +3725,7 @@ int main()
     }
     if (!r.empty() || pcsx2_renderer >= 0)
     {
-      printf("[boot] renderer: %s (Zeruko/Renderer=%s, EmuCore/GS/Renderer=%d)\n", g_sw_renderer ? "software" : g_orbis_pgs ? "paraLLEl-GS" : "hardware",
+      printf("[boot] renderer: %s (Caliza/Renderer=%s, EmuCore/GS/Renderer=%d)\n", g_sw_renderer ? "software" : g_orbis_pgs ? "paraLLEl-GS" : "hardware",
         r.empty() ? "(unset)" : r.c_str(), pcsx2_renderer);
       fflush(stdout);
     }
@@ -4079,13 +3839,13 @@ int main()
     (void)sceUserServiceInitialize(nullptr);
     const int32_t first = orbis_initial_or_foreground_user();
     g_orbis_second_user = orbis_find_second_user(first);
-    // vk-285-118 (AI-assisted): Zeruko/Multitap from gs.ini and the game's file (a copy: the base keeps them out, as the
+    // vk-285-118 (AI-assisted): Caliza/Multitap from gs.ini and the game's file (a copy: the base keeps them out, as the
     // live reload expects), or PCSX2's own Pad/MultitapPort1 or MultitapPort2 there. Pad types and the multitap go into
     // the base, so they stay through live reloads; a change takes a restart of the game.
     {
       MemorySettingsInterface peek = s_base_si;
       orbis_apply_gs_ini(peek, true);
-      int mt = peek.GetIntValue("Zeruko", "Multitap", 0);
+      int mt = peek.GetIntValue("Caliza", "Multitap", 0);
       if (mt < 0 || mt > 2)
         mt = 0;
       if (mt == 0 && peek.GetBoolValue("Pad", "MultitapPort1", false))
@@ -4116,7 +3876,7 @@ int main()
     for (int i = 0; i < g_orbis_extra_count; i++)
       who += " player " + std::to_string(i + 2) + "=user " + std::to_string(g_orbis_extra_user[i]) + " on pad " +
              std::to_string(g_orbis_extra_index[i] + 1);
-    printf("[boot] users: first %d, %d more; multitap %s (Zeruko/Multitap);%s\n", first, n_others,
+    printf("[boot] users: first %d, %d more; multitap %s (Caliza/Multitap);%s\n", first, n_others,
       g_orbis_multitap == 0 ? "off" : g_orbis_multitap == 1 ? "in port 1" : "in port 2",
       who.empty() ? " PS2 port 2 stays empty" : who.c_str());
   }
@@ -4143,30 +3903,30 @@ int main()
   orbis_ps5opts_from(s_base_si); // vk-285-113
 #ifdef ORBIS_VULKAN
   {
-    // 2026-10-08 (AI-assisted): Zeruko/FrameGeneration, per game (or in gs.ini): a frame generated between two of the game's and
+    // 2026-10-08 (AI-assisted): Caliza/FrameGeneration, per game (or in gs.ini): a frame generated between two of the game's and
     // presented before the second (GSDeviceVK.cpp, "frame generation"), with the TV in its 120 Hz mode for the game (VKSwapChain.cpp
     // picks the mode when the swapchain is made, so it is read here, before the GS opens). Needs proper testing.
-    g_orbis_fg_wanted = s_base_si.GetBoolValue("Zeruko", "FrameGeneration", false) && !g_sw_renderer;
+    g_orbis_fg_wanted = s_base_si.GetBoolValue("Caliza", "FrameGeneration", false) && !g_sw_renderer;
     // The latency hold (RPCS3-PS5 m74): at 120 Hz each game frame brings two presents, which fill every refresh; a game a hair
     // faster than half the display's rate would fill the swapchain's queue and show every frame later from then on. The game
     // runs 0.08% slow instead (59.89 fps for NTSC's 59.94): the queue stays empty, and once in a while a refresh repeats.
     orbis_fg_hold(s_base_si);
-    printf("[boot] frame generation: %s\n", g_orbis_fg_wanted ? "on (Zeruko/FrameGeneration; the display asked for at 120 Hz)" :
+    printf("[boot] frame generation: %s\n", g_orbis_fg_wanted ? "on (Caliza/FrameGeneration; the display asked for at 120 Hz)" :
       "off");
     fflush(stdout);
   }
 #endif
   {
-    // vk-285-110: the PS2 system language games are told (pcsx2/CDVD/CDVD.cpp): the Zeruko/GameLanguage
+    // vk-285-110: the PS2 system language games are told (pcsx2/CDVD/CDVD.cpp): the Caliza/GameLanguage
     // setting (0 Japanese .. 7 Portuguese, from gs.ini or the game's settings file), else the PS5's own
     // language, mapped by fe::Ps2LanguageFor. PAL games with several languages start in it.
     extern int g_orbis_ps2_language;
     const int ps5 = orbis_ps5_language();
-    const int set = s_base_si.GetIntValue("Zeruko", "GameLanguage", -1);
+    const int set = s_base_si.GetIntValue("Caliza", "GameLanguage", -1);
     const bool fixed = set >= 0 && set <= 7;
     g_orbis_ps2_language = fixed ? set : fe::Ps2LanguageFor(ps5);
     printf("[boot] game language: %s (%s; PS5 language %d)\n", fe::Ps2LanguageName(g_orbis_ps2_language),
-      fixed ? "Zeruko/GameLanguage" : "the PS5's", ps5);
+      fixed ? "Caliza/GameLanguage" : "the PS5's", ps5);
   }
 
   {
@@ -4187,7 +3947,7 @@ int main()
   }
   // 2026-10-08 (AI-assisted; testers: "mount ELFs", "ELF properties: disc path"): an .elf from the shelf boots as PCSX2 boots
   // an ELF (VMBootParameters::elf_override, always fast booted; host: is its folder when EmuCore/HostFs is on), with the disc
-  // image its settings file names (Zeruko/ElfDisc: a file name the shelf lists, or a full path), else with no disc. Needs
+  // image its settings file names (Caliza/ElfDisc: a file name the shelf lists, or a full path), else with no disc. Needs
   // proper testing on the console.
   if (s_game_path.size() > 4 && strcasecmp(s_game_path.c_str() + s_game_path.size() - 4, ".elf") == 0)
   {
@@ -4206,7 +3966,7 @@ int main()
       params.filename.clear();
       params.source_type = CDVD_SourceType::NoDisc;
     }
-    printf("[boot] ELF %s, %s\n", s_game_path.c_str(), disc.empty() ? "no disc (Zeruko/ElfDisc not set or not found)" : ("disc " + disc).c_str());
+    printf("[boot] ELF %s, %s\n", s_game_path.c_str(), disc.empty() ? "no disc (Caliza/ElfDisc not set or not found)" : ("disc " + disc).c_str());
     fflush(stdout);
   }
 
@@ -4254,8 +4014,8 @@ int main()
     printf("[boot] BIOS dir scan:\n");
     fflush(stdout);
     {
-      DIR* d = opendir("/data/zeruko");
-      printf("[boot]   opendir(/data/zeruko)=%p errno=%d\n", (void*)d, errno);
+      DIR* d = opendir("/data/caliza");
+      printf("[boot]   opendir(/data/caliza)=%p errno=%d\n", (void*)d, errno);
       if (d)
       {
         int n = 0;
@@ -4276,7 +4036,7 @@ int main()
       fflush(stdout);
     }
     FileSystem::FindResultsArray results;
-    if (FileSystem::FindFiles("/data/zeruko", "*", FILESYSTEM_FIND_FILES, &results))
+    if (FileSystem::FindFiles("/data/caliza", "*", FILESYSTEM_FIND_FILES, &results))
     {
       for (const auto& fd : results)
         printf("[boot]   found: %s (%lld bytes)\n", fd.FileName.c_str(), (long long)fd.Size);

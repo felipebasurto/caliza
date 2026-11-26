@@ -58,7 +58,7 @@ class SmokeConsoleTests(unittest.TestCase):
             curl.write_text("""#!/bin/sh
 for arg; do
   case "$arg" in
-    ftp://*/data/zeruko/logs/boot.log) found=1 ;;
+    ftp://*/data/caliza/logs/boot.log) found=1 ;;
     ftp://*/data/PCSX2/*) exit 88 ;;
   esac
   destination=$arg

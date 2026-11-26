@@ -1,4 +1,4 @@
-// PS5 port (vk-285-33): where things live in /data/zeruko.
+// PS5 port (vk-285-33): where things live in /data/caliza.
 //
 //   games/       disc images (the game selector also still looks in the top folder)
 //   bios/        the BIOS and its .mec/.nvm
@@ -23,9 +23,9 @@
 
 #include <string>
 
-// "/data/zeruko/<sub>" when that folder exists, else "/data/zeruko".
+// "/data/caliza/<sub>" when that folder exists, else "/data/caliza".
 std::string OrbisDir(const char* sub);
-// A switch file: "/data/zeruko/flags/<name>" when it's there, else "/data/zeruko/<name>" (the old place).
+// A switch file: "/data/caliza/flags/<name>" when it's there, else "/data/caliza/<name>" (the old place).
 std::string OrbisFlagPath(const char* name);
 // Whether that switch is on (the file exists in either place). vk-285-105: from a snapshot once
 // OrbisFlagsRefresh has run (main-boot's ticker, once a second), before that from the files.

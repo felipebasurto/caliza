@@ -299,89 +299,6 @@ std::vector<std::string> ListNames(const std::string& dir)
 	return names;
 }
 
-bool ReplaceOnce(std::string& text, const std::string& from, const std::string& to)
-{
-	const size_t pos = text.find(from);
-	if (pos == std::string::npos)
-		return false;
-	text.replace(pos, from.size(), to);
-	return true;
-}
-
-// PS4 port (AI-assisted): the PS4-only rows patched into a copy of the embedded page as it is served. Every marker
-// must be found, else the stock page goes out unchanged rather than half-patched. The paraLLEl-GS row has no build-time
-// guard here (fe_web.cpp is compiled without HAVE_PARALLEL_GS), so it is always offered; boot.log says which renderer
-// actually ran. Needs proper testing on the console.
-bool SettingsPageWithPs4Knobs(const WebAsset& asset, std::string& out)
-{
-	if (!asset.data || asset.size == 0)
-		return false;
-	out.assign(reinterpret_cast<const char*>(asset.data), asset.size);
-	bool ok = true;
-#ifdef ORBIS_PS4
-	static const char caliza_header[] =
-#include "caliza_ps2ui_markup.inc"
-		;
-	ok = ReplaceOnce(out, "<title>Zeruko</title>",
-		"<title>Caliza PS4</title><link rel=\"stylesheet\" href=\"/caliza-ps2ui.css\">") && ok;
-	ok = ReplaceOnce(out, "<body>", "<body data-ps2>") && ok;
-	ok = ReplaceOnce(out, R"(<div class="wordmark"><span>Zeruko</span></div>)", caliza_header) && ok;
-#endif
-	ok = ReplaceOnce(out,
-		R"ps4ui(options: [["Hardware","Hardware"],["Software","Software"]],)ps4ui",
-		R"ps4ui(options: [["Hardware","Vulkan"],["paraLLEl","paraLLEl-GS"],["Software","Software"]],)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(hint: "Software draws the game on the CPU, as a PS2 does it: slower, but right in games whose effects the hardware renderer gets wrong. Set it for one game in that game's settings. Takes effect when the game starts." },)ps4ui",
-		R"ps4ui(hint: "Vulkan uses the GPU. paraLLEl-GS is the optional Vulkan compute renderer in PGS builds: try it when the GS thread is CPU-bound (boot.log says which renderer ran). Software draws on the CPU, as a PS2 does it: slow, but right in games whose effects the hardware renderer gets wrong. Takes effect when the game starts." },)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(options: [["-3","50%"],["-2","60%"],["-1","75%"],["0","100%"],["1","130%"],["2","180%"],["3","300%"]],)ps4ui",
-		R"ps4ui(options: [["-3","50%"],["-2","60%"],["-1","75%"],["0","100%"],["1","130% +CPU"],["2","180% +CPU"],["3","300% +CPU"]],)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(hint: "Above 100% can smooth out slowdown the PS2 had; some games dislike it." },)ps4ui",
-		R"ps4ui(hint: "Above 100% can smooth out slowdown the PS2 had, but costs extra CPU on the PS4; below 100% costs the emulated game speed. Some games dislike it." },)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(    { key: "EmuCore/Speedhacks/vuThread", label: "MTVU (VU1 on its own thread)", type: "toggle", def: "false", restart: true, later: "MTVU",
-      short: "MTVU %" },)ps4ui",
-		R"ps4ui(    { key: "EmuCore/Speedhacks/vuThread", label: "MTVU (VU1 on its own thread)", type: "toggle", def: "true", restart: true, later: "MTVU",
-      short: "MTVU %" },
-    // PS4 port (AI-assisted): the MTVU implementation knobs (pcsx2/MTVU.cpp), applied live.
-    { key: "EmuCore/Speedhacks/OrbisMTVUSpin", label: "MTVU spin wait", type: "toggle", def: "true", short: "VU spin %",
-      hint: "The VU thread waits briefly for work before sleeping. On avoids kernel wakeups; off can use less CPU when work is sparse. Only matters with MTVU." },
-    { key: "EmuCore/Speedhacks/OrbisMTVUBatch", label: "MTVU kick batching", type: "toggle", def: "false", short: "VU batch %",
-      hint: "Wakes the VU thread once at the end of a VIF1 transfer instead of for every packet. Can cut EE overhead; try it per game. Only matters with MTVU." },
-    { key: "EmuCore/Speedhacks/OrbisMTVURingKB", label: "MTVU ring (KB)", type: "number", def: "2048", min: 256, max: 2048, step: 256, short: "VU ring % KB",
-      hint: "The EE-to-VU ring's length, 256 to 2048 KB on PS4. Shorter keeps packets in cache; too short can stutter or break a game." },)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(function optLabel(item, v) {
-  if (item.type === "toggle") return truthy(v) ? "on" : "off";)ps4ui",
-		R"ps4ui(function optLabel(item, v) {
-  if (item.type === "toggle") return truthy(v) ? "on" : "off";
-  if (item.type === "number") return v;)ps4ui") && ok;
-	ok = ReplaceOnce(out,
-		R"ps4ui(      } else if (it.type === "text") {)ps4ui",
-		R"ps4ui(      } else if (it.type === "number") {
-        html += '<div class="row"><div class="head"><div class="label">' + esc(it.label) + tag + '</div><div class="from">' + from + '</div></div>';
-        if (it.hint) html += '<div class="hint">' + esc(it.hint) + "</div>";
-        html += '<input class="txt" type="number" inputmode="numeric" data-numkey="' + esc(it.key) + '" min="' + it.min + '" max="' + it.max + '" step="' + (it.step || 1) + '" value="' + esc(eff.v) + '"></div>';
-      } else if (it.type === "text") {)ps4ui") && ok;
-	const std::string pick_listener =
-		R"ps4ui(  $("settings").querySelectorAll("[data-pickkey]").forEach((el) => el.addEventListener("change", () => change(el.dataset.pickkey, el.value)));)ps4ui";
-	ok = ReplaceOnce(out, pick_listener,
-		R"ps4ui(  $("settings").querySelectorAll("[data-numkey]").forEach((el) => el.addEventListener("change", () => {
-    const raw = el.value.trim();
-    if (raw === "") { change(el.dataset.numkey, null); return; }
-    const n = Number(raw);
-    if (!Number.isFinite(n)) { render(); return; }
-    const min = parseInt(el.min, 10), max = parseInt(el.max, 10);
-    const clamped = Math.max(min, Math.min(max, Math.round(n)));
-    el.value = String(clamped);
-    change(el.dataset.numkey, String(clamped));
-  }));
-)ps4ui" + pick_listener) && ok;
-	if (!ok)
-		out.clear();
-	return ok;
-}
 } // namespace
 
 long long (*g_utc_to_local)(long long utc) = nullptr;
@@ -733,14 +650,6 @@ void WebServer::Route(const Request& req, Response& res)
 			if (a.path == req.path)
 			{
 				res.type = a.type;
-#ifdef ORBIS_PS4
-				if (a.path == "/" && SettingsPageWithPs4Knobs(a, res.body))
-				{
-					res.data = nullptr;
-					res.size = 0;
-				}
-				else
-#endif
 				{
 					res.data = a.data;
 					res.size = a.size;
@@ -871,7 +780,7 @@ void WebServer::ApiState(Response& res)
 		else
 			game = "{\"id\":" + Json(playing) + ",\"title\":" + Json(playing) + ",\"serial\":\"\"}";
 	}
-	res.body = "{\"app\":\"Zeruko\",\"build\":" + Json(m_cfg.build_tag) + ",\"test\":" + std::to_string(m_cfg.test_build) +
+	res.body = "{\"app\":\"Caliza\",\"build\":" + Json(m_cfg.build_tag) + ",\"test\":" + std::to_string(m_cfg.test_build) +
 		       ",\"language\":" + Json(LanguageCode()) + ",\"strings\":" + strings + ",\"mode\":" + Json(playing.empty() ? "menu" : "game") + ",\"playing\":" + game + "}";
 }
 
@@ -1142,7 +1051,7 @@ void WebServer::ApiSave(const Request& req, Response& res)
 	if (!existed && g)
 	{
 		IniLine header;
-		header.raw = "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") + ": written by the Zeruko settings page";
+		header.raw = "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") + ": written by the Caliza settings page";
 		lines.push_back(header);
 	}
 	int changes = 0;
@@ -1283,14 +1192,14 @@ void WebServer::ApiRecommended(const Request& req, const GameInfo* g, const std:
 	}
 	preset = FilterPresetForPlatform(preset);
 	std::string header = g ? "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") : std::string("# All games");
-	header += has ? ": Zeruko's recommended settings, restored by the settings page" :
+	header += has ? ": Caliza's recommended settings, restored by the settings page" :
 	                ": no settings of its own, so it follows the settings for all games (restored by the settings page)";
 	std::string old;
 	const bool existed = ReadFile(path, old);
 	if (existed && !WriteFileAtomic(path + ".before-recommended", old))
 		std::printf("[web] could not keep a copy of %s (errno %d)\n", path.c_str(), errno);
 	std::string text = header + "\n" + preset;
-	// vk-285-110: the player's own choices (Zeruko/, MemoryCards/ and the PS4 MTVU knobs) stay.
+	// vk-285-110: the player's own choices (Caliza/, MemoryCards/ and the PS4 MTVU knobs) stay.
 	if (existed)
 	{
 		std::string keep;
@@ -1336,7 +1245,7 @@ void WebServer::ApiReport(const Request& req, Response& res)
 	}
 	std::string out;
 	out.reserve(1 << 20);
-	out += "Zeruko logs report\n";
+	out += "Caliza logs report\n";
 	out += m_cfg.report_header;
 	out += "Made: " + Stamp() + " (the console's clock)\n";
 	out += "Now: " + (playing.empty() ? std::string("on the shelf") : "playing " + playing) + "\n";
@@ -1432,14 +1341,14 @@ void WebServer::ApiReport(const Request& req, Response& res)
 	}
 	out += "\n===== end of the report =====\n";
 
-	// The file's name: the build and the console's time, e.g. Zeruko-test1-2026-09-27_1403.txt.
+	// The file's name: the build and the console's time, e.g. Caliza-test1-2026-09-27_1403.txt.
 	std::string when = Stamp(); // "2026-09-27 14:03:22"
 	when = when.substr(0, 10) + "_" + when.substr(11, 2) + when.substr(14, 2);
 	char name[96];
 	if (m_cfg.test_build > 0)
-		std::snprintf(name, sizeof(name), "Zeruko-test%d-%s.txt", m_cfg.test_build, when.c_str());
+		std::snprintf(name, sizeof(name), "Caliza-test%d-%s.txt", m_cfg.test_build, when.c_str());
 	else
-		std::snprintf(name, sizeof(name), "Zeruko-logs-%s.txt", when.c_str());
+		std::snprintf(name, sizeof(name), "Caliza-logs-%s.txt", when.c_str());
 	res.type = "text/plain; charset=utf-8";
 	res.disposition = std::string("attachment; filename=\"") + name + "\"";
 	res.send_timeout_s = 60;

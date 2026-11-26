@@ -1,6 +1,6 @@
-# Zeruko compatibility matrix (AI-assisted)
+# Caliza compatibility matrix (AI-assisted)
 
-> **Rebrand note (2026-11-26):** this product is now **Zeruko** (repository: <https://github.com/felipebasurto/zeruko>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/zeruko` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
+> **Rebrand note (2026-11-26):** this product is now **Caliza** (repository: <https://github.com/felipebasurto/caliza>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/caliza` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
 
 
 This matrix separates inherited claims, static evidence, host verification, and console verification. Do not treat a row as proven on PS4 unless the evidence column says so.
@@ -24,8 +24,8 @@ This matrix separates inherited claims, static evidence, host verification, and 
 | Threading/MTVU | Implemented; MTVU default on for PS4 | Prior branch work; no runtime verification tonight | GameDB can still disable MTVU per game |
 | Input | Implemented | host pad remapping tests pass; DS4 path inherited | Disconnect/hotplug handling improved; PS4 connected-byte layout remains console-unverified |
 | Audio | Implemented + telemetry | `[audio]` underrun/output-error counters added | Runtime latency and user ID behavior unverified on PS4 |
-| BIOS detection/loading | Implemented | `/data/zeruko/bios`; embedded personal BIOS copy path exists | Redistributable PKG must remain BIOS-free |
-| ISO loading | Implemented + failure-path hardened | `/data/zeruko/games`, USB scanning inherited; truncated/corrupt reads now propagate errors, partial async reads fail, and retry exhaustion completes with a CDVD error instead of wedging | plain NFSv3 shares are exposed through `/net/shareN`; console scan/load/error recovery behavior unverified |
+| BIOS detection/loading | Implemented | `/data/caliza/bios`; embedded personal BIOS copy path exists | Redistributable PKG must remain BIOS-free |
+| ISO loading | Implemented + failure-path hardened | `/data/caliza/games`, USB scanning inherited; truncated/corrupt reads now propagate errors, partial async reads fail, and retry exhaustion completes with a CDVD error instead of wedging | plain NFSv3 shares are exposed through `/net/shareN`; console scan/load/error recovery behavior unverified |
 | Memory cards | Implemented + failure-path hardened | file/folder cards now bound out-of-range writes, retain dirty pages after host write failure, close metadata atomically, and expose storage failures to log analysis | Needs real console persistence, power-loss, and corruption-recovery tests |
 | Save states | Implemented + hostile-input hardened, console-unverified | load path streams entries; fixed memory truncation, oversized vectors/strings, GIF queue geometry, HostFS handle counts, and USB/OHCI/control state are validated | Legitimate-state save/load compatibility and flexible-memory headroom need console validation |
 | Frontend/shelf | Implemented through Vulkan WSI | fe_ps5 Vulkan shelf | CPU overlay VideoOut buffers API is PS5-only/stubbed |
@@ -35,7 +35,7 @@ This matrix separates inherited claims, static evidence, host verification, and 
 
 ## Required console smoke protocol
 
-When a console is available, run exactly this sequence and preserve `/data/zeruko/boot.log`, `emulog.txt`, `settings.log`:
+When a console is available, run exactly this sequence and preserve `/data/caliza/boot.log`, `emulog.txt`, `settings.log`:
 
 0. Install only the candidate whose current expected PKG SHA-256 is recorded in `ps4/STATUS.md`; verify that hash before installation.
 1. Cold boot to shelf.
@@ -48,4 +48,4 @@ When a console is available, run exactly this sequence and preserve `/data/zeruk
 8. Save and load state slot 1.
 9. Return to shelf and confirm memory-card/NVRAM flush.
 10. Record GPU/audio/input/network lines: `[ps4wsi]`, `[audio]`, `[pad]`, `[covers]`, `[https]`, `[vkwait]`, `[threads]`, `[vsslow]`, `[copies]`, `[readbacks]`.
-11. Optional USB input test: create empty `/data/zeruko/flags/usbkbm`, restart, connect a USB keyboard/mouse, and preserve `[kbm]` lines. Remove the flag if module loading or input misbehaves.
+11. Optional USB input test: create empty `/data/caliza/flags/usbkbm`, restart, connect a USB keyboard/mouse, and preserve `[kbm]` lines. Remove the flag if module loading or input misbehaves.

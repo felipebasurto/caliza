@@ -9,7 +9,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PCSX2="$(cd "$HERE/.." && pwd)"
 PORT="${PS4_PORT_DIR:-$HOME/cemups4}"
-PSB="${ZERUKO_PS4_BUILD:-$HOME/pcsx2ps4-build}"
+PSB="${CALIZA_PS4_BUILD:-$HOME/pcsx2ps4-build}"
 mkdir -p "$PSB"
 export PS4_SYSROOT="${PS4_SYSROOT:-$HOME/cemups4-build/sysroot}"
 OPENORBIS="${OPENORBIS:-/opt/pacbrew/ps4/openorbis}"
@@ -133,20 +133,20 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-LGPL-2.1.txt" "$stage/licenses/libnfs-LGPL-2.1.txt"
     cp "$PCSX2/ps5/third_party/libnfs/LICENCE-BSD.txt" "$stage/licenses/libnfs-BSD.txt"
     {
-        echo "Zeruko is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
-        echo "Corresponding source: https://github.com/felipebasurto/zeruko"
+        echo "Caliza is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
+        echo "Corresponding source: https://github.com/felipebasurto/caliza"
         echo "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2"
         echo "Build commit: $build_commit"
     } > "$stage/SOURCE.txt"
-    # BIOS files are never bundled by default. Setting ZERUKO_PS4_BIOS_DIR is an explicit personal-build
+    # BIOS files are never bundled by default. Setting CALIZA_PS4_BIOS_DIR is an explicit personal-build
     # opt-in; the implicit ~/pcsx2ps4-build/bios fallback was too easy to include accidentally.
-    bios="${ZERUKO_PS4_BIOS_DIR:-}"
+    bios="${CALIZA_PS4_BIOS_DIR:-}"
     if [ -n "$bios" ] && [ -d "$bios" ] && [ -n "$(ls -A "$bios")" ]; then
         mkdir -p "$stage/bios"
         cp "$bios"/* "$stage/bios/"
         cat > "$stage/PERSONAL-BUILD.txt" <<'EOF'
 This package contains console BIOS files explicitly added by its builder for personal use.
-Do not redistribute it. Public Zeruko packages never include BIOS files.
+Do not redistribute it. Public Caliza packages never include BIOS files.
 EOF
         echo "[build-ps4] BIOS files in the package: $(ls "$stage/bios" | wc -l) from $bios (personal build: don't share it)"
     else
@@ -156,16 +156,16 @@ EOF
     out="$PSB/out"
     mkdir -p "$out"
     rm -f "$out"/IV0000-ZERU*.pkg "$out"/IV0000-PCSX*.pkg # only the newest package is kept (PCSX*: the development identity's, drop once no build root has them)
-    # ZERUKO00 is the content label: make-pkg.sh keeps A-Z0-9 only and zero-pads it to 16, so the content id
-    # comes out IV0000-ZERU00001_00-ZERUKO0000000000 and the pkg IV0000-ZERU00001_00-ZERUKO0000000000.pkg.
+    # CALIZA00 is the content label: make-pkg.sh keeps A-Z0-9 only and zero-pads it to 16, so the content id
+    # comes out IV0000-ZERU00001_00-CALIZA0000000000 and the pkg IV0000-ZERU00001_00-CALIZA0000000000.pkg.
     pkg="$(SFO_STYLE=plain NO_RIGHT_SPRX=1 SFO_ATTRIBUTE="${SFO_ATTRIBUTE:-0x00810000}" \
         DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" ZERU00001 "Caliza PS4" \
-        "${ZERUKO_PS4_VERSION:-00.01}" ZERUKO00 "$out" | tail -1)"
+        "${CALIZA_PS4_VERSION:-00.01}" CALIZA00 "$out" | tail -1)"
     python3 "$HERE/tools/validate_package_stage.py" "$stage" --pkg "$pkg" --expect-commit "$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     echo "[build-ps4] package: $pkg ($(du -h "$pkg" | cut -f1))"
-    # Optionally a copy elsewhere (ZERUKO_PS4_PKG_DIR, e.g. a Windows folder): the current package, and the one it replaces
+    # Optionally a copy elsewhere (CALIZA_PS4_PKG_DIR, e.g. a Windows folder): the current package, and the one it replaces
     # moved into backups/ with its date, keeping the last 5. Personal builds carry your BIOS: keep them to yourself.
-    keep="${ZERUKO_PS4_PKG_DIR:-}"
+    keep="${CALIZA_PS4_PKG_DIR:-}"
     if [ -n "$keep" ] && mkdir -p "$keep/backups" 2>/dev/null; then
         for prev in "$keep"/IV0000-ZERU*.pkg "$keep"/IV0000-PCSX*.pkg; do
             [ -f "$prev" ] || continue

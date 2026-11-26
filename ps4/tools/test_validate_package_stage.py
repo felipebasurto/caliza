@@ -37,7 +37,7 @@ def make_stage(root: pathlib.Path) -> pathlib.Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"x")
     (stage / "SOURCE.txt").write_text(
-        "Corresponding source: https://github.com/felipebasurto/zeruko\n"
+        "Corresponding source: https://github.com/felipebasurto/caliza\n"
         "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2\n"
         "Build commit: 0123456789ab\n"
     )

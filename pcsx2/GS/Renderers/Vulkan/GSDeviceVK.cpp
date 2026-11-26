@@ -71,7 +71,7 @@ static constexpr u32 ORBIS_SUBMIT_DRAW_BUDGET = 3500;
 
 namespace
 {
-	// vk-285-39: the flag file vk_cputransfer (/data/zeruko/flags) keeps every CopyRect the image
+	// vk-285-39: the flag file vk_cputransfer (/data/caliza/flags) keeps every CopyRect the image
 	// copy it was, as the driver's own flag of that name keeps its clears on the CPU. Checked at
 	// most once a second.
 	bool OrbisCopiesAsImageCopies()
@@ -1302,7 +1302,7 @@ void GSDeviceVK::ScanForCommandBufferCompletion()
 // vk-285-14 (HW renderer bring-up): GPU-hang forensics. The PS5 driver's queue submit waits
 // for the GPU, so a hang surfaces as VK_ERROR_DEVICE_LOST in the vkQueueSubmit of the command
 // buffer that hung. The last draws, copies, clears, stretch draws, uploads and readbacks are
-// kept in a ring; on a lost device they are written to /data/zeruko/vkhang.txt and the app
+// kept in a ring; on a lost device they are written to /data/caliza/vkhang.txt and the app
 // closes at once, instead of reopening the device and giving the hung GPU more work (vk-285-13
 // did that, and the console restarted). The driver writes its own dump of the hung step
 // (PS5VK_HANG_DUMP, main-boot).
@@ -2575,7 +2575,7 @@ void GSDeviceVK::SubmitCommandBuffer(VKSwapChain* present_swap_chain)
 		snprintf(header, sizeof(header), "on-demand trace at submit %u (submits %u and %u complete)", s_orbis_submit,
 			s_orbis_submit - 2, s_orbis_submit - 1);
 		OrbisVkTraceWrite(OrbisLogPath("vktrace.txt").c_str(), header, s_orbis_submit);
-		printf("[vkhw] wrote /data/zeruko/vktrace.txt at submit %u\n", s_orbis_submit);
+		printf("[vkhw] wrote /data/caliza/vktrace.txt at submit %u\n", s_orbis_submit);
 		fflush(stdout);
 	}
 #endif
@@ -4468,7 +4468,7 @@ void OrbisVkPresentBlend(GSTexture* tex, const GSVector4& sRect, const GSVector4
 }
 
 // ---- Frame generation (2026-10-08, AI-assisted; needs proper testing on the console) -------------------------------------------
-// Zeruko/FrameGeneration, per game: the frame between two of the game's, made by ps5/coreorbis/orbis-shims/ps5_framegen (AMD FSR3's
+// Caliza/FrameGeneration, per game: the frame between two of the game's, made by ps5/coreorbis/orbis-shims/ps5_framegen (AMD FSR3's
 // optical flow and RPCS3-PS5's interpolation, from Swordpdf's RPCS3-PS5 / ps5-framegen), presented before the second one. The game's
 // frame is drawn into the interpolator's frame by the same present pipeline that draws it into the swapchain (the TV shader or the
 // FSR present, the scaling, the black borders), so a generated frame looks like the game's own; PS5SX2's overlays (the FPS box,
@@ -4478,7 +4478,7 @@ void OrbisVkPresentBlend(GSTexture* tex, const GSVector4& sRect, const GSVector4
 // vk-285-133: paced in the PS2's vsyncs (ps5/coreorbis/orbis-shims/OrbisFrameGenPacing.h; vk-285-131's wall-clock pacing slowed
 // a 60 fps game at 60 Hz to 30 fps), with a pause when the game slows while frames are generated; nothing is recorded while there
 // is no room for a generated frame (a 60 fps game at 60 Hz), and the interpolator is only made once there is.
-bool g_orbis_fg_wanted = false; // main-boot.cpp sets it from Zeruko/FrameGeneration before the GS opens
+bool g_orbis_fg_wanted = false; // main-boot.cpp sets it from Caliza/FrameGeneration before the GS opens
 std::atomic<bool> g_orbis_fg_active{false}; // frames are being generated (the FPS box says "FG")
 bool g_orbis_fg_engaged = false; // vk-285-133: the pacing has room for generated frames (GSRenderer.cpp skips the repeats then)
 

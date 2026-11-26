@@ -206,10 +206,10 @@ int RunWeb(const std::string& data, const std::string& presets)
 	call("POST", god, "unset upscale_multiplier\nset MemoryCards/Slot1_Filename=Mcd001.ps2\npatch+ 60 FPS\npatch- Widescreen 16:9\n");
 	call("POST", "/api/settings?id=@global", "set upscale_multiplier=3\nset TVShader=5\n");
 	call("POST", god, "recommended");
-	call("POST", sample, "set Zeruko/GameLanguage=2\nset filter=1\n");
+	call("POST", sample, "set Caliza/GameLanguage=2\nset filter=1\n");
 	// vk-285-116: the Controls tab's settings (the remapping, vk-285-117: the save combo and its hold time).
-	call("POST", sample, "set Zeruko/ButtonCross=Circle\nset Zeruko/ButtonCircle=Cross\nset Zeruko/SaveButton1=Touchpad\nset Zeruko/StateHold=1.5\n"
-		"set Zeruko/SwapSticks=true\n");
+	call("POST", sample, "set Caliza/ButtonCross=Circle\nset Caliza/ButtonCircle=Cross\nset Caliza/SaveButton1=Touchpad\nset Caliza/StateHold=1.5\n"
+		"set Caliza/SwapSticks=true\n");
 	call("POST", sample, "recommended");
 	call("POST", "/api/memcards", "create 16 My Card");
 	call("GET", "/api/memcards", "");
@@ -227,7 +227,7 @@ int RunSheet(const std::string& data, const std::string& presets)
 	using namespace settings;
 	std::string what, error, made;
 	const std::string god = data + "/settings/God of War (USA).ini", sample = data + "/settings/Sample Game (Europe).ini";
-	const std::string hg = "# God of War (SCUS-97399): written from the Zeruko shelf", hs = "# Sample Game (SLES-12345): written from the Zeruko shelf";
+	const std::string hg = "# God of War (SCUS-97399): written from the Caliza shelf", hs = "# Sample Game (SLES-12345): written from the Caliza shelf";
 	bool ok = true;
 	ok &= EditSettingsFile(god, hg,
 		{{Change::Set, "upscale_multiplier", "6"}, {Change::Set, "EmuCore/EnableWideScreenPatches", "false"},
@@ -239,10 +239,10 @@ int RunSheet(const std::string& data, const std::string& presets)
 		what, error);
 	ok &= EditSettingsFile(data + "/gs.ini", "# All games", {{Change::Set, "upscale_multiplier", "3"}, {Change::Set, "TVShader", "5"}}, what, error);
 	ok &= ApplyRecommended(god, presets, "SCUS-97399", "# God of War (SCUS-97399)", what, error);
-	ok &= EditSettingsFile(sample, hs, {{Change::Set, "Zeruko/GameLanguage", "2"}, {Change::Set, "filter", "1"}}, what, error);
+	ok &= EditSettingsFile(sample, hs, {{Change::Set, "Caliza/GameLanguage", "2"}, {Change::Set, "filter", "1"}}, what, error);
 	ok &= EditSettingsFile(sample, hs,
-		{{Change::Set, "Zeruko/ButtonCross", "Circle"}, {Change::Set, "Zeruko/ButtonCircle", "Cross"}, {Change::Set, "Zeruko/SaveButton1", "Touchpad"},
-			{Change::Set, "Zeruko/StateHold", "1.5"}, {Change::Set, "Zeruko/SwapSticks", "true"}},
+		{{Change::Set, "Caliza/ButtonCross", "Circle"}, {Change::Set, "Caliza/ButtonCircle", "Cross"}, {Change::Set, "Caliza/SaveButton1", "Touchpad"},
+			{Change::Set, "Caliza/StateHold", "1.5"}, {Change::Set, "Caliza/SwapSticks", "true"}},
 		what, error); // vk-285-116, vk-285-117
 	ok &= ApplyRecommended(sample, presets, "SLES-12345", "# Sample Game (SLES-12345)", what, error);
 	ok &= CreateCard(data + "/memcards", 16, "My Card.ps2", made, error);
@@ -267,7 +267,7 @@ int RunNoSettings(const std::string& data, const std::string& presets)
 	const std::string dir = data + "/settings", god = dir + "/God of War (USA).ini";
 	rmdir(dir.c_str());
 	std::string what, error;
-	const bool sheet = EditSettingsFile(god, "# God of War (SCUS-97399): written from the Zeruko shelf",
+	const bool sheet = EditSettingsFile(god, "# God of War (SCUS-97399): written from the Caliza shelf",
 		{{Change::Set, "upscale_multiplier", "6"}}, what, error);
 	const bool sheet_file = Read(god).find("upscale_multiplier=6") != std::string::npos;
 	std::printf("%s: the sheet's save without settings/ (%s)\n", sheet && sheet_file ? "PASS" : "FAIL", sheet ? "saved" : error.c_str());

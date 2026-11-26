@@ -57,7 +57,7 @@ using namespace R5900;
 static bool eeRecNeedsReset = false;
 // vk-285-27: the EE recompiler's churn, printed once a second after the [load] line
 // (GSRenderer.cpp, OrbisPrintLoad): blocks compiled, manual blocks their integrity check discarded,
-// pages the counted-block logic reset, and whole-cache resets. /data/zeruko/rec_nocount compiles
+// pages the counted-block logic reset, and whole-cache resets. /data/caliza/rec_nocount compiles
 // every manual block uncounted (memory_protect_recompiled_code); switching it resets the cache.
 std::atomic<u32> g_orbis_rec_compiles{0}, g_orbis_rec_discards{0}, g_orbis_rec_page_resets{0},
 	g_orbis_rec_full_resets{0};

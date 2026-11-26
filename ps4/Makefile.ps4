@@ -378,21 +378,33 @@ SHIM_SRCS := $(filter-out %/dirshim.cpp,$(SHIM_SRCS))
 
 SHIM_ASM := $(CO)/orbis-shims/ProsperoTLS.S
 
-# vk-285-40: the frontend (../frontend): the cover-flow shelf of PS2 cases, rendered through the
-# driver before PCSX2 starts. fe_host_main.cpp is its PC preview harness and is not built here.
+# The retained frontend services: scanning, settings, covers, web API, fonts, Vulkan helpers,
+# texture packs and online patches. The inherited cover-flow presentation is no longer built.
 FE_DIR := $(PCSX2)/ps5/frontend
-FE_SRCS := $(FE_DIR)/fe_app.cpp $(FE_DIR)/fe_covers.cpp $(FE_DIR)/fe_games.cpp \
-  $(FE_DIR)/fe_renderer.cpp $(FE_DIR)/fe_sound.cpp $(FE_DIR)/fe_text.cpp $(FE_DIR)/fe_vk.cpp $(FE_DIR)/fe_ps5.cpp \
+FE_SRCS := $(FE_DIR)/fe_covers.cpp $(FE_DIR)/fe_games.cpp \
+  $(FE_DIR)/fe_text.cpp $(FE_DIR)/fe_vk.cpp $(FE_DIR)/fe_ps5.cpp \
   $(FE_DIR)/fe_web.cpp $(FE_DIR)/fe_i18n.cpp $(FE_DIR)/fe_settings.cpp $(FE_DIR)/fe_options.cpp \
   $(FE_DIR)/fe_texpacks.cpp $(FE_DIR)/fe_https.cpp $(FE_DIR)/fe_https_ps5.cpp \
   $(FE_DIR)/fe_patchdl.cpp $(FE_DIR)/fe_bios.cpp
-# vk-285-50: Project Nayuki's QR Code generator (MIT, C) for the shelf's QR tile, and the files
-# fe_ps5.cpp embeds from frontend/assets (the settings page, its icons, Font Awesome's brands font).
+# Project Nayuki's QR Code generator (MIT, C) for the companion-panel QR code, plus embedded
+# fonts, presets and the canonical Caliza web panel assets.
 FE_CSRCS := $(FE_DIR)/third_party/qrcodegen/qrcodegen.c
-FE_ASSETS := $(wildcard $(FE_DIR)/assets/web/*) $(wildcard $(FE_DIR)/assets/fonts/*.otf) $(FE_DIR)/assets/presets.ini
-FE_HDRS := $(wildcard $(FE_DIR)/*.h) $(FE_DIR)/fe_shaders.inc $(FE_DIR)/caliza_ps2ui_markup.inc $(FE_DIR)/third_party/qrcodegen/qrcodegen.h $(FE_ASSETS)
+CALIZA_CORE_SRCS := $(PCSX2)/caliza/core/backend.cpp $(PCSX2)/caliza/core/storage.cpp $(PCSX2)/caliza/core/data_root.cpp \
+  $(PCSX2)/caliza/core/ui_model.cpp $(PCSX2)/caliza/core/settings_schema.cpp \
+  $(PCSX2)/caliza/core/settings_projection.cpp $(PCSX2)/caliza/core/catalog_model.cpp \
+  $(PCSX2)/caliza/core/console_backend.cpp
+CALIZA_NATIVE_SRCS := $(PCSX2)/caliza/native/draw_list.cpp $(PCSX2)/caliza/native/procedural_covers.cpp \
+  $(PCSX2)/caliza/native/estratos_scene.cpp $(PCSX2)/caliza/native/vk2d_renderer.cpp \
+  $(PCSX2)/caliza/native/ps4_shell.cpp
+CALIZA_WEB_DIR := $(PCSX2)/caliza/web
+CALIZA_WEB_ASSETS := $(CALIZA_WEB_DIR)/index.html $(CALIZA_WEB_DIR)/caliza.css $(CALIZA_WEB_DIR)/app.js \
+  $(CALIZA_WEB_DIR)/assets/caliza-mark.svg $(CALIZA_WEB_DIR)/assets/caliza-mark-mono.svg \
+  $(CALIZA_WEB_DIR)/assets/strata-ornament.svg $(CALIZA_WEB_DIR)/assets/fonts/source-sans-3-latin.woff2 \
+  $(CALIZA_WEB_DIR)/assets/fonts/source-sans-3-latin-ext.woff2
+FE_ASSETS := $(wildcard $(FE_DIR)/assets/fonts/*.otf) $(FE_DIR)/assets/presets.ini $(CALIZA_WEB_ASSETS)
+FE_HDRS := $(wildcard $(FE_DIR)/*.h) $(FE_DIR)/third_party/qrcodegen/qrcodegen.h $(FE_ASSETS)
 
-SRCS := $(SRCS) $(PCSX2)/pcsx2/USB/usb-mic/usb-mic.cpp \
+SRCS := $(SRCS) $(CALIZA_CORE_SRCS) $(CALIZA_NATIVE_SRCS) $(PCSX2)/pcsx2/USB/usb-mic/usb-mic.cpp \
   $(PCSX2)/pcsx2/USB/usb-mic/usb-headset.cpp \
   $(PCSX2)/pcsx2/USB/usb-printer/usb-printer.cpp \
   $(PCSX2)/pcsx2/USB/usb-eyetoy/usb-eyetoy-webcam.cpp \
@@ -620,7 +632,7 @@ $(OBJDIR)/shim/%.o: $(CO)/%.S
 $(OBJDIR)/frontend/%.o: $(FE_DIR)/%.cpp $(FE_HDRS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(FE_DIR) -DFE_FONT_DIR=\"$(PCSX2)/bin/resources/fonts\" \
-	  -DFE_ASSET_DIR=\"$(abspath $(FE_DIR)/assets)\" -c $< -o $@
+	  -DFE_ASSET_DIR=\"$(abspath $(FE_DIR)/assets)\" -DCALIZA_WEB_DIR=\"$(abspath $(CALIZA_WEB_DIR))\" -c $< -o $@
 
 $(OBJDIR)/frontend/%.o: $(FE_DIR)/%.c
 	@mkdir -p $(dir $@)

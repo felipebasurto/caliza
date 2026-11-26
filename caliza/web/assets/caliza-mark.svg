@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 112" role="img" aria-label="Caliza">
+  <defs>
+    <linearGradient id="caliza-ice" x1="22" y1="10" x2="132" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1FBFF"/>
+      <stop offset="0.38" stop-color="#A5E7FF"/>
+      <stop offset="1" stop-color="#5E91D7"/>
+    </linearGradient>
+    <linearGradient id="caliza-depth" x1="18" y1="28" x2="140" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C8F0FF"/>
+      <stop offset="0.48" stop-color="#6FA3DE"/>
+      <stop offset="1" stop-color="#283D78"/>
+    </linearGradient>
+    <linearGradient id="caliza-side" x1="48" y1="38" x2="112" y2="104" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6FA3DE"/>
+      <stop offset="1" stop-color="#202957"/>
+    </linearGradient>
+  </defs>
+  <!-- Three staggered mineral strata: the approved Caliza mark, redrawn as clean vector geometry. -->
+  <g>
+    <path d="M34 27 L99 6 L128 18 L63 40 Z" fill="url(#caliza-ice)"/>
+    <path d="M63 40 L128 18 L125 28 L69 46 L34 36 Z" fill="url(#caliza-side)" opacity="0.82"/>
+    <path d="M34 27 L63 40 L69 46 L39 34 Z" fill="#D8F5FF" opacity="0.42"/>
+  </g>
+  <g>
+    <path d="M20 59 L105 28 L139 42 L53 74 Z" fill="url(#caliza-depth)"/>
+    <path d="M53 74 L139 42 L135 55 L64 82 L20 69 Z" fill="#202957" opacity="0.78"/>
+    <path d="M20 59 L53 74 L64 82 L30 67 Z" fill="#A5E7FF" opacity="0.22"/>
+  </g>
+  <g>
+    <path d="M38 88 L108 62 L133 74 L63 101 Z" fill="url(#caliza-ice)"/>
+    <path d="M63 101 L133 74 L130 86 L75 108 L38 98 Z" fill="url(#caliza-side)" opacity="0.76"/>
+    <path d="M38 88 L63 101 L75 108 L48 96 Z" fill="#E6F9FF" opacity="0.34"/>
+  </g>
+</svg>

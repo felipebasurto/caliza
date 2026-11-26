@@ -80,7 +80,7 @@ VkSurfaceKHR CreateOrbisDisplaySurface(VkInstance instance, VkPhysicalDevice phy
 
 	// The first display with a mode; the largest mode it offers (ps5vk has one), and of equally large ones the one nearest
 	// 60 Hz (vk-285-115: RADV can list 119.88 Hz first, when the title asks VideoOut for high frame rates).
-	// 2026-10-08 (AI-assisted): with frame generation on for the game (Zeruko/FrameGeneration), the one nearest 120 Hz: a
+	// 2026-10-08 (AI-assisted): with frame generation on for the game (Caliza/FrameGeneration), the one nearest 120 Hz: a
 	// 60 fps game is shown at 120 with a generated frame between two of its own (GSDeviceVK.cpp, "frame generation").
 	// vk-285-133: the modes offered go to boot.log (vk-285-131's console run had only the 60 Hz one, and nothing said so).
 	extern bool g_orbis_fg_wanted;

@@ -19,7 +19,7 @@ void OrbisVUProfStart(); // vk-285-29 (orbis_eeprof.cpp)
 std::atomic<int> g_orbis_vu_waiting{0}; // vk-285-29: the VU1 profiler skips the ring waits
 // vk-285-74: VU1 cycles and program runs the MTVU thread executed (the [load] line prints them per
 // second, so VU busy ms over VU1 cycles says how fast the recompiled code runs), and the vudump
-// request the GS thread raises when /data/zeruko/flags/vudump appears (served here, between
+// request the GS thread raises when /data/caliza/flags/vudump appears (served here, between
 // programs, where the recompiler's lists can't change under it; x86/microVU.cpp).
 std::atomic<u64> g_orbis_vu1_cycles{0}, g_orbis_vu1_runs{0};
 std::atomic<int> g_orbis_vu1_dump_request{0};

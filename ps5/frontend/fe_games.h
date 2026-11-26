@@ -28,8 +28,8 @@ struct GameInfo
 	// vk-285-134 (AI-assisted): why the image can't be read ("invalid data": a CHD libchdr can't open, damaged or cut short;
 	// build 130's logs: 10 such starts on 4 consoles); empty when it reads. The shelf marks it and won't start it.
 	std::string damaged;
-	// vk-285-137 (AI-assisted; swordpdf: "add an option to hide games from the shelf"): Zeruko/HideGame=true in its own settings
-	// file (ReadBadges). The shelf leaves it out unless gs.ini's Zeruko/ShowHiddenGames is on, and then shows it dimmed.
+	// vk-285-137 (AI-assisted; swordpdf: "add an option to hide games from the shelf"): Caliza/HideGame=true in its own settings
+	// file (ReadBadges). The shelf leaves it out unless gs.ini's Caliza/ShowHiddenGames is on, and then shows it dimmed.
 	bool hidden = false;
 };
 
@@ -80,7 +80,7 @@ void SortGames(std::vector<GameInfo>& games);
 // Badges from settings/<stem>.ini, gs.ini and the patches folder.
 void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string& gs_ini, const std::string& patches_dir);
 
-// vk-285-137: gs.ini's Zeruko/ShowHiddenGames (the sheet for all games): hidden games stay on the shelf, dimmed.
+// vk-285-137: gs.ini's Caliza/ShowHiddenGames (the sheet for all games): hidden games stay on the shelf, dimmed.
 bool ShowHiddenGames(const std::string& gs_ini);
 
 // vk-285-139 (AI-assisted): a game's discs, for changing discs in the game. The images an .m3u in the image's folder lists

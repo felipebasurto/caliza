@@ -72,7 +72,7 @@ struct IniState
 };
 
 IniState ReadState(const std::string& text);
-// Zeruko/ and MemoryCards/ keys are the player's own choices, not tuning.
+// Caliza/ and MemoryCards/ keys are the player's own choices, not tuning.
 bool IsPlayerKey(const std::string& key);
 bool SameState(IniState a, IniState b);
 // "key=value (was old)"-style notes for the settings log.

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#080B12">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#080B12">
+<meta name="color-scheme" content="dark">
+<title>Caliza PS4 Companion</title>
+<link rel="icon" href="assets/caliza-mark.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/source-sans-3-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="caliza.css">
+<script defer src="app.js"></script>
+</head>
+<body>
+<svg class="svg-defs" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-library" viewBox="0 0 24 24">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.7A2.7 2.7 0 0 0 4 20.7Z"/>
+      <path d="M4 5.5v15.2"/>
+      <path d="M8 7h8M8 10.5h6"/>
+    </symbol>
+    <symbol id="i-memory" viewBox="0 0 24 24">
+      <rect x="5" y="7" width="14" height="13" rx="2"/>
+      <path d="M8 7V4h8v3M9 11h6M9 15h4"/>
+    </symbol>
+    <symbol id="i-disc" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8"/>
+      <circle cx="12" cy="12" r="2.2"/>
+      <path d="M12 4a8 8 0 0 1 6.9 4"/>
+    </symbol>
+    <symbol id="i-diagnostics" viewBox="0 0 24 24">
+      <path d="M4 17.5 8.5 13l3 3L19 8.5"/>
+      <path d="M15.5 8.5H19V12"/>
+      <path d="M4 4.5h16v15H4z" opacity=".45"/>
+    </symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24">
+      <path d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z"/>
+      <path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.1-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-.9c.6.5 1.3.9 2.1 1.2L10 21h4l.5-2.6c.8-.3 1.5-.7 2.1-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z"/>
+    </symbol>
+    <symbol id="i-display" viewBox="0 0 24 24">
+      <rect x="3.5" y="5" width="17" height="11" rx="1.5"/>
+      <path d="M9 20h6M12 16v4"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="5.5"/>
+      <path d="m15 15 5 5"/>
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24">
+      <path d="M20 7v5h-5"/>
+      <path d="M20 12a8 8 0 1 1-2.3-5.7"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24">
+      <path d="M12 4v11m0 0 4-4m-4 4-4-4"/>
+      <path d="M5 19h14"/>
+    </symbol>
+    <symbol id="i-note" viewBox="0 0 24 24">
+      <path d="M5 4h14v13H9l-4 4Z"/>
+      <path d="M8.5 8.5h7M8.5 12h4.5"/>
+    </symbol>
+    <symbol id="i-back" viewBox="0 0 24 24">
+      <path d="m14 6-6 6 6 6"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24">
+      <path d="M8 5.5v13l11-6.5Z"/>
+    </symbol>
+    <symbol id="i-controller" viewBox="0 0 24 24">
+      <path d="M7.5 8h9c2.8 0 4.5 2.3 4.9 5.5l.4 3.4c.1 1.4-1 2.6-2.4 2.4-1 0-1.8-.6-2.4-1.4l-1.2-1.5H8.2L7 17.9c-.6.8-1.4 1.4-2.4 1.4a2.3 2.3 0 0 1-2.4-2.4l.4-3.4C3 10.3 4.7 8 7.5 8Z"/>
+      <path d="M8 12.5h3M9.5 11v3M15.5 11.5h.1M17.5 13.5h.1"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="m5 12.5 4.5 4.5L19 7.5"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24">
+      <path d="M12 4 21 20H3Z"/>
+      <path d="M12 9v5M12 17.2h.1"/>
+    </symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24">
+      <path d="M3.5 6.5h6l2 2h9v9.5h-17Z"/>
+      <path d="M3.5 8.5v10"/>
+    </symbol>
+  </defs>
+</svg>
+<a class="skip-link" href="#main">Skip to panel content</a>
+<div class="ambient" aria-hidden="true"></div>
+<div class="app-shell">
+  <header class="app-header">
+    <a class="brand" href="#/library" aria-label="Caliza PS4 library">
+      <img class="brand-mark" src="assets/caliza-mark.svg" alt="">
+      <span class="brand-copy"><strong>CALIZA</strong><span>PS4 companion</span></span>
+    </a>
+    <div class="header-actions">
+      <div class="connection-pill" id="connection-pill" data-state="connecting" role="status" aria-live="polite">
+        <span class="connection-dot" aria-hidden="true"></span><span id="connection-label">Connecting</span>
+      </div>
+      <button class="icon-button" id="display-preferences" type="button" aria-haspopup="dialog" aria-controls="display-dialog" data-focus-id="display-preferences">
+        <svg aria-hidden="true"><use href="#i-display"></use></svg><span>Display</span>
+      </button>
+      <time class="clock" id="clock" datetime="" aria-label="Local time"></time>
+    </div>
+  </header>
+
+  <div class="shell-body">
+    <nav class="side-nav" aria-label="Panel sections">
+      <a href="#/library" data-nav="library" data-focus-id="nav-library"><svg aria-hidden="true"><use href="#i-library"></use></svg><span>Library</span></a>
+      <a href="#/memory" data-nav="memory" data-focus-id="nav-memory"><svg aria-hidden="true"><use href="#i-memory"></use></svg><span>Memory cards</span></a>
+      <a href="#/discs" data-nav="discs" data-focus-id="nav-discs"><svg aria-hidden="true"><use href="#i-disc"></use></svg><span>Discs</span></a>
+      <a href="#/diagnostics" data-nav="diagnostics" data-focus-id="nav-diagnostics"><svg aria-hidden="true"><use href="#i-diagnostics"></use></svg><span>Diagnostics</span></a>
+    </nav>
+    <main class="main-panel" id="main" tabindex="-1"></main>
+  </div>
+
+  <footer class="control-strip">
+    <span class="input-help"><svg aria-hidden="true"><use href="#i-controller"></use></svg><span id="input-help-text">Arrows move · Enter selects · Esc goes back</span></span>
+    <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
+  </footer>
+</div>
+
+<dialog class="display-dialog" id="display-dialog" aria-labelledby="display-dialog-title">
+  <form method="dialog" class="display-form" id="display-form">
+    <h2 id="display-dialog-title">Panel display</h2>
+    <p class="dialog-intro">These choices stay in this browser. System reduced motion and high contrast are still respected.</p>
+    <fieldset>
+      <legend>Text size</legend>
+      <div class="choice-row" role="radiogroup" aria-label="Text size">
+        <label><input type="radio" name="textScale" value="100"><span>Standard</span></label>
+        <label><input type="radio" name="textScale" value="125"><span>Large</span></label>
+        <label><input type="radio" name="textScale" value="150"><span>Very large</span></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Contrast</legend>
+      <div class="choice-row" role="radiogroup" aria-label="Contrast">
+        <label><input type="radio" name="contrast" value="auto"><span>System</span></label>
+        <label><input type="radio" name="contrast" value="high"><span>High</span></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Motion</legend>
+      <div class="choice-row" role="radiogroup" aria-label="Motion">
+        <label><input type="radio" name="motion" value="auto"><span>System</span></label>
+        <label><input type="radio" name="motion" value="reduced"><span>Reduced</span></label>
+      </div>
+    </fieldset>
+    <div class="dialog-actions">
+      <button class="button primary" value="done" data-focus-id="display-done">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -301,7 +301,7 @@ int main(int argc, char** argv)
 		sheet.Step(*disc, 1);
 		disc = FindRow(sheet, "Disc image");
 		const std::string ini = root + "/settings/Homebrew.ini";
-		Check(sheet.Value(*disc) == "Kingdom Hearts" && Read(ini).find("Zeruko/ElfDisc=Kingdom Hearts (USA).iso\n") != std::string::npos,
+		Check(sheet.Value(*disc) == "Kingdom Hearts" && Read(ini).find("Caliza/ElfDisc=Kingdom Hearts (USA).iso\n") != std::string::npos,
 			"a step picks the first image, saved by its file name");
 		sheet.Step(*disc, 1);
 		disc = FindRow(sheet, "Disc image");

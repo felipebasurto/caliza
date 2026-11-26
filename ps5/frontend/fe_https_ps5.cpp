@@ -42,7 +42,7 @@ namespace fe
 		{
 			if (inet_pton(AF_INET, host.c_str(), &addr) == 1)
 				return true;
-			const int rid = sceNetResolverCreate("zeruko-https", pool, 0);
+			const int rid = sceNetResolverCreate("caliza-https", pool, 0);
 			if (rid < 0)
 			{
 				error = "no DNS resolver (" + Hex(rid) + ")";

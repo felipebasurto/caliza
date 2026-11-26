@@ -72,14 +72,14 @@ struct OptionsPaths
 };
 
 // 2026-10-08: an ELF's disc image, by its file name as the shelf lists it (main-boot.cpp finds it in the game folders).
-constexpr const char* kElfDiscKey = "Zeruko/ElfDisc";
-constexpr const char* kCheatDiscKey = "Zeruko/CheatDisc"; // vk-285-139: gs.ini, a disc image the shelf lists
+constexpr const char* kElfDiscKey = "Caliza/ElfDisc";
+constexpr const char* kCheatDiscKey = "Caliza/CheatDisc"; // vk-285-139: gs.ini, a disc image the shelf lists
 
 // vk-285-135 (AI-assisted; swordpdf: "i also want to pick a folder though the browser in the shelf"): the folders main-boot.cpp
-// reads when Zeruko starts, in gs.ini, set from the sheet for all games (the app's folder picker) as from the settings page.
-constexpr const char* kGameFoldersKey = "Zeruko/GameFolders"; // folders separated by ';'
-constexpr const char* kBiosFolderKey = "Zeruko/BiosFolder";
-constexpr const char* kNfsSharesKey = "Zeruko/NfsShares"; // nfs:// addresses separated by ';'
+// reads when Caliza starts, in gs.ini, set from the sheet for all games (the app's folder picker) as from the settings page.
+constexpr const char* kGameFoldersKey = "Caliza/GameFolders"; // folders separated by ';'
+constexpr const char* kBiosFolderKey = "Caliza/BiosFolder";
+constexpr const char* kNfsSharesKey = "Caliza/NfsShares"; // nfs:// addresses separated by ';'
 // A list setting's items (';' or '|' between them, spaces and a folder's last '/' off), and the list again.
 std::vector<std::string> SplitFolderList(const std::string& list);
 std::string JoinFolderList(const std::vector<std::string>& items);
@@ -94,7 +94,7 @@ public:
 		Card,        // memory card slot 1 or 2
 		NewCard,     // make a blank card
 		Patch,       // one of the game's patch groups
-		Recommended, // Zeruko's recommended settings
+		Recommended, // Caliza's recommended settings
 		ResetAll,    // every option of the sheet back to what it follows
 		TexturePack, // 2026-10-05: the game's HD texture pack from archive.org (the app draws and runs it: fe_texpacks.h)
 		Cheat,       // 2026-10-08: one of the game's cheat groups (cheats/<serial>_<crc>.pnach)
@@ -107,7 +107,7 @@ public:
 		CheatDisc,   // vk-285-139: the sheet for all games: the cheat disc (kCheatDiscKey, one of the shelf's images)
 		Bios,        // PS4 port (AI-assisted): which BIOS file a game starts with (PCSX2's Filenames/BIOS)
 		SmartTune,   // PS4 port (AI-assisted): measure graphics configs while playing, keep the best full-speed one
-		About,       // GPLv3: Zeruko's licence and credits (the app draws the overlay)
+		About,       // GPLv3: Caliza's licence and credits (the app draws the overlay)
 	};
 
 	enum class From

@@ -11,27 +11,27 @@
 //    with their PS2 PC, VU0/VU1 micro programs, VIF unpackers, dispatchers and the SW
 //    renderer's code. Those registrations are logged with their host ranges, so a sample in
 //    recompiled code maps back to a PS2 block.
-//  - A writer thread appends samples and registrations to /data/zeruko/eeprof.bin every few
+//  - A writer thread appends samples and registrations to /data/caliza/eeprof.bin every few
 //    seconds, so no file I/O runs on the EE thread.
 //  - Each [load] line is followed by "[eeprof] n=<samples so far>", which ties each second's
 //    samples to its [perf]/[load] figures.
 // The analysis is offline (tools/eeprof.py in the port). vk-285-12: opt-in, a file
-// /data/zeruko/eeprof turns it on (main-boot's ITIMER profiler flag prof keeps it off).
+// /data/caliza/eeprof turns it on (main-boot's ITIMER profiler flag prof keeps it off).
 //
 // The PS5's signal context is FreeBSD's shifted by 0x30 (ProsperoCrash.cpp): RIP at +0xe0,
 // RSP at +0xf8. That is checked at start with one signal to this thread.
 //
 // vk-285-24: the same profiler can sample the GS thread instead, which on the HW renderer
 // records every draw (PCSX2's GSRendererHW and the Vulkan driver, both in the eboot) and holds
-// the heavy scenes' frame rate. A file /data/zeruko/gsprof starts it, also while the game runs:
+// the heavy scenes' frame rate. A file /data/caliza/gsprof starts it, also while the game runs:
 // the GS thread checks for the file once a second (OrbisGSProfStart, from its [load] line), and
-// the samples go to /data/zeruko/gsprof.bin with "[gsprof] n=" marks. Only one thread is
+// the samples go to /data/caliza/gsprof.bin with "[gsprof] n=" marks. Only one thread is
 // profiled per run; the EE profiler wins when both files are there at start.
 //
 // vk-285-29: and the MTVU thread (VU1's micro programs, VIF unpacks and XGKICKs when MTVU is on),
-// which is busy the whole second in the crowd fights' dips. A file /data/zeruko/vuprof, there at
+// which is busy the whole second in the crowd fights' dips. A file /data/caliza/vuprof, there at
 // start, starts it on that thread's first wake (OrbisVUProfStart, MTVU.cpp); its ring waits are
-// skipped, the samples go to /data/zeruko/vuprof.bin with "[vuprof] n=" marks.
+// skipped, the samples go to /data/caliza/vuprof.bin with "[vuprof] n=" marks.
 //
 // Copyright (C) 2026 swordpdf
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -497,7 +497,7 @@ void OrbisEEProfStart()
 		return;
 	if (!ProfilerWanted())
 	{
-		std::printf("[eeprof] off (opt-in: create /data/zeruko/eeprof, or /data/zeruko/gsprof for the GS thread)\n");
+		std::printf("[eeprof] off (opt-in: create /data/caliza/eeprof, or /data/caliza/gsprof for the GS thread)\n");
 		std::fflush(stdout);
 		return;
 	}
@@ -509,7 +509,7 @@ void OrbisEEProfStart()
 }
 
 // vk-285-24: GSRenderer.cpp's OrbisPrintLoad calls this once a second on the GS thread; it starts
-// the profiler on that thread once /data/zeruko/gsprof exists (and no profiler runs yet).
+// the profiler on that thread once /data/caliza/gsprof exists (and no profiler runs yet).
 void OrbisGSProfStart()
 {
 	if (s_started.load(std::memory_order_relaxed))
@@ -522,7 +522,7 @@ void OrbisGSProfStart()
 }
 
 // vk-285-29: the MTVU thread calls this each time its ring runs dry; it starts the profiler on
-// that thread when /data/zeruko/vuprof was there at start (ProfilerWanted, which also keeps the
+// that thread when /data/caliza/vuprof was there at start (ProfilerWanted, which also keeps the
 // JIT registrations the VU1 samples are named by) and no profiler runs yet.
 void OrbisVUProfStart()
 {

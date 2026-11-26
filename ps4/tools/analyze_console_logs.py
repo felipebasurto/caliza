@@ -197,7 +197,7 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     if ev.has("[smarttune] baseline 1x fails"):
         ev.warnings.append("smart tune found the game is not GPU-limited even at 1x; it is CPU/engine-limited and upscaling cannot help")
     if ev.has("[migrate] failed") or ev.has("[migrate] cannot"):
-        ev.warnings.append("the /data/PCSX2 to /data/zeruko migration reported failures; some settings or saves may not have been copied (the old folder is never deleted)")
+        ev.warnings.append("the /data/PCSX2 to /data/caliza migration reported failures; some settings or saves may not have been copied (the old folder is never deleted)")
     if ev.has("[migrate] done"):
         ev.notes.append("one-time data migration from the legacy /data/PCSX2 folder ran this boot")
 

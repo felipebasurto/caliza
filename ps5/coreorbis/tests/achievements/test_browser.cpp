@@ -117,7 +117,7 @@ namespace
 namespace Host
 {
 	std::unique_lock<std::mutex> GetSecretsSettingsLock() { return std::unique_lock(secret_mutex); }
-	std::string GetHTTPUserAgent() { return "Zeruko-browser-test/1.0"; }
+	std::string GetHTTPUserAgent() { return "Caliza-browser-test/1.0"; }
 	namespace Internal
 	{
 		SettingsInterface* GetSecretsSettingsLayer() { return &secrets; }

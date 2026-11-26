@@ -1,12 +1,12 @@
 // PS5 port (vk-285-113): where a game's texture pack is.
 //
 // PCSX2 looks for replacement textures in <textures folder>/<serial>/replacements, with the textures folder
-// /data/zeruko/textures. Packs are big, so they can sit on a USB drive (or any folder the PS5 mounts) instead:
+// /data/caliza/textures. Packs are big, so they can sit on a USB drive (or any folder the PS5 mounts) instead:
 // FindGameDir looks there first and gives the game's folder, or "" to leave it to PCSX2's own place.
 //
-//   1. the Zeruko/TexturesDir setting (gs.ini or the game's settings file), when <it>/<serial> is there;
-//   2. each USB drive, /mnt/usb0 to /mnt/usb7: <drive>/zeruko/textures/<serial>, <drive>/PCSX2/textures/<serial>,
-//      <drive>/textures/<serial>, and <drive>/zeruko/<serial>, <drive>/<serial> when that folder has a
+//   1. the Caliza/TexturesDir setting (gs.ini or the game's settings file), when <it>/<serial> is there;
+//   2. each USB drive, /mnt/usb0 to /mnt/usb7: <drive>/caliza/textures/<serial>, <drive>/PCSX2/textures/<serial>,
+//      <drive>/textures/<serial>, and <drive>/caliza/<serial>, <drive>/<serial> when that folder has a
 //      "replacements" folder in it (a pack copied to the drive as it is).
 //
 // Folder names match without regard to case (USB drives are FAT32 or exFAT, other file systems care). The
@@ -83,7 +83,7 @@ inline std::string WalkDirs(const std::string& dir, const std::vector<std::strin
 	return path;
 }
 
-// The game's texture folder outside /data/zeruko/textures, or "". `how` (may be null) says which rule found it.
+// The game's texture folder outside /data/caliza/textures, or "". `how` (may be null) says which rule found it.
 inline std::string FindGameDir(const std::vector<std::string>& drive_roots, const std::string& manual_dir, const std::string& serial,
 	std::string* how = nullptr)
 {
@@ -95,7 +95,7 @@ inline std::string FindGameDir(const std::vector<std::string>& drive_roots, cons
 		if (!dir.empty())
 		{
 			if (how)
-				*how = "the Zeruko/TexturesDir setting";
+				*how = "the Caliza/TexturesDir setting";
 			return dir;
 		}
 	}
@@ -103,7 +103,7 @@ inline std::string FindGameDir(const std::vector<std::string>& drive_roots, cons
 	{
 		// PCSX2/textures stays a candidate on purpose: it is the desktop layout (Documents/PCSX2/textures) a
 		// texture pack is most often copied from, not the console port's old name. Needs proper testing.
-		static const char* const kRoots[][2] = {{"zeruko", "textures"}, {"PCSX2", "textures"}, {"textures", nullptr}};
+		static const char* const kRoots[][2] = {{"caliza", "textures"}, {"PCSX2", "textures"}, {"textures", nullptr}};
 		for (const auto& r : kRoots)
 		{
 			std::vector<std::string> names = {r[0]};
@@ -118,8 +118,8 @@ inline std::string FindGameDir(const std::vector<std::string>& drive_roots, cons
 				return dir;
 			}
 		}
-		// A pack copied over as it is: <drive>/zeruko/<serial>/replacements or <drive>/<serial>/replacements.
-		for (const char* top : {"zeruko", ""})
+		// A pack copied over as it is: <drive>/caliza/<serial>/replacements or <drive>/<serial>/replacements.
+		for (const char* top : {"caliza", ""})
 		{
 			const std::string base = top[0] ? WalkDirs(drive, {top}) : drive;
 			if (base.empty())

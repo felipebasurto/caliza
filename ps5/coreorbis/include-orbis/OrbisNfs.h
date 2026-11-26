@@ -1,7 +1,7 @@
 // PS5 port (vk-285-135, AI-assisted): games on NFS shares. Testers asked for "nfs mounting": playing games straight off
 // a PC or NAS share, without copying them to a drive.
 //
-// A share is an nfs:// address in gs.ini's Zeruko/NfsShares (the settings page, or the shelf's folder picker), several
+// A share is an nfs:// address in gs.ini's Caliza/NfsShares (the settings page, or the shelf's folder picker), several
 // separated by ';' or new lines:
 //   nfs://192.168.1.10/volume1/PS2                NFS v3 through the server's portmapper (Linux, Synology, QNAP, TrueNAS,
 //                                                 WinNFSd, haneWIN), else NFS v4 on port 2049
@@ -52,7 +52,7 @@ struct ShareInfo
 	bool mounted = false;
 };
 
-// The shares (replacing any set before), from Zeruko/NfsShares. An address that doesn't parse is left out with a
+// The shares (replacing any set before), from Caliza/NfsShares. An address that doesn't parse is left out with a
 // sentence in `problems`. Returns the mount points, in order, without repeats.
 std::vector<std::string> SetShares(const std::string& list, std::vector<std::string>* problems = nullptr);
 // Mounts every share not mounted yet, all at once, each giving up after about `timeout_ms`; the states after.

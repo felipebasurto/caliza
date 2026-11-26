@@ -237,7 +237,7 @@ protected:
 	// erase blocks they touch are written back to the file in a few large writes once the card has
 	// been idle for a second (NextFrame runs once an emulated second, cdvdVsync -> sioNextFrame),
 	// every 5 s while it stays busy, and when the card closes. Formatted cards load at open, others
-	// on their first write. /data/zeruko/mcd_nocache turns the cache off.
+	// on their first write. /data/caliza/mcd_nocache turns the cache off.
 	std::vector<u8> m_cache[8];
 	std::vector<u8> m_dirty[8]; // a flag per erase block
 	bool m_dirty_any[8] = {};

@@ -88,7 +88,7 @@ namespace ps5::debug
             if (have)
             {
                 // eerec-258: native-res sharpen (cross unsharp mask) before the bilinear upscale.
-                // Strength from /data/zeruko/sharpen (float, 0 = off), default 0.6.
+                // Strength from /data/caliza/sharpen (float, 0 = off), default 0.6.
                 static const int s_k = []() {
                     float k = 0.6f;
                     if (FILE* f = std::fopen(OrbisFlagPath("sharpen").c_str(), "r")) { if (std::fscanf(f, "%f", &k) != 1) k = 0.6f; std::fclose(f); }
@@ -154,7 +154,7 @@ namespace ps5::debug
                 canvas.rectangle(1680, 40, 220, 50, ps5::demo::Color::background);
                 canvas.text(1695, 52, fbuf, 3, ps5::demo::Color::yellow);
             }
-            // Orbis: debug panel only when /data/zeruko/debugpanel exists (checked once).
+            // Orbis: debug panel only when /data/caliza/debugpanel exists (checked once).
             static const bool show_panel = OrbisFlag("debugpanel");
             if (!show_panel)
                 return;
@@ -163,9 +163,9 @@ namespace ps5::debug
             canvas.rectangle(960, 20, 940, 620, ps5::demo::Color::background);
             canvas.rectangle(960, 20, 940, 50, ps5::demo::Color::panel);
             char buf[160];
-            std::snprintf(buf, sizeof(buf), "ZERUKO %s", g_state.buildtag);
+            std::snprintf(buf, sizeof(buf), "CALIZA %s", g_state.buildtag);
             canvas.text(975, 35, buf, 4, ps5::demo::Color::yellow);
-            canvas.text(975, 90, "> /data/zeruko/Ratchet & Clank.iso", 2, ps5::demo::Color::cyan);
+            canvas.text(975, 90, "> /data/caliza/Ratchet & Clank.iso", 2, ps5::demo::Color::cyan);
             std::snprintf(buf, sizeof(buf), "STAGE %s", g_state.line1);
             canvas.text(975, 130, buf, 2, ps5::demo::Color::white);
             std::snprintf(buf, sizeof(buf), "STATUS %s", g_state.line2);
@@ -188,7 +188,7 @@ namespace ps5::debug
     {
         g_state.active.store(true);
         std::thread([]() {
-            ps5::demo::run(&draw, "Zeruko boot debug");
+            ps5::demo::run(&draw, "Caliza boot debug");
         }).detach();
     }
 

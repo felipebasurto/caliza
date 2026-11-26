@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 760" role="img" aria-label="">
+  <defs>
+    <linearGradient id="sheet-a" x1="120" y1="0" x2="660" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A5E7FF" stop-opacity="0.34"/>
+      <stop offset="0.52" stop-color="#3F5FA9" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#141B28" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sheet-b" x1="190" y1="40" x2="690" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EEF4FF" stop-opacity="0.20"/>
+      <stop offset="0.45" stop-color="#202957" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#080B12" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="vein" x1="160" y1="330" x2="690" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A5E7FF" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#A5E7FF" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#A5E7FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M282 0 H720 V118 L330 214 L184 156 Z" fill="url(#sheet-b)"/>
+    <path d="M330 214 L720 118 V286 L392 390 L184 306 L184 156 Z" fill="url(#sheet-a)"/>
+    <path d="M392 390 L720 286 V452 L448 558 L184 458 L184 306 Z" fill="url(#sheet-b)" opacity="0.86"/>
+    <path d="M448 558 L720 452 V670 L510 760 L184 640 L184 458 Z" fill="url(#sheet-a)" opacity="0.76"/>
+    <path d="M184 337 L720 232 V252 L184 358 Z" fill="url(#vein)" opacity="0.8"/>
+    <path d="M282 0 H720" stroke="#A5E7FF" stroke-opacity="0.14"/>
+    <path d="M330 214 L720 118" stroke="#A5E7FF" stroke-opacity="0.18"/>
+    <path d="M392 390 L720 286" stroke="#A5E7FF" stroke-opacity="0.16"/>
+    <path d="M448 558 L720 452" stroke="#A5E7FF" stroke-opacity="0.12"/>
+  </g>
+</svg>

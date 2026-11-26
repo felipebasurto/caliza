@@ -64,7 +64,7 @@ static constexpr std::array<PresentShader, 8> s_tv_shader_indices = {
 
 // ---- eerec-278 (PS5 port): live present tuning + FPS box for the GL presenter ----
 // Modes cycle when L3+R3 are held (the pad thread bumps g_orbis_filter_cycle) or are set from
-// /data/zeruko/live.ini (re-read every 30 vsyncs when its content changes). There is no ImGui
+// /data/caliza/live.ini (re-read every 30 vsyncs when its content changes). There is no ImGui
 // on Orbis, so the FPS / mode label is a small CPU-drawn texture presented top-right.
 extern std::atomic<int> g_orbis_filter_cycle;
 extern "C" void orbis_text_rgba(u32* buf, unsigned w, unsigned h, unsigned x, unsigned y, const char* s, unsigned scale, u32 color);
@@ -81,7 +81,7 @@ void OrbisOSDLabel(const char* text)
 }
 int g_orbis_diag = 0; // eerec-280: periodic GL readback diagnostics (live.ini diag=1)
 int g_orbis_perf = 0; // eerec-280: perf OSD + [perf] klog line every second (live.ini perf=1)
-// vk-285-113: Zeruko/Overlay and Zeruko/FpsGraph from gs.ini or the game's ini (main-boot.cpp orbis_ps5opts_from), and
+// vk-285-113: Caliza/Overlay and Caliza/FpsGraph from gs.ini or the game's ini (main-boot.cpp orbis_ps5opts_from), and
 // the settings page's QR code over the game (the pad thread: L2 + D-pad down held for 2 s).
 std::atomic<int> g_orbis_overlay_mode{-1}; // -1: live.ini's fps= and perf= decide; 0: no box; 1: FPS; 2: FPS and the EE/GS/VU loads
 std::atomic<int> g_orbis_fps_graph{0}; // 1: a blue graph of the last minute's frame rate, top right
@@ -611,7 +611,7 @@ extern unsigned long long g_orbis_ee_vsyncq_ticks, g_orbis_vu_idle_ticks, g_orbi
 #ifdef ORBIS_VULKAN
 extern std::atomic<int> g_orbis_widescreen, g_orbis_ws_active; // vk-285-12 (pcsx2/OrbisWidescreen.cpp)
 void OrbisEEProfMark(); // vk-285-8 (the port's orbis_eeprof.cpp)
-void OrbisGSProfStart(); // vk-285-24: the same profiler on the GS thread (/data/zeruko/gsprof)
+void OrbisGSProfStart(); // vk-285-24: the same profiler on the GS thread (/data/caliza/gsprof)
 void OrbisAutoProfSecond(float speed, float ee, float gs, float vu); // vk-285-118 (orbis_eeprof.cpp)
 std::atomic<int> g_orbis_rb_auto_request{0}; // vk-285-118: StubHost.cpp hands it to main-boot.cpp's OrbisReadbackAutoCpu
 bool OrbisFlag(const char* name);
@@ -796,7 +796,7 @@ static void OrbisMeasureLoad()
 		s_cycles = cycles;
 		s_runs = runs;
 	}
-	// vk-285-74: /data/zeruko/flags/vudump appearing while the game runs asks the MTVU thread for a dump
+	// vk-285-74: /data/caliza/flags/vudump appearing while the game runs asks the MTVU thread for a dump
 	// of the VU1 recompiler (microVU.cpp OrbisVU1Dump). A flag already there at launch does nothing: move
 	// it out and back in at the spot to study.
 	{
@@ -979,7 +979,7 @@ static void OrbisPrintLoad()
 		}
 	}
 #ifdef ORBIS_VULKAN
-	OrbisGSProfStart(); // vk-285-24: starts sampling this (GS) thread once /data/zeruko/gsprof exists
+	OrbisGSProfStart(); // vk-285-24: starts sampling this (GS) thread once /data/caliza/gsprof exists
 	OrbisEEProfMark(); // vk-285-8: the profiler's sample count at this [load] line
 	extern void OrbisVkGpuProfSecond(); // GSDeviceVK.cpp
 	OrbisVkGpuProfSecond(); // vk-285-94: the GPU profiler's lines (flags/gpuprof)
@@ -1163,7 +1163,7 @@ static void OrbisLiveTune()
 		std::string g;
 		{
 			std::string b;
-			if (OrbisCachedRead("/data/zeruko/gs.ini", b))
+			if (OrbisCachedRead("/data/caliza/gs.ini", b))
 				g.assign(b, 0, std::min<size_t>(b.size(), 2048));
 		}
 		// vk-285-32: and the game's own settings file (main-boot.cpp), so editing it applies live too.
@@ -1206,7 +1206,7 @@ static void OrbisLiveTune()
 	const bool reapply = g_orbis_live_reapply.exchange(0, std::memory_order_acq_rel) != 0;
 	{
 		std::string b; // vk-285-105: as the ticker last read it (see gs.ini above)
-		if (OrbisCachedRead("/data/zeruko/live.ini", b))
+		if (OrbisCachedRead("/data/caliza/live.ini", b))
 			cur.assign(b, 0, std::min<size_t>(b.size(), 1024));
 	}
 	const bool changed = cur != s_last;
@@ -1431,7 +1431,7 @@ static void OrbisDrawQrPanel()
 		const int ts = std::max(2, static_cast<int>(4.0f * k + 0.5f)); // text scale (a glyph is 5x7 units, 6 wide with its gap)
 		const int quiet = 4 * mp;
 		const int qr_px = have ? size * mp : 0;
-		const char* const title = "ZERUKO SETTINGS";
+		const char* const title = "CALIZA SETTINGS";
 		const char* const hint = "HOLD L2 + DOWN TO CLOSE";
 		const std::string addr = have ? shown : std::string("NO NETWORK ADDRESS");
 		const auto text_w = [](const char* str, int scale) { return static_cast<int>(std::strlen(str)) * 6 * scale; };
@@ -1573,7 +1573,7 @@ GSTexture* OrbisImageTexture(GSDevice* dev, OrbisImageJob& job)
 // The challenge icons (a tester: "RA challenge indicator icon bottom-right with an on/off"): the badges of the
 // RetroAchievements challenges active now (an achievement primed: it unlocks if the player keeps it up), in the bottom right
 // corner, newest on the left, as PCSX2 draws them with ImGui (Achievements.cpp DrawGameOverlays), which this port hasn't.
-// Zeruko/RAChallengeIcons (main-boot.cpp, on by default as PCSX2's) turns them off. A badge still downloading is tried again
+// Caliza/RAChallengeIcons (main-boot.cpp, on by default as PCSX2's) turns them off. A badge still downloading is tried again
 // every 2 seconds for 30 seconds.
 std::atomic<int> g_orbis_ra_challenge{1};
 namespace
@@ -1629,7 +1629,7 @@ static void OrbisPrepareChallengeIcons()
 				s_orbis_icons_dev->Recycle(old.tex);
 		if (next.size() != s_orbis_icons.size())
 		{
-			printf("[present] RetroAchievements challenge icons: %zu%s\n", next.size(), on ? "" : " (Zeruko/RAChallengeIcons off)");
+			printf("[present] RetroAchievements challenge icons: %zu%s\n", next.size(), on ? "" : " (Caliza/RAChallengeIcons off)");
 			fflush(stdout);
 		}
 		s_orbis_icons = std::move(next);
@@ -1683,15 +1683,15 @@ static void OrbisDrawChallengeIcons()
 #endif
 }
 
-// The overlay picture (testers: "PNG overlays/bezels, /data/zeruko/overlays/default.png and <serial>.png, on for all games or
+// The overlay picture (testers: "PNG overlays/bezels, /data/caliza/overlays/default.png and <serial>.png, on for all games or
 // per game, a folder of our own"): a picture over the whole screen, alpha-blended (OrbisVkPresentBlend), over the game and
-// under the watermark and the box. Zeruko/Bezel (main-boot.cpp, live, per game or for all) turns it on; the picture is
-// <serial>.png, else default.png, in Zeruko/BezelDir when that is set, then in /data/zeruko/overlays. It is meant to be the
+// under the watermark and the box. Caliza/Bezel (main-boot.cpp, live, per game or for all) turns it on; the picture is
+// <serial>.png, else default.png, in Caliza/BezelDir when that is set, then in /data/caliza/overlays. It is meant to be the
 // screen's size with a see-through middle where the game shows: the game keeps its own size and place (Aspect ratio), and the
 // picture is stretched to the screen. At most 1920x1080 (a 4K one decodes to 33 MB, too much for the app's memory).
 std::atomic<int> g_orbis_bezel{0};
-std::atomic<u32> g_orbis_bezel_gen{0}; // main-boot.cpp: Zeruko/Bezel or BezelDir changed
-std::string OrbisBezelDirectory();     // main-boot.cpp: Zeruko/BezelDir ("" when unset)
+std::atomic<u32> g_orbis_bezel_gen{0}; // main-boot.cpp: Caliza/Bezel or BezelDir changed
+std::string OrbisBezelDirectory();     // main-boot.cpp: Caliza/BezelDir ("" when unset)
 static std::string s_orbis_bezel_serial; // the GS thread's copy of the game's serial
 static bool s_orbis_bezel_serial_new = false;
 static GSTexture* s_orbis_bezel_tex = nullptr;
@@ -1747,7 +1747,7 @@ static void OrbisPrepareBezel()
 			dir.pop_back();
 		if (!dir.empty())
 			dirs.push_back(dir);
-		dirs.push_back("/data/zeruko/overlays");
+		dirs.push_back("/data/caliza/overlays");
 		std::vector<std::string> candidates;
 		for (const std::string& d : dirs)
 		{
@@ -1885,7 +1885,7 @@ static void OrbisGLOSD(bool generated = false)
 		}
 	}
 
-	// vk-285-113: Zeruko/Overlay (0 none, 1 FPS, 2 FPS and loads) wins over live.ini's fps= and perf= when set.
+	// vk-285-113: Caliza/Overlay (0 none, 1 FPS, 2 FPS and loads) wins over live.ini's fps= and perf= when set.
 	const int overlay = g_orbis_overlay_mode.load(std::memory_order_relaxed);
 	const bool show_fps = overlay >= 0 ? overlay >= 1 : s_orbis_fps_box;
 	const bool show_loads = overlay >= 0 ? overlay >= 2 : g_orbis_perf != 0;
@@ -2722,10 +2722,10 @@ void GSRenderer::EndPresentFrame()
 }
 
 // ---- vk-285-25: the frame capture ----
-// /data/zeruko/framecap (content optional: "secs=20 every=2 x0=0.5 x1=1 y0=0 y1=1 half=1") records the
+// /data/caliza/framecap (content optional: "secs=20 every=2 x0=0.5 x1=1 y0=0 y1=1 half=1") records the
 // displayed frame -- the merge output, before the present's scaling -- for `secs` seconds, every `every`th
 // vsync, cropped to [x0,x1) x [y0,y1) of the frame (fractions) and halved on the GPU with half=1, into
-// /data/zeruko/framecap.bin: "PS5FCAP1", u32 version 1, u32 header size 16, then per frame twelve u32
+// /data/caliza/framecap.bin: "PS5FCAP1", u32 version 1, u32 header size 16, then per frame twelve u32
 // (magic 'FRM1', vsync, w, h, frame w, frame h, crop x0 y0 x1 y1, microseconds lo, hi) and w*h*3 bytes RGB,
 // rows top down. Frame N's copy is read at vsync N+1, by which time the GPU has normally finished it.
 namespace
@@ -2797,7 +2797,7 @@ static void OrbisCapClose()
 		fclose(c.f);
 		c.f = nullptr;
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - c.t0).count();
-		printf("[framecap] done: %u frames, %.1f MB in %.1f s -> /data/zeruko/framecap.bin\n", c.frames,
+		printf("[framecap] done: %u frames, %.1f MB in %.1f s -> /data/caliza/framecap.bin\n", c.frames,
 			static_cast<double>(c.bytes) / 1048576.0, secs);
 		fflush(stdout);
 		OrbisOSDLabel("CAPTURE DONE");
@@ -2867,7 +2867,7 @@ static void OrbisFrameCapture(GSTexture* current)
 		c.f = fopen(OrbisLogPath("framecap.bin").c_str(), "wb");
 		if (!c.f)
 		{
-			printf("[framecap] cannot open /data/zeruko/framecap.bin\n");
+			printf("[framecap] cannot open /data/caliza/framecap.bin\n");
 			fflush(stdout);
 			return;
 		}
@@ -3102,7 +3102,7 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 		ORBIS_VS_MARK(ORBIS_VS_PREP);
 		OrbisPreparePanels(); // 2026-10-08: the challenge icons' and the overlay picture's uploads, outside the present's pass
 #ifdef ORBIS_VULKAN
-		// 2026-10-08 (AI-assisted): frame generation (Zeruko/FrameGeneration; GSDeviceVK.cpp): the frame between the last one and
+		// 2026-10-08 (AI-assisted): frame generation (Caliza/FrameGeneration; GSDeviceVK.cpp): the frame between the last one and
 		// this one, presented first (as many times as the pacing asks), PS5SX2's overlays over it as over the game's own frames.
 		// Only for a new frame of the game, as the internal FPS counts them (what "Skip duplicate frames" skips): a vsync that
 		// shows the last frame again (a 30 fps game with the skip off, or after 3 skips) presents it as before, and the

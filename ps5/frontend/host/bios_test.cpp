@@ -130,7 +130,7 @@ int main(int argc, char** argv)
 	s_root = argc > 1 ? argv[1] : "/tmp/fe-bios-test";
 	const size_t MB4 = 4u * 1024u * 1024u, KB512 = 512u * 1024u;
 
-	// The empty folder (700 of the 961 failed starts) and no folder at all (bios_dir is then /data/zeruko itself).
+	// The empty folder (700 of the 961 failed starts) and no folder at all (bios_dir is then /data/caliza itself).
 	Dir("a/PCSX2/bios");
 	CHECK(Has(Describe("a/PCSX2/bios", "a/PCSX2"), "bios is empty."));
 	Dir("b/PCSX2/games");

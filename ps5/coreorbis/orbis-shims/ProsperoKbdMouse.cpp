@@ -1,6 +1,6 @@
 // PS5SX2 (vk-285-72, vk-285-113): the PS5's USB keyboard and mouse, for the PS2.
 //
-// Two ways in, chosen by the Zeruko/KeyboardMouse setting (see OrbisKbdMouseConfigure):
+// Two ways in, chosen by the Caliza/KeyboardMouse setting (see OrbisKbdMouseConfigure):
 //
 //  * As the PS2's USB keyboard and mouse (vk-285-72). main-boot.cpp puts PCSX2's USB HID keyboard on the PS2's USB port 1
 //    and its HID mouse on port 2 (USB1/Type=hidkbd, USB2/Type=hidmouse; the flag file nousbkbm or a game's own settings
@@ -612,7 +612,7 @@ void OrbisKbdMouseConfigure(int mode, int aim, int speed, int buttons)
 		static const char* const modes[] = {"auto", "controller only", "USB devices only", "off"};
 		static const char* const aims[] = {"nothing", "the right stick", "the left stick"};
 		printf("[kbm] settings: keyboard and mouse %s; the mouse moves %s at speed %d, its buttons are %s "
-			   "(Zeruko/KeyboardMouse, MouseAim, MouseSpeed, MouseButtons)\n",
+			   "(Caliza/KeyboardMouse, MouseAim, MouseSpeed, MouseButtons)\n",
 			modes[mode], aims[aim], speed, buttons == 1 ? "R2 and L2" : "R1 and L1");
 		fflush(stdout);
 	}

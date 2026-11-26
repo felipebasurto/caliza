@@ -68,7 +68,7 @@ static std::string OrbisLogPath(const char* name)
 @BODY@
 int main(int argc, char** argv)
 {
-  g_root = std::string(argv[1]) + "/zeruko";
+  g_root = std::string(argv[1]) + "/caliza";
   const std::string mode = argv[2];
   signal(SIGPIPE, SIG_IGN);
   if (mode == "visible") { mkdir(g_root.c_str(), 0777); mkdir((g_root + "/logs").c_str(), 0777); }
@@ -108,7 +108,7 @@ static long long SettingsLogLocalTime(long long utc) { return utc; }
 static void put(const std::string& path, const char* text) { FILE* f = fopen(path.c_str(), "w"); fputs(text, f); fclose(f); }
 int main(int argc, char** argv)
 {
-  const std::string root = std::string(argv[1]) + "/zeruko";
+  const std::string root = std::string(argv[1]) + "/caliza";
   const std::string mode = argv[2];
   if (mode == "late")
   {
@@ -159,12 +159,12 @@ def main():
     work = tempfile.mkdtemp(prefix="logs-test-")
     try:
         body = cut(MAIN, "// vk-285-51: the last sessions' logs are kept", "// vk-285-113: signals.")
-        body = body.replace('stat("/data/zeruko", &st)', "stat(g_root.c_str(), &st)")
+        body = body.replace('stat("/data/caliza", &st)', "stat(g_root.c_str(), &st)")
         boot = build(work, "boot", BOOT_HARNESS.replace("@BODY@", body))
 
         # 1. /data isn't there at the start
         d, r = run(boot, work, "held")
-        log = slurp(d + "/zeruko/logs/boot.log") or ""
+        log = slurp(d + "/caliza/logs/boot.log") or ""
         lines = log.splitlines()
         check("held: the run ends normally", r.returncode == 0, r.stderr)
         check("held: boot.log is made after the release", bool(log))
@@ -175,12 +175,12 @@ def main():
         i_between = lines.index("[boot] between") if "[boot] between" in lines else -1
         check("held: the line printed before the release is among the held ones", 0 < i_between < i_end)
         check("held: what is printed after goes on in the same file, stderr too", lines[i_end + 1:] == ["[boot] after", "[boot] stderr after"], lines[i_end + 1:])
-        check("held: pf.log was made", os.path.exists(d + "/zeruko/logs/pf.log"))
-        check("held: nothing in the top folder", not os.path.exists(d + "/zeruko/boot.log"))
+        check("held: pf.log was made", os.path.exists(d + "/caliza/logs/pf.log"))
+        check("held: nothing in the top folder", not os.path.exists(d + "/caliza/boot.log"))
 
         # /data there from the start: as before, nothing held
         d, r = run(boot, work, "visible")
-        log = slurp(d + "/zeruko/logs/boot.log") or ""
+        log = slurp(d + "/caliza/logs/boot.log") or ""
         check("visible: no held-lines note", "the next " not in log and "end of the held lines" not in log)
         check("visible: early lines and the rest are in boot.log", "[boot] early line 2999" in log and "[boot] stderr after" in log)
 
@@ -189,15 +189,15 @@ def main():
         ev = build(work, "event", EVENT_HARNESS.replace("@BODY@", body))
 
         d, r = run(ev, work, "late")
-        text = slurp(d + "/zeruko/logs/settings.log") or ""
+        text = slurp(d + "/caliza/logs/settings.log") or ""
         got = [l[21:] for l in text.splitlines()]
         check("late: the two lines that waited come out first, in order, then the new one", got == ["A app start", "B console", "C after logs"], got)
-        check("late: the file is in logs/", os.path.exists(d + "/zeruko/logs/settings.log") and not os.path.exists(d + "/zeruko/settings.log"))
+        check("late: the file is in logs/", os.path.exists(d + "/caliza/logs/settings.log") and not os.path.exists(d + "/caliza/settings.log"))
 
         for mode, expect_note in [("killed", True), ("startonly", True), ("menu", False), ("hang", False), ("signal", False),
                                   ("crash", False), ("exit", False), ("garbage", False), ("empty", False)]:
             d, r = run(ev, work, mode)
-            text = slurp(d + "/zeruko/logs/settings.log") or ""
+            text = slurp(d + "/caliza/logs/settings.log") or ""
             has = "previous run: its log ends without a closing line" in text
             check("previous run (%s): note %s" % (mode, "written" if expect_note else "not written"), has == expect_note, text)
             got = [l[21:] for l in text.splitlines() if "previous run" not in l]
@@ -207,7 +207,7 @@ def main():
                 i_note = next(i for i, l in enumerate(lines) if "previous run" in l)
                 check("previous run (%s): the note comes before this run's first line" % mode, lines[i_note + 1].endswith("A app start"))
         d, r = run(ev, work, "killed")
-        text = slurp(d + "/zeruko/logs/settings.log")
+        text = slurp(d + "/caliza/logs/settings.log")
         check("killed: the note names the last entry", '(last entry 2026-09-29 23:17:53: "perf, last 60 s: 30.0 fps")' in text, text)
     finally:
         shutil.rmtree(work, ignore_errors=True)

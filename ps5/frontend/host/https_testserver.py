@@ -32,7 +32,7 @@ now = datetime.datetime.now(datetime.timezone.utc)
 
 
 def name(cn):
-    return x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Zeruko test"), x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+    return x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Caliza test"), x509.NameAttribute(NameOID.COMMON_NAME, cn)])
 
 
 def cert(subject, key, issuer, issuer_key, ca, days=(-30, 365), sans=None, sha=hashes.SHA256()):

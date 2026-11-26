@@ -10,10 +10,16 @@
 #include <string>
 #include <vector>
 
+namespace fe
+{
+struct TexturePackService;
+struct OnlinePatchService;
+}
+
 struct OrbisFrontendPaths
 {
-	std::string games_dir;    // /data/zeruko/games
-	std::string top_dir;      // /data/zeruko (older setups keep images here; lastgame.txt lives here)
+	std::string games_dir;    // /data/caliza/games
+	std::string top_dir;      // /data/caliza (older setups keep images here; lastgame.txt lives here)
 	std::string settings_dir; // per-game settings, <image name>.ini
 	std::string gs_ini;       // the shared settings
 	std::string patches_dir;  // *.pnach, for the 16:9 badge
@@ -57,9 +63,9 @@ struct OrbisFrontendPaths
 // BIOS with no disc (the PS2's own menu: memory card browser, clock, language).
 inline constexpr const char kOrbisSystemMenuPath[] = "@ps2-system-menu";
 
-// Test build 1 (vk-285-55): the folders on USB drives Zeruko lists games from: each drive's root
+// Test build 1 (vk-285-55): the folders on USB drives Caliza lists games from: each drive's root
 // (/mnt/usb0 to /mnt/usb7) and, when present, its DVD/ and CD/ (Open PS2 Loader's layout) and
-// Zeruko/ folders, matched without regard to case. `when` ("before the jailbreak", ...) labels the
+// Caliza/ folders, matched without regard to case. `when` ("before the jailbreak", ...) labels the
 // [usb] lines it prints (null: silent).
 std::vector<std::string> orbis_usb_game_dirs(const char* when);
 
@@ -79,7 +85,7 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 
 // vk-285-50: the settings page's web server (fe_web.cpp), for phones and PCs on the LAN. Start it
 // once, after the jailbreak; it runs until the app ends, through the shelf and the game. The shelf
-// shows its address as a QR code. The access token is kept in /data/zeruko/webui_token.txt.
+// shows its address as a QR code. The access token is kept in /data/caliza/webui_token.txt.
 bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag);
 // The disc image PCSX2 runs, for the page's "now playing".
 void orbis_web_now_playing(const std::string& image_path);
@@ -119,6 +125,14 @@ int orbis_ps5_language();
 // vk-285-110: the shelf's and the notifications' text in that language (fe_i18n.h). `lang_dir` holds
 // testers' fixes (<code>.txt); empty reads none (before the jailbreak /data isn't readable).
 void orbis_frontend_set_language(const std::string& lang_dir);
+
+// Starts or reuses the menu's production download services and returns their callable service
+// interfaces. They are owned by this translation unit because workers can outlive one menu shell.
+bool orbis_frontend_services_start(const OrbisFrontendPaths& paths, fe::TexturePackService* texture_packs,
+	fe::OnlinePatchService* online_patches);
+// Stops the menu-owned workers before the emulator starts. A worker that cannot stop in time is
+// deliberately left alive and reused by the next menu instead of being destroyed under its feet.
+void orbis_frontend_services_stop();
 
 // Shows the shelf and returns the picked image's path. *ran is false when the frontend could not
 // start (no Vulkan display, say): the caller then shows the plain list instead. With no images the
