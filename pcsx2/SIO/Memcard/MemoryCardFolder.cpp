@@ -1697,6 +1697,7 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 					return false;
 				}
 				u32 actualFileSize = static_cast<u32>(std::clamp<s64>(fileSizeResult, 0, std::numeric_limits<u32>::max()));
+				bool hostDataWritten = false;
 				if (actualFileSize < fileOffsetStart)
 				{
 					if (FileSystem::FSeek64(file, actualFileSize, SEEK_SET) != 0)
@@ -1713,6 +1714,7 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 							NoteFileWriteFailure();
 							return false;
 						}
+						hostDataWritten = true;
 					}
 				}
 
@@ -1721,7 +1723,19 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 					NoteFileWriteFailure();
 					return false;
 				}
-				if (bytesToWrite > 0 && std::fwrite(src, bytesToWrite, 1, file) != 1)
+				if (bytesToWrite > 0)
+				{
+					if (std::fwrite(src, bytesToWrite, 1, file) != 1)
+					{
+						NoteFileWriteFailure();
+						return false;
+					}
+					hostDataWritten = true;
+				}
+				// stdio may report success while data is still only in libc's
+				// userspace buffer. Flush before the caller is allowed to drop
+				// its dirty-page copy; this mirrors the file-card cache flush.
+				if (hostDataWritten && std::fflush(file) != 0)
 				{
 					NoteFileWriteFailure();
 					return false;
@@ -2187,11 +2201,14 @@ std::FILE* FileAccessHelper::Open(const std::string_view folderName, MemoryCardF
 
 	std::string internalPath;
 	fileRef->GetInternalPath(&internalPath);
-	MemoryCardFileHandleStructure handleStruct;
-	handleStruct.fileHandle = file;
-	handleStruct.fileRef = fileRef;
-	handleStruct.hostFilePath = std::move(filename);
-	m_files.emplace(std::move(internalPath), std::move(handleStruct));
+	if (file != nullptr)
+	{
+		MemoryCardFileHandleStructure handleStruct;
+		handleStruct.fileHandle = file;
+		handleStruct.fileRef = fileRef;
+		handleStruct.hostFilePath = std::move(filename);
+		m_files.emplace(std::move(internalPath), std::move(handleStruct));
+	}
 
 	if (writeMetadata)
 	{
