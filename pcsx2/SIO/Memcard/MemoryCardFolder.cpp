@@ -839,6 +839,9 @@ u8* FolderMemoryCard::GetSystemBlockPointer(const u32 adr)
 
 u8* FolderMemoryCard::GetFileEntryPointer(const u32 searchCluster, const u32 entryNumber, const u32 offset)
 {
+	if (!IsFormatted() || entryNumber >= 2 || offset >= PageSize)
+		return nullptr;
+
 	const u32 fileCount = m_fileEntryDict[m_superBlock.data.rootdir_cluster].entries[0].entry.data.length;
 	MemoryCardFileEntryCluster* ptr = GetFileEntryCluster(m_superBlock.data.rootdir_cluster, searchCluster, fileCount);
 	if (ptr != nullptr)
