@@ -123,6 +123,18 @@ private:
 	void UpdateSheet(double dt, const Input& in);
 	bool SheetMove(int dir); // false at either end
 	void BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint32_t accent);
+	// GPLv3 attribution: the global sheet's About row opens this scrollable overlay. Its wrapped copy is kept while the
+	// app runs, so the frame only draws the cached lines (the licence and credit text itself is static).
+	struct AboutLine
+	{
+		std::string text;
+		bool heading = false;
+	};
+	void OpenAbout();
+	void CloseAbout();
+	void UpdateAbout(double dt, const Input& in);
+	void EnsureAboutLines(float width);
+	void BuildAboutOverlay(std::vector<UiVertex>& ui, float W, float H, float k, uint32_t accent);
 	void RefreshBadges();
 	// 2026-10-05: the sheet's HD texture pack row (fe_texpacks.h): its buttons, what it shows, its help line, and the
 	// shelf's line while a pack is on its way.
@@ -242,6 +254,14 @@ private:
 	std::string m_sheet_status;
 	double m_sheet_status_time = -10;
 	int m_sheet_saved_at_open = 0;
+	// GPLv3 attribution overlay: open over the sheet, its scroll in 2160-line pixels, and the wrapped lines cached
+	// for the panel width they were made for. No part of the licence text is reallocated or rewrapped per frame.
+	bool m_about_open = false;
+	std::vector<AboutLine> m_about_lines;
+	float m_about_wrap_width = 0;
+	float m_about_scroll = 0, m_about_scroll_target = 0, m_about_max_scroll = 0;
+	int m_about_held_v = 0;
+	double m_about_held_for = 0, m_about_next_repeat = 0;
 	// 2026-10-05: the texture pack picked on each game's row (left and right), Triangle's first press (cancel, delete),
 	// and the state seen last (a pack that comes in reloads the sheet: its game's file has Texture replacements on then).
 	std::map<std::string, int> m_texpack_pick;

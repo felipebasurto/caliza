@@ -107,6 +107,7 @@ public:
 		CheatDisc,   // vk-285-139: the sheet for all games: the cheat disc (kCheatDiscKey, one of the shelf's images)
 		Bios,        // PS4 port (AI-assisted): which BIOS file a game starts with (PCSX2's Filenames/BIOS)
 		SmartTune,   // PS4 port (AI-assisted): measure graphics configs while playing, keep the best full-speed one
+		About,       // GPLv3: Zeruko's licence and credits (the app draws the overlay)
 	};
 
 	enum class From
@@ -149,6 +150,13 @@ public:
 	{
 		const bool asked = m_smart_tune;
 		m_smart_tune = false;
+		return asked;
+	}
+	// GPLv3 attribution: the About row is harmless, so one Cross press asks the app for its overlay.
+	bool TakeAbout()
+	{
+		const bool asked = m_about;
+		m_about = false;
 		return asked;
 	}
 	// vk-285-135: the sheet for all games gets the Folders rows (game folders, BIOS folder, NFS shares). Cross on one asks
@@ -230,6 +238,7 @@ private:
 	bool m_online_patch_row = false; // 2026-10-08
 	bool m_system_menu_row = false, m_system_menu = false; // 2026-10-08
 	bool m_smart_tune = false; // PS4 port (AI-assisted)
+	bool m_about = false;      // GPLv3 attribution overlay
 	bool m_folder_rows = false; // vk-285-135
 	Kind m_folder_request = Kind::Header;
 	bool m_elf = false; // 2026-10-08: this sheet's game is an ELF (the Disc image row)

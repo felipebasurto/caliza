@@ -6,6 +6,7 @@
 #include "fe_options.h"
 #include "fe_text.h" // vk-285-116: the buttons' symbols (icon::)
 #include "fe_bios.h" // PS4 port: kBiosMinSize, kBiosMaxSize
+#include "fe_i18n.h" // the About row's text in the console's language
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -662,6 +663,13 @@ void OptionsSheet::BuildRows()
 		add(Kind::Header, "PS2");
 		add(Kind::SystemMenu, "PS2 system menu");
 	}
+	// GPLv3 attribution belongs visible on the console too: near the bottom of the sheet for all games,
+	// after the technical rows. The product name itself needs no translation.
+	if (settings && m_global)
+	{
+		add(Kind::Header, "Zeruko");
+		add(Kind::About, Tr(Str::AboutTitle));
+	}
 	// 2026-10-08: the "Get patches and cheats" row heads the game's patches (shown with none yet), then its cheats.
 	const bool online = settings && m_online_patch_row && !m_global && !m_serial.empty();
 	if (settings && (!m_patches.empty() || online))
@@ -795,6 +803,8 @@ std::string OptionsSheet::Value(const Row& r) const
 					return title;
 			return *v; // not on the shelf now: its name as set
 		}
+		case Kind::About:
+			return Tr(Str::AboutValue);
 		case Kind::ResetAll:
 		case Kind::TexturePack: // the app's (fe_app.cpp, from fe_texpacks.h)
 		case Kind::OnlinePatches: // the app's (fe_app.cpp, from fe_patchdl.h)
@@ -971,6 +981,8 @@ std::string OptionsSheet::Help(const Row& r) const
 			       "would make every option look fine. The best one that still holds full speed is kept for this game. Experimental: "
 			       "unproven on hardware, and a wrong scene can mislead it (re-run it anywhere). It never changes the settings for all "
 			       "games, and a game too heavy even at 1x gets its old settings back.";
+		case Kind::About:
+			return Tr(Str::AboutHint);
 		case Kind::OnlinePatches:
 			return "Cross: fetch this game's patches from PCSX2's patch list and Gabominated's 50/60 fps and widescreen patches, and its "
 			       "cheats, from GitHub (by the game's serial and CRC). They show up here, each off until you turn it on. Your own files "
@@ -1300,6 +1312,9 @@ bool OptionsSheet::Activate(const Row& r, double now)
 		case Kind::BiosFolder:
 		case Kind::NfsShares:
 			m_folder_request = r.kind;
+			return true;
+		case Kind::About: // GPLv3 attribution: harmless, so unlike SystemMenu/SmartTune one press is enough
+			m_about = true;
 			return true;
 		case Kind::SystemMenu: // 2026-10-08: the first press arms, a second within 4 s asks the app to start it
 			if (!(m_armed_row == index && now < m_armed_until))

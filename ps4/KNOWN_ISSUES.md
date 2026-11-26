@@ -1,4 +1,7 @@
-# Known issues and risks (AI-assisted)
+# Zeruko known issues and risks (AI-assisted)
+
+> **Rebrand note (2026-11-26):** this product is now **Zeruko** (repository: <https://github.com/felipebasurto/zeruko>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/zeruko` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
+
 
 ## Critical/platform
 
@@ -29,7 +32,7 @@
 ## Input/audio/filesystem
 
 1. Player-1 disconnect stuck-input handling and extra-controller hotplug retry are improved, but the PS4 pad connected-byte layout is unverified; the candidate fails open and logs the byte window for first console validation.
-2. USB keyboard/mouse remains off by default on PS4. `/data/PCSX2/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
+2. USB keyboard/mouse remains off by default on PS4. `/data/zeruko/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
 3. Cover downloads now use the mbedTLS HTTPS client on PS4, but DNS/TLS/redirect behavior is still console-unverified.
 4. Pad state/hotkey hardening is improved: foreground-user fallback exists, left/right correctly cancel the filter combo, state requests are queued rather than overwritten, guest power-off is prioritized, and replaced pad objects are retired rather than destroyed under live raw pointers. These paths are compile-validated only and still need hardware testing, especially multitap/recreation behavior and simultaneous hotkey timing. Emulation and frontend shelf audio teardown are now bounded and use-after-free-safe even when sceAudioOutOutput blocks indefinitely, at the cost of a deliberately leaked port in that pathological case; analyzer coverage detects the emulation-side timeout. Analyzer coverage includes the frontend teardown timeout.
 5. NFS game shares now use CEMUPS4 `/net/shareN` rather than the PS5 `/nfs` libc-wrap layer. Only plain NFSv3 `nfs://host/export` addresses are supported, behavior is console-unverified, and SMB is not exposed in the UI yet.
@@ -51,7 +54,7 @@
 
 ## User-data layout
 
-1. `OrbisDir()` still uses a flat `/data/PCSX2` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files. The audited design is rename-only, per-category transactional, idempotent after power loss, creates a target directory only when it will receive files, classifies BIOS before `.bin` memory cards, moves BIOS sidecars as families, honors configured custom card names, skips destination collisions, and leaves ambiguous patches/covers/disc images flat. It should be implemented flag-gated off and console-validated before becoming default.
+1. `OrbisDir()` still uses a flat `/data/zeruko` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files. The audited design is rename-only, per-category transactional, idempotent after power loss, creates a target directory only when it will receive files, classifies BIOS before `.bin` memory cards, moves BIOS sidecars as families, honors configured custom card names, skips destination collisions, and leaves ambiguous patches/covers/disc images flat. It should be implemented flag-gated off and console-validated before becoming default.
 2. Forced interpreter configuration is a runtime execution gate, not a durable user-visible configuration policy. `CHECK_*JITMEM` prevents generated code execution even if settings are later edited, but some non-fatal decisions may still read raw config values; audit them before adding new JIT consumers.
 
 ## Experimental features awaiting hardware validation

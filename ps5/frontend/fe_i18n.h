@@ -120,6 +120,11 @@ enum class Str : int
 	RaUnreachable,      // "Couldn't reach RetroAchievements. You're still signed in: ..." (the token sign-in at a game's start)
 	RaUnsent,           // "An unlock couldn't be sent to RetroAchievements before closing ..." (back to the shelf, offline)
 	ShelfNoBios,        // vk-285-134: "No PS2 BIOS found: games can't start. Copy your BIOS file ... to %s" (the shelf's line)
+	// GPLv3 attribution: the global settings sheet's About row and its overlay footer. The licence text itself stays in English.
+	AboutTitle,         // "About Zeruko"
+	AboutValue,         // "Licence and credits"
+	AboutHint,          // "Who made Zeruko, what it is built on, and the licence it is shared under."
+	AboutCircleBack,    // "Circle: back"
 	Count
 };
 

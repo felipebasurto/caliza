@@ -1,4 +1,7 @@
-# PS4SX2 autonomous port status
+# Zeruko (PS4) autonomous port status
+
+> **Rebrand note (2026-11-26):** this product is now **Zeruko** (repository: <https://github.com/felipebasurto/zeruko>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/zeruko` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
+
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
@@ -197,7 +200,7 @@ Last updated: 2026-11-26 after integrating CDDA mode-2448 support, memory-card c
 | P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
 | P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second, host-side input dedup caches invalidate when PCSX2 recreates/resets pad objects; null pad slots cannot crash reset paths |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
-| P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/PCSX2/flags/usbkbm` opts in; disconnect/read-failure release logic added |
+| P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/zeruko/flags/usbkbm` opts in; disconnect/read-failure release logic added |
 | P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry; display planes now use supported-display evidence when the driver exposes it |
 | P1-AUDIO | Audio starvation/error telemetry | implemented, console-unverified | initial fill no longer counted as underrun; output errors back off instead of spinning |
 | P1-COVERS | Cover downloads | implemented, console-unverified | cover fetches now use the existing mbedTLS HTTPS client instead of PS5-only `sceHttp2*`; HTTP/SSL system-library dependencies removed |
@@ -211,7 +214,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `0d781cd` (includes CD 
 
 - ELF `/root/pcsx2ps4-build/build/link/pcsx2_eboot/pcsx2.oelf`: **149,707,824 bytes**, SHA-256 `0cc9c11b0a4dd488ba4478355368237f7dce4a032d9bb9b16d7cdebe8a13afcc`.
 - eboot `/root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin`: **41,086,800 bytes**, SHA-256 `13cda11bccdfda19f904e7ca02e8aa2793861ed2ddccafca9ec502ae56aa45d7`.
-- PKG `/root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `cfa13b95caffc1f0b405fe31378be81779485b9d6936098fca097fcf9efa8b50`.
+- PKG `/root/pcsx2ps4-build/out/IV0000-ZERU00001_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `cfa13b95caffc1f0b405fe31378be81779485b9d6936098fca097fcf9efa8b50`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Embedded package provenance in staged `SOURCE.txt`: `Build commit: 0d781cd6992b`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
@@ -255,13 +258,13 @@ Built in the Linux x86_64 OpenOrbis container at exactly `0d781cd` (includes CD 
 ## Console smoke-test priority
 
 1. Install only `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg` using the already existing safe flow.
-2. Collect logs read-only with `PS4_HOST=<console-ip> bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs` (or manually preserve `/data/PCSX2/boot.log`, `emulog.txt`, `settings.log`, `/data/Crema/boot-trace.log`, and `/data/Crema/crash.log`).
+2. Collect logs read-only with `PS4_HOST=<console-ip> bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs` (or manually preserve `/data/zeruko/boot.log`, `emulog.txt`, `settings.log`, `/data/Crema/boot-trace.log`, and `/data/Crema/crash.log`).
 3. Confirm `[dbg] memmap`, `[jitprobe]`/memprobe messages, `[ps4wsi]`, `[audio]`, `[pad]`, `[threads]`, `[copies]`, and `[readbacks]`.
 4. Test boot to shelf, BIOS detection, one legal user-owned game, controller disconnect/reconnect, memory card, savestate, and one minutes-long gameplay sample.
 5. Test cover download both online and offline; preserve `[covers]`/`[https]` lines.
 6. Test a plain NFSv3 share with `PS5SX2/NfsShares=nfs://<server>/<export>`; preserve `[boot] ... network share` lines, scan one ISO, and note throughput/stutter.
 7. After a pad-combo savestate, pull the `.p2s` and run `python3 ps4/tools/validate_savestate.py --require-current-version <file>` on the host.
-8. Optional USB keyboard/mouse test: create empty flag file `/data/PCSX2/flags/usbkbm`, restart, and preserve `[kbm]` lines.
+8. Optional USB keyboard/mouse test: create empty flag file `/data/zeruko/flags/usbkbm`, restart, and preserve `[kbm]` lines.
 9. Analyze the collected logs with `python3 ps4/tools/analyze_console_logs.py --expect-input --expect-wsi --expect-audio --expect-state --expect-gameplay /tmp/ps4-logs/*` and investigate every FAIL before changing performance settings.
 
 ## New audit evidence since the previous checkpoint

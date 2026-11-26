@@ -266,6 +266,304 @@ static void orbis_boot_log_hold()
 #define ORBIS_STDOUT_BUFFERING _IOFBF
 #endif
 
+static constexpr char kOrbisDataRoot[] = "/data/zeruko";
+static constexpr char kOrbisLegacyDataRoot[] = "/data/PCSX2";
+static constexpr long long kOrbisMigrateFileLimit = 64LL * 1024 * 1024;
+static constexpr int kOrbisMigrateMaxDepth = 4;
+
+struct OrbisMigrateCounts
+{
+  unsigned long long copied = 0;
+  unsigned long long skipped = 0;
+  unsigned long long failed = 0;
+};
+
+static void orbis_migrate_add(OrbisMigrateCounts& total, const OrbisMigrateCounts& add)
+{
+  total.copied += add.copied;
+  total.skipped += add.skipped;
+  total.failed += add.failed;
+}
+
+static bool orbis_migrate_ensure_dir(const std::string& path, int* error)
+{
+  if (mkdir(path.c_str(), 0777) == 0)
+    return true;
+  const int mkdir_error = errno;
+  if (mkdir_error == EEXIST)
+  {
+    struct stat st = {};
+    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+      return true;
+  }
+  if (error)
+    *error = mkdir_error;
+  return false;
+}
+
+// One file, streamed through a fixed 256 KiB buffer. A partial destination is removed on failure; it is always
+// under the newly created /data/zeruko, never under /data/PCSX2.
+static bool orbis_migrate_copy_file(const std::string& from, const std::string& to, int* error)
+{
+  int copy_error = 0;
+  FILE* in = fopen(from.c_str(), "rb");
+  if (!in)
+  {
+    copy_error = errno;
+    if (error)
+      *error = copy_error;
+    return false;
+  }
+  FILE* out = fopen(to.c_str(), "wb");
+  if (!out)
+  {
+    copy_error = errno;
+    fclose(in);
+    if (error)
+      *error = copy_error;
+    return false;
+  }
+
+  static char buffer[256 * 1024];
+  bool ok = true;
+  for (;;)
+  {
+    errno = 0;
+    const size_t n = fread(buffer, 1, sizeof(buffer), in);
+    const int read_error = errno;
+    if (n == 0)
+    {
+      if (ferror(in))
+      {
+        ok = false;
+        copy_error = read_error ? read_error : EIO;
+      }
+      break;
+    }
+    size_t done = 0;
+    while (done < n)
+    {
+      errno = 0;
+      const size_t written = fwrite(buffer + done, 1, n - done, out);
+      const int write_error = errno;
+      if (written == 0)
+      {
+        ok = false;
+        copy_error = write_error ? write_error : EIO;
+        break;
+      }
+      done += written;
+    }
+    if (!ok)
+      break;
+  }
+  if (ok && ferror(out))
+  {
+    ok = false;
+    copy_error = errno ? errno : EIO;
+  }
+  errno = 0;
+  const int close_rc = fclose(out);
+  const int close_error = errno;
+  fclose(in);
+  if (ok && close_rc != 0)
+  {
+    ok = false;
+    copy_error = close_error ? close_error : EIO;
+  }
+  const size_t new_root_len = sizeof(kOrbisDataRoot) - 1;
+  const bool in_new_root = to.size() > new_root_len && to.compare(0, new_root_len, kOrbisDataRoot) == 0 &&
+                           to[new_root_len] == '/';
+  if (!ok && in_new_root)
+    remove(to.c_str());
+  if (error)
+    *error = copy_error;
+  return ok;
+}
+
+// `st` must be from lstat(): symlinks are skipped without reading their targets.
+static void orbis_migrate_copy_regular(const std::string& from, const std::string& to, const struct stat& st,
+  OrbisMigrateCounts& counts)
+{
+  if (S_ISLNK(st.st_mode))
+  {
+    counts.skipped++;
+    printf("[migrate] %s skipped: a symlink\n", from.c_str());
+    return;
+  }
+  if (!S_ISREG(st.st_mode))
+  {
+    counts.skipped++;
+    printf("[migrate] %s skipped: not a regular file\n", from.c_str());
+    return;
+  }
+  if (st.st_size > kOrbisMigrateFileLimit)
+  {
+    counts.skipped++;
+    printf("[migrate] %s skipped: %lld bytes is over the 64 MiB limit\n", from.c_str(), (long long)st.st_size);
+    return;
+  }
+  int copy_error = 0;
+  if (orbis_migrate_copy_file(from, to, &copy_error))
+  {
+    counts.copied++;
+    return;
+  }
+  counts.failed++;
+  printf("[migrate] %s: copy failed (errno %d, %s); continuing\n", from.c_str(), copy_error, std::strerror(copy_error));
+}
+
+static void orbis_migrate_copy_tree(const std::string& from, const std::string& to, int depth, OrbisMigrateCounts& counts)
+{
+  int mkdir_error = 0;
+  if (!orbis_migrate_ensure_dir(to, &mkdir_error))
+  {
+    counts.failed++;
+    printf("[migrate] %s: can't create %s (errno %d, %s); this folder skipped\n", from.c_str(), to.c_str(), mkdir_error,
+      std::strerror(mkdir_error));
+    return;
+  }
+  DIR* dir = opendir(from.c_str());
+  if (!dir)
+  {
+    const int open_error = errno;
+    counts.failed++;
+    printf("[migrate] %s: can't open the folder (errno %d, %s); its files skipped\n", from.c_str(), open_error,
+      std::strerror(open_error));
+    return;
+  }
+
+  int read_error = 0;
+  for (;;)
+  {
+    errno = 0;
+    const dirent* entry = readdir(dir);
+    if (!entry)
+    {
+      read_error = errno;
+      break;
+    }
+    if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0)
+      continue;
+    const std::string src = from + "/" + entry->d_name;
+    const std::string dst = to + "/" + entry->d_name;
+    struct stat st = {};
+    if (lstat(src.c_str(), &st) != 0)
+    {
+      const int stat_error = errno;
+      counts.failed++;
+      printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
+      continue;
+    }
+    if (S_ISDIR(st.st_mode))
+    {
+      if (depth >= kOrbisMigrateMaxDepth)
+      {
+        counts.skipped++;
+        printf("[migrate] %s skipped: deeper than the 4-folder limit\n", src.c_str());
+        continue;
+      }
+      orbis_migrate_copy_tree(src, dst, depth + 1, counts);
+      continue;
+    }
+    orbis_migrate_copy_regular(src, dst, st, counts);
+  }
+  closedir(dir);
+  if (read_error)
+  {
+    counts.failed++;
+    printf("[migrate] %s: reading the folder failed (errno %d, %s); part of it may be missing\n", from.c_str(), read_error,
+      std::strerror(read_error));
+  }
+}
+
+// The rebrand's one-time copy from the old data root. Only the small user data is copied: games and texture packs are
+// too big, while cache, logs and flags are machine- or build-specific. The old folder is only ever a copy source, so if
+// copying stops halfway its data is still intact. Needs proper testing on hardware.
+static void orbis_migrate_legacy_data()
+{
+  struct stat st = {};
+  if (stat(kOrbisDataRoot, &st) == 0)
+    return; // already set up: the copy is one-time whether or not it is a folder
+  const int target_error = errno;
+  if (target_error != ENOENT)
+    return; // before the jailbreak /data can be unreachable; the post-jailbreak call decides then
+  if (stat(kOrbisLegacyDataRoot, &st) != 0 || !S_ISDIR(st.st_mode))
+    return;
+
+  printf("[migrate] copying your settings and memory cards from the old /data/PCSX2 folder\n");
+  fflush(stdout);
+  if (mkdir(kOrbisDataRoot, 0777) != 0)
+  {
+    const int mkdir_error = errno;
+    printf("[migrate] warning: can't create /data/zeruko (errno %d, %s); boot continues without the copy\n", mkdir_error,
+      std::strerror(mkdir_error));
+    fflush(stdout);
+    return;
+  }
+
+  OrbisMigrateCounts total;
+  static const char* const kDirs[] = {"bios", "memcards", "settings", "savestates", "patches", "cheats", "covers"};
+  for (const char* name : kDirs)
+  {
+    OrbisMigrateCounts counts;
+    const std::string src = std::string(kOrbisLegacyDataRoot) + "/" + name;
+    const std::string dst = std::string(kOrbisDataRoot) + "/" + name;
+    struct stat entry_st = {};
+    const bool present = lstat(src.c_str(), &entry_st) == 0;
+    if (!present)
+    {
+      const int stat_error = errno;
+      if (stat_error != ENOENT)
+      {
+        counts.failed++;
+        printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
+      }
+    }
+    else if (S_ISDIR(entry_st.st_mode))
+    {
+      orbis_migrate_copy_tree(src, dst, 0, counts);
+    }
+    else
+    {
+      counts.skipped++;
+      printf("[migrate] %s skipped: %s\n", src.c_str(), S_ISLNK(entry_st.st_mode) ? "a symlink" : "not a folder");
+    }
+    if (present || counts.copied || counts.skipped || counts.failed)
+    {
+      printf("[migrate] %s/: %llu files copied, %llu skipped, %llu failed\n", name, counts.copied, counts.skipped, counts.failed);
+      fflush(stdout);
+    }
+    orbis_migrate_add(total, counts);
+  }
+
+  OrbisMigrateCounts files;
+  static const char* const kFiles[] = {"gs.ini", "live.ini", "playtime.dat", "lastgame.txt"};
+  for (const char* name : kFiles)
+  {
+    const std::string src = std::string(kOrbisLegacyDataRoot) + "/" + name;
+    struct stat entry_st = {};
+    if (lstat(src.c_str(), &entry_st) != 0)
+    {
+      const int stat_error = errno;
+      if (stat_error != ENOENT)
+      {
+        files.failed++;
+        printf("[migrate] %s: can't inspect (errno %d, %s); skipped\n", src.c_str(), stat_error, std::strerror(stat_error));
+      }
+      continue;
+    }
+    orbis_migrate_copy_regular(src, std::string(kOrbisDataRoot) + "/" + name, entry_st, files);
+  }
+  printf("[migrate] top-level files: %llu files copied, %llu skipped, %llu failed\n", files.copied, files.skipped, files.failed);
+  orbis_migrate_add(total, files);
+
+  if (total.failed)
+    printf("[migrate] warning: %llu files or folders could not be copied; boot continues with the partial copy\n", total.failed);
+  printf("[migrate] done: %llu files copied, %llu skipped\n", total.copied, total.skipped + total.failed);
+  fflush(stdout);
+}
+
 static void orbis_boot_log_release(const char* when)
 {
   if (!g_boot_held.load(std::memory_order_acquire))
@@ -1578,7 +1876,29 @@ std::string OrbisTexturesGameDir(const std::string& serial, std::string& how)
     std::lock_guard<std::mutex> lock(g_orbis_textures_mutex);
     manual = g_orbis_textures_dir;
   }
-  return OrbisTextures::FindGameDir(OrbisTextures::UsbRoots("/mnt"), manual, serial, &how);
+  std::string found = OrbisTextures::FindGameDir(OrbisTextures::UsbRoots("/mnt"), manual, serial, &how);
+  if (!found.empty())
+    return found;
+
+  // Last-priority rebrand fallback: a pack already installed under /data/zeruko/textures wins; only when that serial
+  // has no folder there is the old root used. Texture packs are far too big to copy, and new installs still go to
+  // /data/zeruko/textures. OrbisTextureRoots.h is shared with host tests, so the console-specific legacy rule stays here.
+  if (!OrbisTextures::WalkDirs(std::string(kOrbisDataRoot) + "/textures", {serial}).empty())
+    return std::string();
+  const std::string legacy_root = std::string(kOrbisLegacyDataRoot) + "/textures";
+  if (!OrbisTextures::IsDir(legacy_root))
+    return std::string();
+  const std::string legacy = OrbisTextures::WalkDirs(legacy_root, {serial});
+  if (legacy.empty())
+    return std::string();
+  static std::atomic<bool> s_legacy_logged{false};
+  if (!s_legacy_logged.exchange(true, std::memory_order_relaxed))
+  {
+    printf("[migrate] also using texture packs from the old /data/PCSX2/textures folder\n");
+    fflush(stdout);
+  }
+  how = "the old /data/PCSX2/textures folder";
+  return legacy;
 }
 
 static void orbis_ps5opts_from(const SettingsInterface& si)
@@ -2430,6 +2750,21 @@ static void orbis_scan_usb(const char* when)
         s_usb_dirs.push_back(dir);
     }
   }
+  // The rebrand left the disc images where they were: they are far too big to copy. The old folder is only another
+  // scan root (read-only in practice); ScanGames dedupes equal file names, with /data/zeruko's roots earlier in the list.
+  const std::string legacy_games = std::string(kOrbisLegacyDataRoot) + "/games";
+  struct stat legacy_st = {};
+  if (stat(legacy_games.c_str(), &legacy_st) == 0 && S_ISDIR(legacy_st.st_mode) &&
+      std::find(s_usb_dirs.begin(), s_usb_dirs.end(), legacy_games) == s_usb_dirs.end())
+  {
+    s_usb_dirs.push_back(legacy_games);
+    static std::atomic<bool> logged{false};
+    if (!logged.exchange(true, std::memory_order_relaxed))
+    {
+      printf("[migrate] also listing games from the old /data/PCSX2/games folder\n");
+      fflush(stdout);
+    }
+  }
 }
 
 // Test build 1: the logs report's first lines (the settings page's Download logs).
@@ -3148,6 +3483,10 @@ int main()
   // into memory until it is (orbis_boot_log_release, after the jailbreak).
   if (!orbis_boot_log_open(true))
     orbis_boot_log_hold();
+  // The rebrand copy runs before the folders, flags, language files and frontend look in /data/zeruko. stdout is
+  // opened or held first only so the [migrate] lines reach boot.log; when this created the folder, release them now.
+  orbis_migrate_legacy_data();
+  orbis_boot_log_release("after the PCSX2 data migration");
   // Orbis: fresh fault history per run (pf.log otherwise appends forever).
   {
     snprintf(g_orbis_pf_log, sizeof(g_orbis_pf_log), "%s", OrbisLogPath("pf.log").c_str()); // vk-285-33
@@ -3289,6 +3628,9 @@ int main()
   // the etaHEN broker and legacy CMD ports are PS5-specific. Avoid their imports and the boot delay here.
   ORBIS_PS4_STEP("PS5 jailbreak probe skipped");
 #endif
+  // A PS5 can keep /data hidden until the jailbreak; this is that build's first chance at the rebrand copy. On PS4 it
+  // already ran above and returns at once. It must precede the flags, the frontend and EmuFolders below.
+  orbis_migrate_legacy_data();
 #ifdef ORBIS_VULKAN
   orbis_log_flag_access("after the jailbreak");
 #endif

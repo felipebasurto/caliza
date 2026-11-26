@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -354,7 +355,7 @@ void App::Update(double dt, const Input& in)
 		UpdateAccount(in);
 		m_prev = in;
 	}
-	else if (m_sheet_open && m_cfg.achievements.state && in.square && in.l1 && !m_prev.l1 && m_prev.square &&
+	else if (m_sheet_open && !m_about_open && m_cfg.achievements.state && in.square && in.l1 && !m_prev.l1 && m_prev.square &&
 	         m_time - m_chord_square_time < kChordWindow)
 	{
 		// pr9n: Square, then L1 while Square is still held: the account chord, not the sheet's This game / All games.
@@ -834,6 +835,12 @@ void App::Build(FrameDesc& f, const std::string& clock)
 			hint(icon::Circle, nullptr, Tr(Str::HintBack));
 		}
 	}
+	else if ((m_sheet_open || m_sheet_anim > 0.5f) && m_about_open)
+	{
+		// GPLv3 attribution overlay: the sheet behind it has no buttons while it is up.
+		hint(icon::DpadUpDown, nullptr, Tr(Str::HintMove));
+		hint(icon::Circle, nullptr, Tr(Str::HintBack));
+	}
 	else if ((m_sheet_open || m_sheet_anim > 0.5f) && m_sheet.tab() != kTabAchievements && m_cfg.texture_packs && !m_games.empty() &&
 			 m_sheet_row >= 0 && m_sheet_row < static_cast<int>(m_sheet.rows().size()) &&
 			 m_sheet.rows()[static_cast<size_t>(m_sheet_row)].kind == OptionsSheet::Kind::TexturePack)
@@ -1049,6 +1056,42 @@ namespace
 	constexpr float kSheetListTop = 308.0f; // from the sheet's top (vk-285-117: the top is one line shorter)
 	constexpr float kSheetHelpH = 352.0f; // the help box at the bottom
 	constexpr float kRowH = 100.0f, kHeaderH = 84.0f; // 2026-10-05: 94 and 76 before
+
+	// GPLv3 attribution (BRAND.md's exact in-app About text). Keep this static: legal text is not localized and is
+	// wrapped once for the panel width, not copied anew every frame.
+	constexpr const char* kAboutLicenseText =
+		"Zeruko is free software based on PCSX2 and contains modified PCSX2 code.\n"
+		"Copyright (C) 2002-2026 PCSX2 Dev Team and contributors.\n"
+		"\n"
+		"Zeruko is licensed under the GNU General Public License version 3 or later\n"
+		"(SPDX: GPL-3.0-or-later). This program comes with ABSOLUTELY NO WARRANTY.\n"
+		"This is free software, and you are welcome to redistribute it under certain\n"
+		"conditions. See COPYING.GPLv3 or the source repository for details.\n"
+		"\n"
+		"Source code: https://github.com/felipebasurto/zeruko\n"
+		"\n"
+		"PCSX2 is used under the terms of its license. The PCSX2 project does not\n"
+		"endorse Zeruko. PlayStation, PS2 and PS4 are trademarks of Sony Interactive\n"
+		"Entertainment. Zeruko is not affiliated with, endorsed by, or sponsored by\n"
+		"Sony Interactive Entertainment.\n"
+		"\n"
+		"No BIOS files, games, keys, firmware, or other proprietary console data are\n"
+		"included with Zeruko.";
+	constexpr const char* kAboutProductLine = "Zeruko — PlayStation 2 emulator for PS4";
+	constexpr const char* const kAboutCredits[] = {
+		"PCSX2 Dev Team — emulation core",
+		"swordpdf/PS5SX2 — console port base",
+		"OpenOrbis — toolchain",
+		"Mesa RADV — Vulkan driver",
+		"Themaister/paraLLEl-GS — optional renderer",
+	};
+
+	// The About overlay's measures, also in 2160-line pixels. A narrower screen shape narrows the panel; the height is
+	// fixed because k already makes 2160 reference lines fill the output height.
+	constexpr float kAboutPanelW = 2360.0f, kAboutPanelH = 1600.0f, kAboutPadX = 88.0f;
+	constexpr float kAboutBodyTop = 286.0f, kAboutFooterH = 130.0f;
+	constexpr float kAboutBodyViewH = kAboutPanelH - kAboutBodyTop - kAboutFooterH;
+	constexpr float kAboutTextPx = 32.0f, kAboutLineH = 52.0f, kAboutScrollBarW = 44.0f;
 } // namespace
 
 void App::OpenSheet(bool global)
@@ -1062,6 +1105,7 @@ void App::OpenSheet(bool global)
 	m_sheet.SetSystemMenuRow(m_cfg.system_menu);                        // 2026-10-08
 	m_sheet.SetFolderRows(!m_cfg.folder_places.empty());                // vk-285-135
 	m_picker.open = false;
+	m_about_open = false; // GPLv3: a new sheet or scope never leaves the attribution overlay up
 	OptionsPaths paths = m_cfg.options;
 	if (!g || IsElfName(g->file.c_str())) // 2026-10-08: an ELF's Disc image row lists the shelf's disc images; vk-285-139: the Cheat disc row
 	{
@@ -1097,6 +1141,7 @@ void App::OpenSheet(bool global)
 void App::SheetTab(int tab)
 {
 	m_sheet.SetTab(tab);
+	m_about_open = false; // GPLv3 attribution belongs to the settings tab's sheet state
 	if (tab != kTabAchievements && m_cfg.game_achievements.cancel)
 		m_cfg.game_achievements.cancel();
 	if (tab == kTabAchievements)
@@ -1161,6 +1206,7 @@ void App::CloseSheet()
 		return;
 	m_sheet_open = false;
 	m_picker.open = false; // vk-285-135
+	m_about_open = false;  // GPLv3 attribution overlay goes with its sheet
 	if (m_cfg.game_achievements.cancel)
 		m_cfg.game_achievements.cancel();
 	if (m_sheet.saved() > 0)
@@ -1196,6 +1242,14 @@ void App::UpdateSheet(double dt, const Input& in)
 		return;
 	}
 	m_sheet_row = std::max(0, std::min(m_sheet_row, static_cast<int>(rows.size()) - 1));
+
+	// GPLv3 attribution: while the About overlay is up it owns the pad. In particular Circle closes the overlay here,
+	// so it cannot fall through and close the sheet behind it in the same press.
+	if (m_about_open)
+	{
+		UpdateAbout(dt, in);
+		return;
+	}
 
 	// 2026-10-05: a texture pack that came in while the sheet is open: the game's file has Texture replacements on now.
 	if (m_cfg.texture_packs && !m_sheet_global && !m_games.empty())
@@ -1415,6 +1469,21 @@ void App::UpdateSheet(double dt, const Input& in)
 		return;
 	}
 
+	// GPLv3 attribution: one Cross opens the About overlay (nothing here can harm a setting, so no confirmation).
+	if (row.kind == OptionsSheet::Kind::About)
+	{
+		if (pressed(in.cross, m_prev.cross))
+		{
+			const bool asked = m_sheet.Activate(row, now);
+			if (m_sheet.TakeAbout())
+			{
+				OpenAbout();
+				Sound(asked ? Sfx::Move : Sfx::Edge, 0.3f);
+			}
+		}
+		return;
+	}
+
 	// Left and right change the value (not on the action rows, which Cross runs).
 	const bool action = row.kind == OptionsSheet::Kind::Recommended || row.kind == OptionsSheet::Kind::ResetAll;
 	const int h = in.left ? -1 : in.right ? 1 : 0;
@@ -1440,6 +1509,199 @@ void App::UpdateSheet(double dt, const Input& in)
 		after(m_sheet.Reset(row));
 		return;
 	}
+}
+
+// ---- GPLv3 attribution: the About overlay ---------------------------------------------------------------------------
+// The licence text stays in English, as legal text usually does; the row and footer come from fe_i18n.cpp. The overlay
+// is drawn with the sheet/account panels' shadow, edge, body and text primitives, and its body is wrapped to the panel
+// instead of being clipped horizontally. The scroll and mask layout needs proper testing on hardware.
+
+void App::OpenAbout()
+{
+	m_about_open = true;
+	m_about_scroll = m_about_scroll_target = 0.0f;
+	m_about_held_v = 0;
+	m_about_held_for = m_about_next_repeat = 0.0;
+	std::printf("[options] About Zeruko opened\n");
+	std::fflush(stdout);
+}
+
+void App::CloseAbout()
+{
+	if (!m_about_open)
+		return;
+	m_about_open = false;
+	m_about_held_v = 0;
+}
+
+void App::EnsureAboutLines(float width)
+{
+	if (width <= 0.0f)
+		return;
+	if (!m_about_lines.empty() && std::fabs(width - m_about_wrap_width) < 1.0f)
+		return;
+	m_about_lines.clear();
+	m_about_wrap_width = width;
+
+	// Preserve the source block's paragraph breaks, but let each too-long source line wrap to the panel. Blank source
+	// lines stay blank spacing lines; the GPL text itself remains the static BRAND.md block above.
+	const char* at = kAboutLicenseText;
+	for (;;)
+	{
+		const char* end = std::strchr(at, '\n');
+		const size_t len = end ? static_cast<size_t>(end - at) : std::strlen(at);
+		if (len == 0)
+		{
+			m_about_lines.push_back(AboutLine());
+		}
+		else
+		{
+			const std::string source(at, len);
+			std::vector<std::string> wrapped = Wrap(*m_fonts, source, kAboutTextPx, width, 1000);
+			for (std::string& line : wrapped)
+			{
+				AboutLine out;
+				out.text = std::move(line);
+				m_about_lines.push_back(std::move(out));
+			}
+		}
+		if (!end)
+			break;
+		at = end + 1;
+	}
+
+	// The short credits list stays in English with the licence. Each credit is intentionally one visual line.
+	m_about_lines.push_back(AboutLine());
+	AboutLine heading;
+	heading.text = "Credits";
+	heading.heading = true;
+	m_about_lines.push_back(heading);
+	for (const char* credit : kAboutCredits)
+	{
+		AboutLine out;
+		out.text = credit;
+		m_about_lines.push_back(std::move(out));
+	}
+	m_about_max_scroll = std::max(0.0f, static_cast<float>(m_about_lines.size()) * kAboutLineH - kAboutBodyViewH);
+}
+
+void App::UpdateAbout(double dt, const Input& in)
+{
+	auto pressed = [&](bool now, bool before) { return now && !before; };
+	if (pressed(in.circle, m_prev.circle) || pressed(in.cross, m_prev.cross))
+	{
+		CloseAbout();
+		Sound(Sfx::Move, 0.3f);
+		return;
+	}
+
+	// One wrapped line per press, repeating while held as the sheet's rows do. The target clamps to the content's end;
+	// Circle stays a plain close even at either end, so there is no state to get stuck in.
+	const int v = in.up ? -1 : in.down ? 1 : 0;
+	const bool fresh = (in.up && !m_prev.up) || (in.down && !m_prev.down);
+	auto step = [&](int dir) {
+		const float before = m_about_scroll_target;
+		m_about_scroll_target = std::clamp(m_about_scroll_target + static_cast<float>(dir) * kAboutLineH, 0.0f, m_about_max_scroll);
+		return m_about_scroll_target != before;
+	};
+	if (v != 0 && fresh)
+	{
+		Sound(step(v) ? Sfx::Move : Sfx::Edge, 0.3f);
+		m_about_held_v = v;
+		m_about_held_for = 0;
+		m_about_next_repeat = 0.34;
+	}
+	else if (v != 0 && v == m_about_held_v)
+	{
+		m_about_held_for += dt;
+		bool moved = false;
+		while (m_about_held_for >= m_about_next_repeat)
+		{
+			moved |= step(v);
+			m_about_next_repeat += 0.085;
+		}
+		if (moved)
+			Sound(Sfx::MoveRepeat, 0.3f);
+	}
+	else
+		m_about_held_v = 0;
+
+	m_about_scroll_target = std::clamp(m_about_scroll_target, 0.0f, m_about_max_scroll);
+	m_about_scroll = std::clamp(m_about_scroll, 0.0f, m_about_max_scroll);
+	const float a = 1.0f - std::exp(-static_cast<float>(std::min(dt, 0.1)) * 16.0f);
+	m_about_scroll += (m_about_scroll_target - m_about_scroll) * a;
+	if (std::fabs(m_about_scroll_target - m_about_scroll) < 0.05f)
+		m_about_scroll = m_about_scroll_target;
+}
+
+void App::BuildAboutOverlay(std::vector<UiVertex>& ui, float W, float H, float k, uint32_t accent)
+{
+	if (!m_about_open)
+		return;
+	const float reference_w = W / k;
+	const float panel_ref_w = std::min(kAboutPanelW, std::max(640.0f, reference_w - 220.0f));
+	const float inner_ref = panel_ref_w - 2.0f * kAboutPadX;
+	EnsureAboutLines(inner_ref - kAboutScrollBarW);
+
+	const float pw = panel_ref_w * k, ph = kAboutPanelH * k;
+	const float x = (W - pw) * 0.5f, y = (H - ph) * 0.5f;
+	const float cx = x + kAboutPadX * k, inner = inner_ref * k;
+	const uint32_t hi = Rgba(1, 1, 1), mid = Rgba(0.74f, 0.72f, 0.84f), lo = Rgba(0.52f, 0.50f, 0.64f);
+	const uint32_t panel = Rgba(0.045f, 0.050f, 0.105f, 1.0f);
+
+	// Dim everything under it, then the same three-part panel as the sheet and account panel.
+	Fonts::AddRoundedRect(ui, 0, 0, W, H, 0.0f, Rgba(0.005f, 0.005f, 0.020f, 0.66f));
+	Fonts::AddRoundedRect(ui, x - 6 * k, y + 10 * k, pw + 12 * k, ph + 12 * k, 48 * k, Rgba(0, 0, 0, 0.35f));
+	Fonts::AddRoundedRect(ui, x - 2 * k, y - 2 * k, pw + 4 * k, ph + 4 * k, 44 * k, Rgba(1, 1, 1, 0.16f));
+	Fonts::AddRoundedRect(ui, x, y, pw, ph, 42 * k, panel);
+
+	const float body_y = y + kAboutBodyTop * k;
+	const float body_bottom = y + ph - kAboutFooterH * k;
+	const float body_h = body_bottom - body_y;
+	const float px = kAboutTextPx * k, line_h = kAboutLineH * k;
+	const float content_h = static_cast<float>(m_about_lines.size()) * kAboutLineH;
+	m_about_scroll_target = std::clamp(m_about_scroll_target, 0.0f, m_about_max_scroll);
+	m_about_scroll = std::clamp(m_about_scroll, 0.0f, m_about_max_scroll);
+
+	// The scrolling body first. Lines are cached by EnsureAboutLines; this loop only emits the visible glyphs.
+	const float ascent = m_fonts->Ascent(px), descent = m_fonts->Descent(px);
+	const float first_base = body_y + 38.0f * k - m_about_scroll * k;
+	for (size_t i = 0; i < m_about_lines.size(); i++)
+	{
+		const AboutLine& line = m_about_lines[i];
+		if (line.text.empty())
+			continue;
+		const float base = first_base + static_cast<float>(i) * line_h;
+		if (base + descent < body_y || base - ascent > body_bottom)
+			continue;
+		m_fonts->AddText(ui, line.text.c_str(), cx, base, px, line.heading ? accent : mid, line.heading ? 0.35f : 0.08f);
+	}
+
+	// The UI pipeline has no scissor rectangle. These two opaque interior strips are the hard clip for the scrolled
+	// text; the fixed title, separators, scrollbar and footer are drawn after them.
+	const float clip_x = x + 44.0f * k, clip_w = pw - 88.0f * k;
+	Fonts::AddRoundedRect(ui, clip_x, y + 20.0f * k, clip_w, body_y - (y + 20.0f * k), 0.0f, panel);
+	Fonts::AddRoundedRect(ui, clip_x, body_bottom, clip_w, (y + ph - 20.0f * k) - body_bottom, 0.0f, panel);
+
+	// Fixed header: title, the product line required by the brand guide, and the build tag when the frontend has one.
+	m_fonts->AddText(ui, Tr(Str::AboutTitle), cx, y + 112.0f * k, 56.0f * k, hi, 0.55f);
+	m_fonts->AddText(ui, kAboutProductLine, cx, y + 170.0f * k, 30.0f * k, accent, 0.25f);
+	if (!m_cfg.build_tag.empty())
+		m_fonts->AddText(ui, m_cfg.build_tag.c_str(), cx, y + 208.0f * k, 24.0f * k, lo, 0.2f);
+	Fonts::AddRoundedRect(ui, cx, y + 244.0f * k, inner, 2.0f * k, 0.0f, Rgba(1, 1, 1, 0.12f));
+
+	if (m_about_max_scroll > 0.5f && content_h > 0.0f)
+	{
+		const float track_x = x + pw - 58.0f * k, track_w = 6.0f * k;
+		Fonts::AddRoundedRect(ui, track_x, body_y, track_w, body_h, track_w * 0.5f, Rgba(1, 1, 1, 0.10f));
+		const float thumb_h = std::max(52.0f * k, body_h * std::min(1.0f, kAboutBodyViewH / content_h));
+		const float travel = std::max(0.0f, body_h - thumb_h);
+		const float thumb_y = body_y + travel * (m_about_max_scroll > 0.0f ? m_about_scroll / m_about_max_scroll : 0.0f);
+		Fonts::AddRoundedRect(ui, track_x, thumb_y, track_w, thumb_h, track_w * 0.5f, accent);
+	}
+
+	Fonts::AddRoundedRect(ui, cx, y + ph - 112.0f * k, inner, 2.0f * k, 0.0f, Rgba(1, 1, 1, 0.12f));
+	m_fonts->AddText(ui, Tr(Str::AboutCircleBack), cx, y + ph - 52.0f * k, 30.0f * k, mid, 0.1f);
 }
 
 // ---- 2026-10-08: the sheet's "Get patches and cheats" row (AI-assisted; see fe_patchdl.h) ---------------------------
@@ -1980,7 +2242,8 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 		const float mid_y = ry + bh * 0.5f + 13 * k; // the text's baseline, centred in the row
 		const float lpx = 40 * k, vpx = 38 * k; // 2026-10-05: 38 and 36 before
 		const bool action = r.kind == OptionsSheet::Kind::Recommended || r.kind == OptionsSheet::Kind::ResetAll ||
-		                    r.kind == OptionsSheet::Kind::SystemMenu; // 2026-10-08
+		                    r.kind == OptionsSheet::Kind::SystemMenu || // 2026-10-08
+		                    r.kind == OptionsSheet::Kind::About;          // GPLv3 attribution
 
 		std::string value = m_sheet.Value(r);
 		const bool armed = m_sheet.Armed(r, m_time);
@@ -2102,6 +2365,10 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 		const uint32_t c = (own & 0x00FFFFFFu) | (static_cast<uint32_t>(a * 255.0f) << 24);
 		m_fonts->AddText(ui, Fit(*m_fonts, m_sheet_status, 30 * k, inner).c_str(), cx, y + sh - 40 * k, 30 * k, c, 0.4f);
 	}
+
+	// GPLv3 attribution: last, so its dim and centred panel cover the sheet behind it. It fades with that sheet.
+	if (m_about_open)
+		BuildAboutOverlay(ui, W, H, k, accent);
 
 	FadeRange(ui, begin, ui.size(), Clamp(e * 1.4f, 0.0f, 1.0f));
 }

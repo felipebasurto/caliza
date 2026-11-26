@@ -1,5 +1,8 @@
 # PS4/Orbis platform notes (AI-assisted)
 
+> **Rebrand note (2026-11-26):** this product is now **Zeruko** (repository: <https://github.com/felipebasurto/zeruko>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/zeruko` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
+
+
 ## Executable memory and recompiler memory
 
 PCSX2's recompilers require writable memory that becomes executable. The port currently uses executable direct memory by default:
@@ -33,7 +36,7 @@ WSI properties:
 - acquire is CPU-side through VideoOut flip status/equeue; acquire semaphores are stripped from queue submissions;
 - present queues `ac_ps4_submit_flip` behind GPU work.
 
-New telemetry prints `[ps4wsi]` when failures/retries/fallbacks occur. Preserve `/data/PCSX2/emulog.txt` lines with `[ps4wsi]`, `[vkwait]`, `[vsslow]`, `[threads]`, `[copies]`, `[readbacks]`, `[shaders]`.
+New telemetry prints `[ps4wsi]` when failures/retries/fallbacks occur. Preserve `/data/zeruko/emulog.txt` lines with `[ps4wsi]`, `[vkwait]`, `[vsslow]`, `[threads]`, `[copies]`, `[readbacks]`, `[shaders]`.
 
 ## CPU/threading
 
@@ -53,8 +56,8 @@ No optimization should be claimed without same-scene baseline/candidate logs.
 - DualShock 4 uses shared ScePad infrastructure. Player 1 now receives a neutral state when disconnected, matching extra players.
 - USB keyboard/mouse is disabled on PS4 because module load previously failed; retest is desirable.
 - Audio uses fixed 256-frame grain (~5.3 ms at 48 kHz); return values/latency settings are not fully honored.
-- Main writable data root is `/data/PCSX2`.
-- Package resources are `/app0/resources`; optional personal BIOS builds use `/app0/bios` then copy to `/data/PCSX2/bios`.
+- Main writable data root is `/data/zeruko`.
+- Package resources are `/app0/resources`; optional personal BIOS builds use `/app0/bios` then copy to `/data/zeruko/bios`.
 - NFS game shares use CEMUPS4's `/net` network filesystem on PS4, not the PS5 `/nfs` libc-wrap layer. Plain NFSv3 `nfs://host/export` mounts appear as `/net/share1`, `/net/share2`, ...; query options and custom ports are rejected with boot-log lines.
 - PS4Mount integration is complementary: if PS4Mount has a NAS configured, its stable `/data/ps4mount/nas` symlink can be used as a normal game folder and is exposed as a folder-picker place when present. PS4Mount `emulators/` auto-mounts currently scan USB/ext roots rather than NAS/data roots, so direct `GameFolders` configuration is the reliable path.
 

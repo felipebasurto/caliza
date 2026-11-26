@@ -1,5 +1,8 @@
 # PS4SX2 technical roadmap (AI-assisted)
 
+> **Rebrand note (2026-11-26):** this product is now **Zeruko** (repository: <https://github.com/felipebasurto/zeruko>), a separate GPL-3.0-or-later product built on the PCSX2 core - no longer branded as a PCSX2 fork variant. Evidence, hashes and commit references dated before the rebrand use the old PS4SX2/PS5SX2 identity and `/data/PCSX2` paths (shown here already renamed where operational); they remain valid historical records. The data root is now `/data/zeruko` and the first boot after upgrading copies the user's settings, memory cards, saves, BIOS and patches from the old folder automatically (games and texture packs are read from the old folder in place - nothing is moved or deleted). See `ps4/BRAND.md` for the identity guide.
+
+
 ## P0 immediate correctness/reproducibility
 
 1. Console-verify candidate boot on target firmware/loader and preserve boot/emulog.
@@ -12,12 +15,19 @@
 
 1. Console-validate the executable-memory probe now implemented before recompiler memory use.
 2. Console-validate the non-executable-memory interpreter fallback; measure its speed and confirm generated-code paths stay disabled.
-3. Hardware-test opt-in USB keyboard/mouse using `/data/PCSX2/flags/usbkbm`; enable by default only if the console matrix proves it safe.
+3. Hardware-test opt-in USB keyboard/mouse using `/data/zeruko/flags/usbkbm`; enable by default only if the console matrix proves it safe.
 4. Validate the new CEMUPS4 `/net` NFSv3 path on hardware, then decide whether SMB deserves a separate credential-aware network-shares UI.
 5. Console-validate the new mbedTLS cover-download path, including offline behavior and certificate failure handling.
 6. Use the new audio underrun/output telemetry on hardware; honor latency settings where possible.
 7. Console-validate streamed savestate loading/saving, backup fallback, memory cards, and atomic NVRAM persistence under real power-loss/crash scenarios.
 8. Finish WSI lifetime hardening for multi-device aliasing; failed swapchain recreation now releases the retired Orbis swapchain.
+
+## P0.5 brand/UX alignment (deferred to the design pass)
+
+1. Full alignment of the frontend with `ps4/BRAND.md` section 3: game-state taxonomy (Ready / Needs startup files / Missing file / Not checked yet / May slow down), plain-language relabeling of the remaining technical rows, "Tune for this game" copy and result states, first-run teaching flow, reduce-motion option, regional confirm/cancel detection. The visual refinement pass is scheduled separately (design-owner review), then this UX alignment should be implemented against the final designs.
+2. Wire-format decision for the texture-pack magic `PS5SX2TP` and frame-cap magic `PS5FCAP1` (rename breaks existing packs; keep for now).
+3. Fix the RetroAchievements user-agent platform string (reports PS5 on PS4; their rules ask for accurate identity) once the correct PS4 identification format is confirmed.
+4. Optional `zerukoemu` GitHub organization: create in the web UI and transfer the repository (links redirect automatically).
 
 ## P2 compatibility
 

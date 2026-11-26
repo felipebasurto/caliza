@@ -196,6 +196,10 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("smart tune could not write the game's settings file; tuning aborted or winner not persisted")
     if ev.has("[smarttune] baseline 1x fails"):
         ev.warnings.append("smart tune found the game is not GPU-limited even at 1x; it is CPU/engine-limited and upscaling cannot help")
+    if ev.has("[migrate] failed") or ev.has("[migrate] cannot"):
+        ev.warnings.append("the /data/PCSX2 to /data/zeruko migration reported failures; some settings or saves may not have been copied (the old folder is never deleted)")
+    if ev.has("[migrate] done"):
+        ev.notes.append("one-time data migration from the legacy /data/PCSX2 folder ran this boot")
 
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
