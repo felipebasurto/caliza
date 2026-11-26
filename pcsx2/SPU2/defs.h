@@ -623,10 +623,14 @@ static constexpr int pcm_DecodedSamplesPerBlock = 28;
 
 struct PcmCacheEntry
 {
-	bool Validated;
+	// Decoded ADPCM predictors are always clamped output samples (or zero at
+	// voice start), so keeping them as s16 loses no state. Ordering the sample
+	// data first avoids most of the former per-entry padding; this cache has
+	// 131072 entries, so every byte matters on memory-constrained targets.
 	s16 Sampledata[pcm_DecodedSamplesPerBlock];
-	s32 Prev1;
-	s32 Prev2;
+	s16 Prev1;
+	s16 Prev2;
+	bool Validated;
 };
 
 extern PcmCacheEntry pcm_cache_data[pcm_BlockCount];
