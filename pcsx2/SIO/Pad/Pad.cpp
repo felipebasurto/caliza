@@ -57,6 +57,10 @@ namespace Pad
 
 	static std::array<std::array<MacroButton, NUM_MACRO_BUTTONS_PER_CONTROLLER>, NUM_CONTROLLER_PORTS> s_macro_buttons;
 	static std::array<std::unique_ptr<PadBase>, NUM_CONTROLLER_PORTS> s_controllers;
+	// Orbis input/SIO threads can hold raw PadBase pointers across controller recreation.
+	// Retire replaced instances instead of deleting them; recreation is rare and each object is small,
+	// while use-after-free is fatal. This deliberate retirement is bounded by user reconfiguration count.
+	static std::vector<std::unique_ptr<PadBase>> s_retired_controllers;
 	static std::mutex s_orbis_pad_mutex; // Orbis: pad input thread vs controller (re)creation
 	static std::atomic<unsigned> s_controller_generation{0}; // Orbis: invalidates host-side input dedup caches
 
@@ -73,7 +77,10 @@ void Pad::Shutdown()
 {
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	for (auto& port : s_controllers)
-		port.reset();
+	{
+		if (port)
+			s_retired_controllers.push_back(std::move(port));
+	}
 	s_controller_generation.fetch_add(1, std::memory_order_release);
 }
 
@@ -516,6 +523,8 @@ std::string Pad::GetConfigSection(u32 pad_index)
 PadBase* Pad::CreatePad(u8 unifiedSlot, ControllerType controllerType, size_t ejectTicks)
 {
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
+	if (s_controllers[unifiedSlot])
+		s_retired_controllers.push_back(std::move(s_controllers[unifiedSlot]));
 	switch (controllerType)
 	{
 		case ControllerType::DualShock2:
@@ -542,20 +551,28 @@ PadBase* Pad::CreatePad(u8 unifiedSlot, ControllerType controllerType, size_t ej
 	return s_controllers[unifiedSlot].get();
 }
 
+static bool HasConnectedPadLocked(u8 unifiedSlot)
+{
+	return (unifiedSlot < Pad::NUM_CONTROLLER_PORTS && Pad::s_controllers[unifiedSlot] &&
+		Pad::s_controllers[unifiedSlot]->GetType() != Pad::ControllerType::NotConnected);
+}
+
 bool Pad::HasConnectedPad(u8 unifiedSlot)
 {
-	return (unifiedSlot < NUM_CONTROLLER_PORTS && s_controllers[unifiedSlot] &&
-		s_controllers[unifiedSlot]->GetType() != ControllerType::NotConnected);
+	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
+	return HasConnectedPadLocked(unifiedSlot);
 }
 
 PadBase* Pad::GetPad(u8 port, u8 slot)
 {
 	const u8 unifiedSlot = sioConvertPortAndSlotToPad(port, slot);
+	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	return s_controllers[unifiedSlot].get();
 }
 
 PadBase* Pad::GetPad(const u8 unifiedSlot)
 {
+	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	return s_controllers[unifiedSlot].get();
 }
 
@@ -575,7 +592,7 @@ void Pad::ResetControllerInputs(u32 controller)
 		return;
 
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
-	if (!HasConnectedPad(controller))
+	if (!HasConnectedPadLocked(controller))
 		return;
 
 	for (InputBindingInfo binding : s_controllers[controller]->GetInfo().bindings)
