@@ -34,7 +34,7 @@
 ## Memory-pressure tradeoffs
 
 1. The PS4 MTVU backing is capped at the existing 2048 KiB default lap, removing the ability to test larger 4/8/16 MiB laps on the normal PS4 candidate. This preserves default behavior while avoiding 14 MiB of always-resident BSS, but heavy-MTVU games still need hardware comparison before the cap is treated as final.
-2. Folder memory-card superblock geometry is now validated before the implementation trusts it, and direct FAT/data-cluster indexing is bounded. Metadata-cluster traversal is now iterative and cycle-safe, but malformed or guest-corrupted folder-card metadata still must not be treated as fully hardened untrusted input until the behavior is validated on hardware.
+2. Folder memory-card superblock geometry is now validated before the implementation trusts it, and direct FAT/data-cluster indexing is bounded. Metadata-cluster traversal is now iterative and cycle-safe, direct FAT-chain indexing is bounded, and directory recursion is depth-capped. Guest-controlled out-of-range sector addresses and broader folder-card behavior still need review, so malformed metadata must not be treated as fully hardened untrusted input yet.
 
 ## User-data layout
 
