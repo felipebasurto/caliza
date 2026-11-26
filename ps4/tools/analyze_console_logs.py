@@ -186,6 +186,10 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append(f"audio initialization failure evidence present in {audio_init_bad} line(s); output may be unavailable")
     if audio_open_bad:
         ev.warnings.append(f"audio output open failure evidence present in {audio_open_bad} line(s); output is unavailable")
+    if ev.has("[audio] worker did not exit within"):
+        ev.warnings.append("audio worker teardown timed out and its output port was deliberately abandoned; audio output syscalls appear stuck")
+    if ev.has("[audio] teardown waiting for in-flight worker read"):
+        ev.warnings.append("audio teardown waited unusually long for an in-flight worker read; investigate scheduler starvation")
 
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")

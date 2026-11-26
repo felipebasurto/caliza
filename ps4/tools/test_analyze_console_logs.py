@@ -223,6 +223,18 @@ def main() -> int:
         ok &= expect("audio initialization failure warns", audioinitfail, (), 0,
                      "WARN audio initialization failure evidence")
 
+        audioteardown = root / "audioteardown.log"
+        audioteardown.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                 "[audio] worker did not exit within 500ms; detached, leaving port 5 open\n")
+        ok &= expect("audio teardown timeout warns", audioteardown, (), 0,
+                     "WARN audio worker teardown timed out")
+
+        audiodrain = root / "audiodrain.log"
+        audiodrain.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[audio] teardown waiting for in-flight worker read to drain\n")
+        ok &= expect("audio drain wait warns", audiodrain, (), 0,
+                     "WARN audio teardown waited unusually long")
+
         audioopenfail = root / "audioopenfail.log"
         audioopenfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                                  "[audio] sceAudioOutOpen rate=48000 ch=2 -> 80260002\n")
