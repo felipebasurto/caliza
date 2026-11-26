@@ -2326,11 +2326,12 @@ void FileAccessHelper::WriteMetadata(const std::string_view folderName, const Me
 		// if metadata is standard remove metadata file if it exists
 		if (FileSystem::DirectoryExists(metaDirName.c_str()))
 		{
-			FileSystem::DeleteFilePath(metaFileName.c_str());
+			if (FileSystem::FileExists(metaFileName.c_str()) && !FileSystem::DeleteFilePath(metaFileName.c_str()))
+				Console.ErrorFmt("FolderMcd: metadata write failed; could not remove stale '{}'", metaFileName);
 
 			// and remove the metadata dir if it's now empty
-			if (FileSystem::DirectoryIsEmpty(metaDirName.c_str()))
-				FileSystem::DeleteDirectory(metaDirName.c_str());
+			if (FileSystem::DirectoryIsEmpty(metaDirName.c_str()) && !FileSystem::DeleteDirectory(metaDirName.c_str()))
+				Console.WarningFmt("FolderMcd: could not remove empty metadata directory '{}'", metaDirName);
 		}
 	}
 }
