@@ -1,10 +1,26 @@
-# Caliza PS4
+<p align="center">
+  <img src="ps4/sce_sys/icon0.png" width="100" height="100" alt="">
+</p>
 
-Caliza PS4 is an independent, noncommercial fan project that brings the PCSX2 PlayStation 2 emulation core to PlayStation 4. Its controller-driven library lets you browse your collection from the couch and apply settings per game.
+<h1 align="center">Caliza PS4</h1>
 
-[Download the experimental PS4 release](https://github.com/felipebasurto/zeruko/releases/tag/v0.1.0) · [Compatibility and test results](ps4/COMPATIBILITY.md) · [Build evidence](ps4/STATUS.md)
+<p align="center">PlayStation 2 emulation on PlayStation 4, built around your controller and your own game collection.</p>
 
-Current source builds show **Caliza PS4** in the console library and the companion web panel. The published v0.1.0 preview uses the earlier Zeruko name. Both use the same title ID and console data directory.
+<p align="center">
+  <a href="#install-on-ps4">Install</a> ·
+  <a href="ps4/COMPATIBILITY.md">Compatibility</a> ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+<p align="center">
+  <img src="ps4/docs/caliza-ui-prototype.png" width="900" alt="Caliza PS4 design prototype with an animated-disc motif, a blue game library, and controller prompts">
+  <br>
+  <sub>Disc Orbit design prototype with sample games. The native PS4 library and companion panel implement parts of this design.</sub>
+</p>
+
+Caliza PS4 is an independent, noncommercial fan project based on the PCSX2 emulation core. The game library supports controller navigation and per-game settings. The companion panel uses PS2UI.
+
+> **Experimental.** The [public v0.1.0 preview](https://github.com/felipebasurto/zeruko/releases/tag/v0.1.0) uses the earlier Zeruko interface. Current source builds use Caliza PS4 and retain the same title ID and console data directory. See the [build and test evidence](ps4/STATUS.md).
 
 ## Use your own collection
 
@@ -12,7 +28,7 @@ Use game images you create from your own legally purchased discs, or copies you 
 
 ## Install on PS4
 
-You need a PS4 already configured to run homebrew, your own PS2 BIOS, and one game image. Zeruko reads `.iso`, `.chd`, `.cso`, and `.zso` files.
+You need a PS4 already configured to run homebrew, your own PS2 BIOS, and one game image. Caliza PS4 reads `.iso`, `.chd`, `.cso`, and `.zso` files.
 
 1. Download `zeruko-v0.1.0-ps4.pkg` and its checksum file from the [release page](https://github.com/felipebasurto/zeruko/releases/tag/v0.1.0). In the download directory, run `shasum -a 256 -c zeruko-v0.1.0-SHA256SUMS.txt` on macOS, or `sha256sum -c zeruko-v0.1.0-SHA256SUMS.txt` on Linux.
 2. Install the package using your console's homebrew package installer. **Zeruko** appears on the home screen.
@@ -55,7 +71,7 @@ You can change resolution, configure memory cards, and manage texture packs per 
 
 Version 0.1.0 is an experimental preview. The PS4 build, package, and host tests have passed. The compatibility matrix identifies what still needs testing on real hardware. Performance varies by game, console model, and settings. Heavy games can be CPU-limited on a base PS4. PS4 Pro performance is still unmeasured.
 
-When reporting a problem, include the Zeruko version, PS4 model, system software version, game serial, storage type, and steps to reproduce it. Attach `boot.log` and `emulog.txt` from `/data/zeruko/logs/`, or from `/data/zeruko/` if they are stored directly there. Share logs with personal information removed. See the [console test procedure](ps4/COMPATIBILITY.md#required-console-smoke-protocol) and [known issues](ps4/KNOWN_ISSUES.md).
+When reporting a problem, include the app version, PS4 model, system software version, game serial, storage type, and steps to reproduce it. Attach `boot.log` and `emulog.txt` from `/data/zeruko/logs/`, or from `/data/zeruko/` if they are stored directly there. Share logs with personal information removed. See the [console test procedure](ps4/COMPATIBILITY.md#required-console-smoke-protocol) and [known issues](ps4/KNOWN_ISSUES.md).
 
 ## Build from source
 
@@ -69,9 +85,9 @@ bash ps4/build-ps4.sh package
 
 ## Licence and credits
 
-Zeruko contains modified [PCSX2](https://github.com/PCSX2/pcsx2) code, copyright 2002–2026 the PCSX2 Dev Team and contributors. Zeruko is licensed under the [GNU General Public License, version 3 or later](COPYING.GPLv3). The port builds on [PS5SX2](https://github.com/Swordpdf/PS5SX2) and uses the [OpenOrbis toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) and [Mesa RADV](https://docs.mesa3d.org/drivers/radv.html). [Third-party notices](ps4/PORT-THIRD-PARTY.txt) cover additional components, including the optional paraLLEl-GS renderer.
+Caliza PS4 contains modified [PCSX2](https://github.com/PCSX2/pcsx2) code, copyright 2002–2026 the PCSX2 Dev Team and contributors. Caliza PS4 is licensed under the [GNU General Public License, version 3 or later](COPYING.GPLv3). The port builds on [PS5SX2](https://github.com/Swordpdf/PS5SX2) and uses the [OpenOrbis toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) and [Mesa RADV](https://docs.mesa3d.org/drivers/radv.html). [Third-party notices](ps4/PORT-THIRD-PARTY.txt) cover additional components, including the optional paraLLEl-GS renderer.
 
-Sony Interactive Entertainment owns the PlayStation marks. Zeruko is independent of Sony Interactive Entertainment and the upstream PCSX2 project. Product names identify the platforms and software involved.
+Sony Interactive Entertainment owns the PlayStation marks. Caliza PS4 is independent of Sony Interactive Entertainment and the upstream PCSX2 project. Product names identify the platforms and software involved.
 
 The PS4 companion panel uses the MIT-licensed [PS2UI](https://github.com/t1mdurden/ps2ui) components and styles. The [bundled stylesheet](ps5/frontend/assets/web/caliza-ps2ui.css) contains its licence notice and source revision.
 
