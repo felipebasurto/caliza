@@ -104,7 +104,7 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     rm -rf "$stage"
     mkdir -p "$stage/sce_sys"
     cp "$eboot" "$stage/"
-    cp "$PCSX2/ps4/sce_sys/icon0.png" "$stage/sce_sys/" # Zeruko icon, 512x512 RGB, as the PS4 wants
+    cp "$PCSX2/ps4/sce_sys/icon0.png" "$stage/sce_sys/" # Caliza icon, 512x512 RGB, as the PS4 wants
     cp -r "$PCSX2/bin/resources" "$stage/resources"    # /app0/resources (main-boot.cpp, ORBIS_PS4)
     # GPL conveyance and bundled-asset notices travel in the package itself.
     cp "$PCSX2/COPYING.GPLv3" "$stage/COPYING.GPLv3"
@@ -151,7 +151,7 @@ EOF
     # ZERUKO00 is the content label: make-pkg.sh keeps A-Z0-9 only and zero-pads it to 16, so the content id
     # comes out IV0000-ZERU00001_00-ZERUKO0000000000 and the pkg IV0000-ZERU00001_00-ZERUKO0000000000.pkg.
     pkg="$(SFO_STYLE=plain NO_RIGHT_SPRX=1 SFO_ATTRIBUTE="${SFO_ATTRIBUTE:-0x00810000}" \
-        DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" ZERU00001 "Zeruko" \
+        DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" ZERU00001 "Caliza PS4" \
         "${ZERUKO_PS4_VERSION:-00.01}" ZERUKO00 "$out" | tail -1)"
     python3 "$HERE/tools/validate_package_stage.py" "$stage" --pkg "$pkg" --expect-commit "$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     echo "[build-ps4] package: $pkg ($(du -h "$pkg" | cut -f1))"

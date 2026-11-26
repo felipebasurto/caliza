@@ -7,6 +7,7 @@
 #include "fe_i18n.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cerrno>
@@ -45,6 +46,53 @@ uint32_t Rgba(float r, float g, float b, float a = 1.0f)
 	auto c = [](float v) { return static_cast<uint32_t>(Clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
 	return c(r) | (c(g) << 8) | (c(b) << 16) | (c(a) << 24);
 }
+
+#ifdef ORBIS_PS4
+// The PS2UI disc separates the diffraction face, hub and moving flare. Reuse
+// the same layers in the native UI batch, with one annulus mesh per layer.
+void DrawCalizaDisc(std::vector<UiVertex>& ui, float x, float y, float radius, float phase)
+{
+	constexpr int segments = 48;
+	static const auto circle = [] {
+		std::array<Vec2, segments + 1> points{};
+		for (int i = 0; i <= segments; ++i)
+		{
+			const float angle = Radians(360.0f * i / segments);
+			points[i] = {std::cos(angle), std::sin(angle)};
+		}
+		return points;
+	}();
+	auto ring = [&](float inner, float outer, const auto& color) {
+		auto vertex = [&](int i, float scale, uint32_t ink) {
+			return UiVertex{x + circle[i].x * radius * scale, y + circle[i].y * radius * scale * 0.88f,
+				0.0f, 0.0f, ink, 1.0f, 1.0f, 0.0f, 1.0f};
+		};
+		uint32_t ink = color(0);
+		for (int i = 0; i < segments; ++i)
+		{
+			const uint32_t next_ink = color(i + 1);
+			const UiVertex a = vertex(i, inner, ink), b = vertex(i, outer, ink);
+			const UiVertex c = vertex(i + 1, outer, next_ink), d = vertex(i + 1, inner, next_ink);
+			ui.insert(ui.end(), {a, b, c, a, c, d});
+			ink = next_ink;
+		}
+	};
+	ring(1.16f, 1.17f, [&](int i) {
+		const float light = 0.5f + 0.5f * std::cos(Radians(360.0f * i / segments) - phase);
+		return Rgba(0.38f, 0.76f, 1.0f, 0.16f + light * 0.42f);
+	});
+	ring(0.31f, 1.0f, [&](int i) {
+		const float angle = Radians(360.0f * i / segments) - phase;
+		const float falloff = 0.5f + 0.5f * std::cos(2.0f * angle);
+		const float flare = std::pow(falloff, 9.0f);
+		return Rgba(Mix(0.48f, 0.95f, falloff) + flare * 0.15f,
+			Mix(0.65f, 0.83f, falloff) + flare * 0.14f, Mix(0.87f, 0.56f, falloff) + flare * 0.22f);
+	});
+	ring(0.13f, 0.31f, [](int) { return Rgba(0.04f, 0.08f, 0.16f); });
+	ring(0.12f, 0.14f, [](int) { return Rgba(0.64f, 0.82f, 0.93f); });
+	ring(0.985f, 1.0f, [](int) { return Rgba(0.86f, 0.94f, 1.0f, 0.65f); });
+}
+#endif
 
 // vk-285-110: in the PS5's language ("4,2 Go"; fe_i18n.cpp).
 std::string SizeText(uint64_t bytes)
@@ -488,7 +536,11 @@ void App::Update(double dt, const Input& in)
 		if (s.has_cover && s.cover_mix < 1.0f)
 			s.cover_mix = std::min(1.0f, s.cover_mix + fdt / 0.35f);
 
+#ifdef ORBIS_PS4
+	const float house[3] = {0.23f, 0.48f, 1.0f};
+#else
 	const float house[3] = {0.55f, 0.42f, 1.0f};
+#endif
 	float want[3] = {house[0], house[1], house[2]};
 	if (!m_slots.empty() && m_slots[static_cast<size_t>(m_selected)].has_glow)
 		for (int i = 0; i < 3; i++)
@@ -530,10 +582,17 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	const float W = static_cast<float>(m_renderer->width()), H = static_cast<float>(m_renderer->height());
 	const float k = H / 2160.0f;
 	const float t = static_cast<float>(m_time);
-	const Mat4 proj = Mat4::Perspective(Radians(kFovY), W / H, 0.1f, 60.0f);
+	Mat4 proj = Mat4::Perspective(Radians(kFovY), W / H, 0.1f, 60.0f);
 	// vk-285-114: with the options sheet open on the right, the shelf slides left (the camera moves right), so the
 	// picked case stays in view beside its settings.
 	const float slide = Smoothstep(0.0f, 1.0f, m_sheet_anim);
+#ifdef ORBIS_PS4
+	const bool caliza_library = !m_games.empty() && !m_system_menu;
+	const float shelf_layout = caliza_library ? 1.0f - slide : 0.0f;
+	const float cover_scale = Mix(1.0f, 0.53f, shelf_layout);
+	proj = Mat4::Translate(0.0f, 0.33f * shelf_layout, 0.0f) *
+		Mat4::Scale(cover_scale, cover_scale, 1.0f) * proj;
+#endif
 	const Vec3 shift(1.62f * slide, 0.0f, 0.0f); // 2026-10-05: 1.45 before the sheet widened
 	const Mat4 view = Mat4::LookAt(kEye + shift, kTarget + shift, Vec3(0, 1, 0));
 	f.view_proj = proj * view;
@@ -641,7 +700,11 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	// Wordmark (vk-285-50) and the author's handles under it. "Zeruko" is wider than the old wordmark's
 	// second half, but even at 60k it is narrower than the two halves together were (about 186k against
 	// 214k in Roboto); 54k keeps it close to the old height with margin to spare. Needs proper testing.
+#ifdef ORBIS_PS4
+	m_fonts->AddText(ui, "Caliza PS4", margin, 150.0f * k, 54.0f * k, Rgba(0.65f, 0.90f, 1.0f), 0.8f);
+#else
 	m_fonts->AddText(ui, "Zeruko", margin, 150.0f * k, 54.0f * k, accent, 0.8f);
+#endif
 	{
 		const float hpx = 32.0f * k, hy2 = 214.0f * k;
 		float hx2 = margin + 2.0f * k;
@@ -709,11 +772,26 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	{
 		const GameInfo& g = m_games[static_cast<size_t>(m_selected)];
 		// Title, shrunk to fit (narrower beside the QR tile, which sits bottom right).
-		const float title_w = W * (qr_shown ? 0.72f : 0.8f);
+#ifdef ORBIS_PS4
+		const bool show_disc = caliza_library && slide < 0.999f;
+#else
+		constexpr bool show_disc = false;
+#endif
+		const float title_w = W * (show_disc ? 0.49f : (qr_shown ? 0.72f : 0.8f));
 		float px = 96.0f * k;
 		while (px > 64.0f * k && m_fonts->Measure(g.title.c_str(), px) > title_w)
 			px -= 4.0f * k;
-		m_fonts->AddText(ui, g.title.c_str(), W * 0.5f, H * 0.842f, px, white, 0.55f, Fonts::Center);
+#ifdef ORBIS_PS4
+		if (show_disc)
+		{
+			Fonts::AddRoundedRect(ui, margin, H * 0.225f, W - 2.0f * margin, H * 0.29f, 16.0f * k,
+				Rgba(0.055f, 0.10f, 0.24f, 0.82f));
+			DrawCalizaDisc(ui, W * 0.76f, H * 0.37f, H * 0.105f, t * 0.5f);
+		}
+#endif
+		const std::string fitted_title = show_disc ? Fit(*m_fonts, g.title, px, title_w) : std::string{};
+		m_fonts->AddText(ui, show_disc ? fitted_title.c_str() : g.title.c_str(), show_disc ? margin + 46.0f * k : W * 0.5f,
+			H * (show_disc ? 0.367f : 0.842f), px, white, 0.55f, show_disc ? Fonts::Left : Fonts::Center);
 
 		// Details and badges on one centred row.
 		std::string info;
@@ -737,7 +815,12 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		for (const std::string& b : g.badges)
 			row_w += gap + m_fonts->Measure(b.c_str(), badge_px) + 2 * pad;
 		float rx = W * 0.5f - row_w * 0.5f;
-		const float row_y = H * 0.905f;
+		float row_y = H * 0.905f;
+		if (show_disc && row_w <= title_w)
+		{
+			rx = margin + 46.0f * k;
+			row_y = H * 0.431f;
+		}
 		rx += m_fonts->AddText(ui, info.c_str(), rx, row_y, info_px, dim, 0.1f);
 		for (const std::string& b : g.badges)
 		{
@@ -1079,6 +1162,9 @@ namespace
 		"included with Zeruko.";
 	constexpr const char* kAboutProductLine = "Zeruko — PlayStation 2 emulator for PS4";
 	constexpr const char* const kAboutCredits[] = {
+#ifdef ORBIS_PS4
+		"PS2UI contributors — companion interface, MIT",
+#endif
 		"PCSX2 Dev Team — emulation core",
 		"swordpdf/PS5SX2 — console port base",
 		"OpenOrbis — toolchain",

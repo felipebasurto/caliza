@@ -142,6 +142,10 @@ FE_INCBIN_ASSET(fe_font_brands, "fonts/fa-brands-400.otf");
 FE_INCBIN_ASSET(fe_web_page, "web/index.html");
 FE_INCBIN_ASSET(fe_web_discord, "web/discord.svg");
 FE_INCBIN_ASSET(fe_web_x, "web/x-twitter.svg");
+#ifdef ORBIS_PS4
+FE_INCBIN_ASSET(fe_web_caliza_css, "web/caliza-ps2ui.css");
+extern "C" const uint8_t fe_web_caliza_css[], fe_web_caliza_css_end[];
+#endif
 // vk-285-51: the recommended settings the page's Recommended button restores.
 FE_INCBIN_ASSET(fe_presets, "presets.ini");
 extern "C" const uint8_t fe_font_brands[], fe_font_brands_end[], fe_web_page[], fe_web_page_end[], fe_web_discord[],
@@ -1420,6 +1424,10 @@ bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag)
 		{"/fonts/roboto.ttf", "font/ttf", fe_font_text, static_cast<size_t>(fe_font_text_end - fe_font_text)},
 		{"/icons/discord.svg", "image/svg+xml", fe_web_discord, static_cast<size_t>(fe_web_discord_end - fe_web_discord)},
 		{"/icons/x-twitter.svg", "image/svg+xml", fe_web_x, static_cast<size_t>(fe_web_x_end - fe_web_x)},
+#ifdef ORBIS_PS4
+		{"/caliza-ps2ui.css", "text/css; charset=utf-8", fe_web_caliza_css,
+			static_cast<size_t>(fe_web_caliza_css_end - fe_web_caliza_css)},
+#endif
 	};
 	fe::WebServer* server = new fe::WebServer();
 	if (!server->Start(cfg))

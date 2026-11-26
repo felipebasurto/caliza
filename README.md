@@ -1,8 +1,10 @@
-# Zeruko
+# Caliza PS4
 
-Zeruko is an independent, noncommercial fan project that brings the PCSX2 PlayStation 2 emulation core to PlayStation 4. Its controller-driven library lets you browse your collection from the couch and apply settings per game.
+Caliza PS4 is an independent, noncommercial fan project that brings the PCSX2 PlayStation 2 emulation core to PlayStation 4. Its controller-driven library lets you browse your collection from the couch and apply settings per game.
 
 [Download the experimental PS4 release](https://github.com/felipebasurto/zeruko/releases/tag/v0.1.0) · [Compatibility and test results](ps4/COMPATIBILITY.md) · [Build evidence](ps4/STATUS.md)
+
+Current source builds show **Caliza PS4** in the console library and the companion web panel. The published v0.1.0 preview uses the earlier Zeruko name. Both use the same title ID and console data directory.
 
 ## Use your own collection
 
@@ -70,5 +72,7 @@ bash ps4/build-ps4.sh package
 Zeruko contains modified [PCSX2](https://github.com/PCSX2/pcsx2) code, copyright 2002–2026 the PCSX2 Dev Team and contributors. Zeruko is licensed under the [GNU General Public License, version 3 or later](COPYING.GPLv3). The port builds on [PS5SX2](https://github.com/Swordpdf/PS5SX2) and uses the [OpenOrbis toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) and [Mesa RADV](https://docs.mesa3d.org/drivers/radv.html). [Third-party notices](ps4/PORT-THIRD-PARTY.txt) cover additional components, including the optional paraLLEl-GS renderer.
 
 Sony Interactive Entertainment owns the PlayStation marks. Zeruko is independent of Sony Interactive Entertainment and the upstream PCSX2 project. Product names identify the platforms and software involved.
+
+The PS4 companion panel uses the MIT-licensed [PS2UI](https://github.com/t1mdurden/ps2ui) components and styles. The [bundled stylesheet](ps5/frontend/assets/web/caliza-ps2ui.css) contains its licence notice and source revision.
 
 Project development and documentation are AI-assisted.

@@ -318,6 +318,15 @@ bool SettingsPageWithPs4Knobs(const WebAsset& asset, std::string& out)
 		return false;
 	out.assign(reinterpret_cast<const char*>(asset.data), asset.size);
 	bool ok = true;
+#ifdef ORBIS_PS4
+	static const char caliza_header[] =
+#include "caliza_ps2ui_markup.inc"
+		;
+	ok = ReplaceOnce(out, "<title>Zeruko</title>",
+		"<title>Caliza PS4</title><link rel=\"stylesheet\" href=\"/caliza-ps2ui.css\">") && ok;
+	ok = ReplaceOnce(out, "<body>", "<body data-ps2>") && ok;
+	ok = ReplaceOnce(out, R"(<div class="wordmark"><span>Zeruko</span></div>)", caliza_header) && ok;
+#endif
 	ok = ReplaceOnce(out,
 		R"ps4ui(options: [["Hardware","Hardware"],["Software","Software"]],)ps4ui",
 		R"ps4ui(options: [["Hardware","Vulkan"],["paraLLEl","paraLLEl-GS"],["Software","Software"]],)ps4ui") && ok;
