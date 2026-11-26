@@ -2271,27 +2271,35 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
         return nullptr;
       };
       pthread_attr_t attr;
-      pthread_attr_t* attrp = nullptr;
       const bool attr_initialized = pthread_attr_init(&attr) == 0;
-      if (attr_initialized && pthread_attr_setstacksize(&attr, 1024 * 1024) == 0)
-        attrp = &attr;
-      pthread_t threads[4] = {};
-      size_t created = 0;
-      for (; created < worker_count; created++)
+      const bool large_stack = attr_initialized && pthread_attr_setstacksize(&attr, 1024 * 1024) == 0;
+      if (!large_stack)
       {
-        const int rc = pthread_create(&threads[created], attrp, worker_entry, &context);
-        if (rc != 0)
+        // The network client can overflow Orbis's small default pthread stack. Do not
+        // quietly trade a slow serial check for a stack-corruption risk. needs proper testing.
+        printf("[boot] %s: network share large worker stack unavailable; checks run serially\n", when);
+        check_jobs();
+      }
+      else
+      {
+        pthread_t threads[4] = {};
+        size_t created = 0;
+        for (; created < worker_count; created++)
         {
-          printf("[boot] %s: network share worker %zu unavailable (rc=%d); remaining checks run serially\n", when, created + 1, rc);
-          break;
+          const int rc = pthread_create(&threads[created], &attr, worker_entry, &context);
+          if (rc != 0)
+          {
+            printf("[boot] %s: network share worker %zu unavailable (rc=%d); remaining checks run serially\n", when, created + 1, rc);
+            break;
+          }
         }
+        for (size_t i = 0; i < created; i++)
+          pthread_join(threads[i], nullptr);
+        if (created < worker_count)
+          check_jobs();
       }
       if (attr_initialized)
         pthread_attr_destroy(&attr);
-      for (size_t i = 0; i < created; i++)
-        pthread_join(threads[i], nullptr);
-      if (created < worker_count)
-        check_jobs();
     }
     for (const NetfsShareJob& job : jobs)
     {
