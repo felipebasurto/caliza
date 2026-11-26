@@ -13,9 +13,9 @@ This matrix separates inherited claims, static evidence, host verification, and 
 
 | Component | State | Evidence/verification | Risk/notes |
 |---|---|---|---|
-| Build compile/link/package | Verified host/container | 583 objects; ELF, eboot, PKG produced; `baseline-build-metrics.txt` | Not console-run |
+| Build compile/link/package | Verified host/container | 584 objects; ELF, eboot, PKG produced; final candidate evidence in `ps4/STATUS.md` | Not console-run |
 | Dynamic imports | Statically audited | Current candidate: 257 dynamic imports, 0 unresolved, no known PS5-only imports | Runtime module behavior still needs console validation |
-| Executable memory/JIT | Inherited evidence + static design | README games imply recompiler runs; Memory.cpp uses executable direct memory by default | Must be console-verified per firmware/loader; interpreter fallback not automatic |
+| Executable memory/JIT | Inherited evidence + static design | README games imply recompiler runs; Memory.cpp uses executable direct memory by default | Must be console-verified per firmware/loader; executable-memory probe failure now selects interpreter fallbacks rather than pretending recompilers are usable |
 | Vulkan renderer/RADV | Implemented; not console-verified tonight | RADV statically linked; `radv_GetInstanceProcAddr` present in ELF; WSI shim documented | Runtime feature/synchronization health needs console logs |
 | Software renderer fallback | Compiled and selectable | SW renderer objects in Makefile; renderer selection logic present | Very slow on Jaguar; correctness oracle only |
 | Threading/MTVU | Implemented; MTVU default on for PS4 | Prior branch work; no runtime verification tonight | GameDB can still disable MTVU per game |
@@ -23,8 +23,8 @@ This matrix separates inherited claims, static evidence, host verification, and 
 | Audio | Implemented + telemetry | `[audio]` underrun/output-error counters added | Runtime latency and user ID behavior unverified on PS4 |
 | BIOS detection/loading | Implemented | `/data/PCSX2/bios`; embedded personal BIOS copy path exists | Redistributable PKG must remain BIOS-free |
 | ISO loading | Implemented + failure-path hardened | `/data/PCSX2/games`, USB scanning inherited; truncated/corrupt reads now propagate errors, partial async reads fail, and retry exhaustion completes with a CDVD error instead of wedging | plain NFSv3 shares are exposed through `/net/shareN`; console scan/load/error recovery behavior unverified |
-| Memory cards | Implemented | inherited PCSX2/PS5SX2 code | Needs console persistence test |
-| Save states | Implemented, console-unverified | load path now streams entry payloads instead of buffering the whole state file | Save/load cycle and flexible-memory headroom need console validation |
+| Memory cards | Implemented + failure-path hardened | file/folder cards now bound out-of-range writes, retain dirty pages after host write failure, close metadata atomically, and expose storage failures to log analysis | Needs real console persistence, power-loss, and corruption-recovery tests |
+| Save states | Implemented + hostile-input hardened, console-unverified | load path streams entries; fixed memory truncation, oversized vectors/strings, GIF queue geometry, HostFS handle counts, and USB/OHCI/control state are validated | Legitimate-state save/load compatibility and flexible-memory headroom need console validation |
 | Frontend/shelf | Implemented through Vulkan WSI | fe_ps5 Vulkan shelf | CPU overlay VideoOut buffers API is PS5-only/stubbed |
 | Cover downloads | Implemented, console-unverified | Uses the mbedTLS HTTPS client with Mozilla roots; HTTP/SSL system library dependencies removed | Test online, offline, DNS failure, redirect, and certificate failure on console |
 | PS4 Pro mode | Enabled in package SFO | attribute `0x00810000`; Neo mode default 2x upscale | Not measured on Pro |
