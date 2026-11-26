@@ -72,6 +72,9 @@ public:
 
 	int ReadSync(u8* dst, uint lsn);
 
+	void FormatSubQ(u32 lsn, cdvdSubQ* subq) const noexcept;
+	bool HasSubchannelData() const noexcept { return m_blocksize == 2448 && m_blockofs == 0; }
+
 	void BeginRead2(uint lsn);
 	int FinishRead3(u8* dest, uint mode);
 

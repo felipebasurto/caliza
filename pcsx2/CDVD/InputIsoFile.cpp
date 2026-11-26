@@ -74,6 +74,11 @@ int InputIsoFile::ReadSync(u8* dst, uint lsn)
 	return result == static_cast<int>(m_blocksize) ? result : -1;
 }
 
+void InputIsoFile::FormatSubQ(u32 lsn, cdvdSubQ* subq) const noexcept
+{
+	cdvdMakeSingleTrackSubQ(lsn, m_type == ISOTYPE_AUDIO, subq);
+}
+
 void InputIsoFile::BeginRead2(uint lsn)
 {
 	m_current_lsn = lsn;
@@ -132,8 +137,19 @@ int InputIsoFile::FinishRead3(u8* dst, uint mode)
 	int _offset = 0;
 	int length = 0;
 
+	if (mode == CDVD_MODE_2448)
+	{
+		// Cooked images cannot supply every raw main-channel byte. Make the portions
+		// they cannot supply deterministic before overlaying the data that exists.
+		std::memset(dst, 0, 2448);
+	}
+
 	switch (mode)
 	{
+		case CDVD_MODE_2448:
+			_offset = 0;
+			length = 2448;
+			break;
 		case CDVD_MODE_2368:
 			// The transfer buffer/API currently carries the 2352-byte main channel only. Treat
 			// mode 2368 as that main channel here; without a case the length calculation below can
@@ -185,6 +201,15 @@ int InputIsoFile::FinishRead3(u8* dst, uint mode)
 	{
 		lsn_to_msf(dst + diff - 12, m_current_lsn);
 		dst[diff - 9] = 2;
+	}
+
+	if (mode == CDVD_MODE_2448 && !HasSubchannelData())
+	{
+		// Images without a trailing P-W area still need a well-formed suffix. Use the
+		// same single-track formatted SubQ approximation exposed by ISOreadSubQ.
+		cdvdSubQ subq = {};
+		FormatSubQ(m_current_lsn, &subq);
+		cdvdWriteSubQ96(dst + 2352, subq);
 	}
 
 	return 0;

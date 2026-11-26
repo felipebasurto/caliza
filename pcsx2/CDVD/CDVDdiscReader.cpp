@@ -34,6 +34,9 @@ int cmode;
 static int lastReadInNewDiskCB = 0;
 static u8 directReadSectorBuffer[2448];
 
+static s32 DISCreadSubQ(u32 lsn, cdvdSubQ* subq);
+static s32 DISCreadSector(u8* buffer, u32 lsn, int mode);
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 // Utility Functions                                                         //
@@ -211,6 +214,59 @@ static void DISCclose()
 	src.reset();
 }
 
+static bool DISCmodeHasSubchannelSuffix(int mode) noexcept
+{
+	return mode == CDVD_MODE_2368 || mode == CDVD_MODE_2448;
+}
+
+static int DISCmodeSize(int mode) noexcept
+{
+	switch (mode)
+	{
+		case CDVD_MODE_2448:
+			return 2448;
+		case CDVD_MODE_2368:
+			return 2368;
+		case CDVD_MODE_2048:
+			return 2048;
+		case CDVD_MODE_2328:
+			return 2328;
+		case CDVD_MODE_2340:
+			return 2340;
+		default:
+			return 2352;
+	}
+}
+
+static void DISCwriteSubchannelSuffix(u8* dest, u32 lsn, int mode)
+{
+	cdvdSubQ subq = {};
+	if (DISCreadSubQ(lsn, &subq) != 0)
+	{
+		std::memset(dest + 2352, 0, mode == CDVD_MODE_2448 ? 96 : 16);
+		return;
+	}
+
+	if (mode == CDVD_MODE_2448)
+		cdvdWriteSubQ96(dest + 2352, subq);
+	else
+		cdvdWriteSubQ16(dest + 2352, subq);
+}
+
+// The host drive cache only contains the 2352-byte main channel. Copy exactly that
+// many bytes before adding a synthesized suffix, rather than overrunning the cache.
+static void DISCcopySector(u8* dest, const u8* sector_data, u32 lsn, int mode)
+{
+	if (DISCmodeHasSubchannelSuffix(mode))
+	{
+		std::memcpy(dest, sector_data, 2352);
+		DISCwriteSubchannelSuffix(dest, lsn, mode);
+		return;
+	}
+
+	std::memcpy(dest, sector_data, DISCmodeSize(mode));
+}
+
 static s32 DISCreadTrack(u32 lsn, int mode)
 {
 	csector = lsn;
@@ -218,7 +274,7 @@ static s32 DISCreadTrack(u32 lsn, int mode)
 
 	if (weAreInNewDiskCB)
 	{
-		int ret = cdvdDirectReadSector(lsn, mode, directReadSectorBuffer);
+		int ret = DISCreadSector(directReadSectorBuffer, lsn, mode);
 		if (ret == 0)
 			lastReadInNewDiskCB = 1;
 		return ret;
@@ -238,32 +294,18 @@ static s32 DISCgetBuffer(u8* dest)
 	if (csector >= src->GetSectorCount())
 		return 0;
 
-	int csize = 2352;
-	switch (cmode)
-	{
-		case CDVD_MODE_2048:
-			csize = 2048;
-			break;
-		case CDVD_MODE_2328:
-			csize = 2328;
-			break;
-		case CDVD_MODE_2340:
-			csize = 2340;
-			break;
-	}
-
 	if (lastReadInNewDiskCB)
 	{
 		lastReadInNewDiskCB = 0;
 
-		memcpy(dest, directReadSectorBuffer, csize);
+		std::memcpy(dest, directReadSectorBuffer, DISCmodeSize(cmode));
 		return 0;
 	}
 
 	u8* sector_data = cdvdGetSector(csector, cmode);
 	if (sector_data == nullptr)
 		return -1;
-	memcpy(dest, sector_data, csize);
+	DISCcopySector(dest, sector_data, csector, cmode);
 
 	return 0;
 }
@@ -530,7 +572,10 @@ static void DISCnewDiskCB(void (*callback)())
 
 static s32 DISCreadSector(u8* buffer, u32 lsn, int mode)
 {
-	return cdvdDirectReadSector(lsn, mode, buffer);
+	const s32 ret = cdvdDirectReadSector(lsn, mode, buffer);
+	if (ret == 0 && DISCmodeHasSubchannelSuffix(mode))
+		DISCwriteSubchannelSuffix(buffer, lsn, mode);
+	return ret;
 }
 
 static s32 DISCgetDualInfo(s32* dualType, u32* _layer1start)

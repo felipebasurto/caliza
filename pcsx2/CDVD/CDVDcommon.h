@@ -54,6 +54,29 @@ struct cdvdSubQ
 	u8 discF; // current frame location on the disc (BCD encoded)
 };
 
+// Formats the single-track SubQ position information used by the ISO image backend.
+// Track-relative time has no +150 frame offset, while absolute disc time does.
+static inline void cdvdMakeSingleTrackSubQ(u32 lsn, bool audio, cdvdSubQ* subq) noexcept
+{
+	const auto bcd = [](u8 value) constexpr noexcept -> u8 {
+		return static_cast<u8>(((value / 10) << 4) | (value % 10));
+	};
+
+	subq->ctrl = audio ? 0 : 4;
+	subq->adr = 1;
+	subq->trackNum = bcd(1);
+	subq->trackIndex = bcd(1);
+	subq->trackM = bcd(static_cast<u8>(lsn / (60 * 75)));
+	subq->trackS = bcd(static_cast<u8>((lsn / 75) % 60));
+	subq->trackF = bcd(static_cast<u8>(lsn % 75));
+	subq->pad = 0;
+
+	const u32 absolute_lsn = lsn + 150;
+	subq->discM = bcd(static_cast<u8>(absolute_lsn / (60 * 75)));
+	subq->discS = bcd(static_cast<u8>((absolute_lsn / 75) % 60));
+	subq->discF = bcd(static_cast<u8>(absolute_lsn % 75));
+}
+
 // MSB-first CRC-16/CCITT over raw Q-channel bytes, used by the 16-byte P/Q suffix in 2368-byte CDDA sectors.
 static inline u16 cdvdSubQCrc(const u8* data, size_t length) noexcept
 {
@@ -138,6 +161,7 @@ struct cdvdTN
 #define CDVD_MODE_2328 2 // skip sync+head+sub (24) bytes
 #define CDVD_MODE_2048 3 // skip sync+head+sub (24) bytes
 #define CDVD_MODE_2368 4 // full 2352 bytes + 16 subq
+#define CDVD_MODE_2448 5 // full 2352 bytes + 96 bytes of interleaved subchannel data
 
 // CDVDgetDiskType returns:
 #define CDVD_TYPE_ILLEGAL 0xff // Illegal Disc

@@ -36,6 +36,25 @@
 
 cdvdStruct cdvd;
 
+// PS2-local sector staging for transfer modes too large for the PS1 cdr.Transfer
+// buffer. This is deliberately outside cdvdStruct: it is transient input data, and
+// savestates already restart the backend read instead of serializing sector bytes.
+static u8 s_cdvdSectorReadBuffer[2448];
+
+static u8* cdvdGetSectorReadBuffer(size_t* capacity = nullptr) noexcept
+{
+	if (cdvd.BlockSize > static_cast<int>(sizeof(cdr.Transfer)))
+	{
+		if (capacity)
+			*capacity = sizeof(s_cdvdSectorReadBuffer);
+		return s_cdvdSectorReadBuffer;
+	}
+
+	if (capacity)
+		*capacity = sizeof(cdr.Transfer);
+	return cdr.Transfer;
+}
+
 u32 PSXCLK = 36864000;
 
 static constexpr s32 GMT9_OFFSET_SECONDS = 9 * 60 * 60; // 32400
@@ -1210,6 +1229,9 @@ int cdvdReadSector()
 	// DMAs use physical addresses (air)
 	u8* mdest = iopPhysMem(HW_DMA3_MADR);
 
+	size_t transfer_capacity = 0;
+	u8* const transfer = cdvdGetSectorReadBuffer(&transfer_capacity);
+
 	// if raw dvd sector 'fill in the blanks'
 	if (cdvd.BlockSize == 2064)
 	{
@@ -1259,7 +1281,7 @@ int cdvdReadSector()
 		mdest[11] = 0;
 
 		// normal 2048 bytes of sector data
-		memcpy(&mdest[12], &cdr.Transfer[0], 2048);
+		memcpy(&mdest[12], transfer, 2048);
 
 		// 4 bytes of edc (not calculated at present)
 		mdest[2060] = 0;
@@ -1269,11 +1291,10 @@ int cdvdReadSector()
 	}
 	else
 	{
-		// cdr.Transfer is the 2352-byte main-channel buffer. Mode 2368 asks for a
-		// 16-byte suffix that the current image backends do not transport; bound the copy
-		// and zero the suffix rather than reading adjacent cdrStruct state. needs proper testing.
-		const size_t transfer_bytes = std::min<size_t>(static_cast<size_t>(cdvd.BlockSize), sizeof(cdr.Transfer));
-		memcpy(mdest, &cdr.Transfer[0], transfer_bytes);
+		// Bound copies by the actual staging object. In particular, mode 2448 uses the
+		// PS2-local 2448-byte buffer rather than overrunning the PS1 cdr.Transfer buffer.
+		const size_t transfer_bytes = std::min<size_t>(static_cast<size_t>(cdvd.BlockSize), transfer_capacity);
+		memcpy(mdest, transfer, transfer_bytes);
 		if (static_cast<size_t>(cdvd.BlockSize) > transfer_bytes)
 			std::memset(mdest + transfer_bytes, 0, static_cast<size_t>(cdvd.BlockSize) - transfer_bytes);
 		if (cdvd.BlockSize == 2368)
@@ -1437,7 +1458,14 @@ __fi void cdvdReadInterrupt()
 	{
 		if (cdvd.ReadErr == 0)
 		{
-			while ((cdvd.ReadErr = DoCDVDgetBuffer(&cdr.Transfer[0])), cdvd.ReadErr == -2)
+			u8* const read_buffer = cdvdGetSectorReadBuffer();
+			if (read_buffer == s_cdvdSectorReadBuffer)
+			{
+				// Mode-2448 backends fill the complete frame, but keep legacy short/no-write
+				// paths deterministic instead of exposing the previous sector. needs proper testing.
+				std::memset(read_buffer, 0, sizeof(s_cdvdSectorReadBuffer));
+			}
+			while ((cdvd.ReadErr = DoCDVDgetBuffer(read_buffer)), cdvd.ReadErr == -2)
 			{
 				// not finished yet ... block on the read until it finishes.
 				Threading::Sleep(0);
@@ -2269,6 +2297,10 @@ static void cdvdWrite04(u8 rt)
 
 			switch (cdvd.NCMDParamBuff[10])
 			{
+				case 2:
+					cdvd.ReadMode = CDVD_MODE_2448;
+					cdvd.BlockSize = 2448;
+					break;
 				case 1:
 					cdvd.ReadMode = CDVD_MODE_2368;
 					cdvd.BlockSize = 2368;

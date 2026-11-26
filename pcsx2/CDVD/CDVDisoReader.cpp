@@ -60,34 +60,11 @@ static bool ISOprecache(ProgressCallback* progress, Error* error)
 	return iso.Precache(progress, error);
 }
 
-static void lsn_to_msf_no_offset(s32 lsn, u8* minute, u8* second, u8* frame)
-{
-	*minute = static_cast<u8>(lsn / (60 * 75));
-	*second = static_cast<u8>((lsn / 75) % 60);
-	*frame = static_cast<u8>(lsn % 75);
-}
-
 static s32 ISOreadSubQ(u32 lsn, cdvdSubQ* subq)
 {
-	// fake it
-	u8 min, sec, frm;
-	subq->ctrl = (cdtype == CDVD_TYPE_CDDA) ? 0 : 4;
-	subq->adr = 1;
-	subq->trackNum = itob(1);
-	subq->trackIndex = itob(1);
-
-	lsn_to_msf_no_offset(lsn, &min, &sec, &frm);
-	subq->trackM = itob(min);
-	subq->trackS = itob(sec);
-	subq->trackF = itob(frm);
-
-	subq->pad = 0;
-
-	lba_to_msf(lsn, &min, &sec, &frm);
-	subq->discM = itob(min);
-	subq->discS = itob(sec);
-	subq->discF = itob(frm);
-
+	// Keep the user-visible formatted SubQ and the synthesized raw 2448-byte suffix
+	// on exactly the same single-track position/control logic.
+	iso.FormatSubQ(lsn, subq);
 	return 0;
 }
 
@@ -330,26 +307,42 @@ static s32 ISOreadSector(u8* tempbuffer, u32 lsn, int mode)
 	if (lsn >= iso.GetBlockCount())
 		return -1;
 
-	if (mode == CDVD_MODE_2352)
-		return iso.ReadSync(tempbuffer, lsn) < 0 ? -1 : 0;
-
+	// Keep bytes that cooked images cannot supply deterministic. This also lets raw-size
+	// modes copy a bounded main channel instead of letting a 2448-byte RAWQ backend write
+	// past a caller's 2352-byte mode-2352 buffer.
+	std::memset(cdbuffer, 0, sizeof(cdbuffer));
 	if (iso.ReadSync(cdbuffer, lsn) < 0)
 		return -1;
 
+	if (mode == CDVD_MODE_2352)
+	{
+		std::memcpy(tempbuffer, cdbuffer, 2352);
+		return 0;
+	}
 
 	u8* pbuffer = cdbuffer;
 	int psize = 0;
 
-	if (mode == CDVD_MODE_2368)
+	if (mode == CDVD_MODE_2368 || mode == CDVD_MODE_2448)
 	{
-		// Direct reads use the same backend main channel plus synthesized P/Q suffix contract
-		// as the DMA path. The caller sizes its buffer for the requested mode. needs proper testing.
-		memcpy(tempbuffer, cdbuffer, 2352);
+		// Direct reads use the same main-channel-plus-suffix contract as the DMA path.
+		// RAWQ images keep their trailing subchannel bytes; other images get a suffix
+		// synthesized from the same formatted SubQ source exposed to sceCdReadSUBQ.
+		std::memcpy(tempbuffer, cdbuffer, 2352);
 		cdvdSubQ subq = {};
-		if (ISOreadSubQ(lsn, &subq) == 0)
+		ISOreadSubQ(lsn, &subq);
+		if (mode == CDVD_MODE_2368)
+		{
 			cdvdWriteSubQ16(tempbuffer + 2352, subq);
+		}
+		else if (iso.HasSubchannelData())
+		{
+			std::memcpy(tempbuffer + 2352, cdbuffer + 2352, 96);
+		}
 		else
-			memset(tempbuffer + 2352, 0, 16);
+		{
+			cdvdWriteSubQ96(tempbuffer + 2352, subq);
+		}
 		return 0;
 	}
 

@@ -484,6 +484,9 @@ s32 DoCDVDreadTrack(u32 lsn, int mode)
 		case CDVD_MODE_2368:
 			lastReadSize = 2368;
 			break;
+		case CDVD_MODE_2448:
+			lastReadSize = 2448;
+			break;
 		case CDVD_MODE_2340:
 			lastReadSize = 2340;
 			break;
