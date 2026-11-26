@@ -125,11 +125,27 @@ VkSurfaceKHR CreateOrbisDisplaySurface(VkInstance instance, VkPhysicalDevice phy
 		return VK_NULL_HANDLE;
 	}
 
-	// The plane that can drive that display, chosen by what it reports rather than by index.
+	// The plane that can drive that display. currentDisplay alone is only the plane's present
+	// attachment, not its supported-display list; ask the driver when the entry point exists and
+	// keep the old one-display fallback for the nonconformant Orbis driver case. Needs proper testing.
 	u32 chosen_plane = UINT32_MAX;
 	for (u32 index = 0; index < plane_count; index++)
 	{
-		if (planes[index].currentDisplay == VK_NULL_HANDLE || planes[index].currentDisplay == chosen_display)
+		if (planes[index].currentDisplay != VK_NULL_HANDLE && planes[index].currentDisplay != chosen_display)
+			continue;
+		if (!vkGetDisplayPlaneSupportedDisplaysKHR)
+		{
+			chosen_plane = index;
+			break;
+		}
+		u32 supported_count = 0;
+		if (vkGetDisplayPlaneSupportedDisplaysKHR(physical_device, index, &supported_count, nullptr) != VK_SUCCESS ||
+			supported_count == 0)
+			continue;
+		std::vector<VkDisplayKHR> supported(supported_count);
+		if (vkGetDisplayPlaneSupportedDisplaysKHR(physical_device, index, &supported_count, supported.data()) != VK_SUCCESS)
+			continue;
+		if (std::find(supported.begin(), supported.end(), chosen_display) != supported.end())
 		{
 			chosen_plane = index;
 			break;

@@ -1370,20 +1370,6 @@ extern "C" void orbis_stage(const char* stage)
 #endif
 }
 
-static u8 g_worker_stack[16 * 1024 * 1024];
-static void* worker_main(void*)
-{
-    printf("[boot] Execute begin\n");
-    fflush(stdout);
-    ps5::debug::set_line(2, "Execute begin");
-    ps5::debug::set_line(3, "booting...");
-    VMManager::Execute();
-    printf("[boot] Execute returned\n");
-    fflush(stdout);
-    ps5::debug::set_line(2, "Execute returned");
-    return nullptr;
-}
-
 static MemorySettingsInterface s_base_si;
 static MemorySettingsInterface s_game_si;
 static MemorySettingsInterface s_input_si;

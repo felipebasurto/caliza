@@ -340,10 +340,7 @@ void memLoadingState::FreezeMem( void* data, int size )
 	std::memcpy(data, src, size);
 }
 
-static const char* EntryFilename_StateVersion = "PCSX2 Savestate Version.id";
-static const char* EntryFilename_Screenshot = "Screenshot.png";
 static const char* EntryFilename_InternalStructures = "PCSX2 Internal Structures.dat";
-static constexpr u32 STATE_PCSX2_VERSION_SIZE = 32;
 
 struct SysState_Component
 {
@@ -796,6 +793,9 @@ std::unique_ptr<SaveStateScreenshotData> SaveState_SaveScreenshot()
 }
 
 #if 0 // eerec-282: zip + png archive layer
+static const char* EntryFilename_StateVersion = "PCSX2 Savestate Version.id";
+static const char* EntryFilename_Screenshot = "Screenshot.png";
+static constexpr u32 STATE_PCSX2_VERSION_SIZE = 32;
 static bool SaveState_CompressScreenshot(SaveStateScreenshotData* data, zip_t* zf)
 {
 	zip_error_t ze = {};

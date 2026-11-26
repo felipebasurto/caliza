@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validated at commit `12ec337`.
+Last updated: 2026-11-26 after the WSI plane/dead-code cleanup; binary artifact validated at the WSI-plane/dead-code checkpoint.
 
 ## Current repository state
 
@@ -101,7 +101,7 @@ Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validat
 | P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second, host-side input dedup caches invalidate when PCSX2 recreates/resets pad objects |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
 | P1-KBM | USB keyboard/mouse risk posture | improved, console-unverified | off by default; `/data/PCSX2/flags/usbkbm` opts in; disconnect/read-failure release logic added |
-| P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry |
+| P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry; display planes now use supported-display evidence when the driver exposes it |
 | P1-AUDIO | Audio starvation/error telemetry | implemented, console-unverified | initial fill no longer counted as underrun; output errors back off instead of spinning |
 | P1-COVERS | Cover downloads | implemented, console-unverified | cover fetches now use the existing mbedTLS HTTPS client instead of PS5-only `sceHttp2*`; HTTP/SSL system-library dependencies removed |
 | P1-CRASH | Crash/hang diagnostics | implemented, console-unverified | guest EE/IOP PCs/cycles/instruction words and JIT range evidence emitted through async-signal-safe fixed-buffer writes |
@@ -110,11 +110,11 @@ Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validat
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at commit `12ec337` (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
+Built in the Linux x86_64 OpenOrbis container at the current WSI-plane/dead-code state (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,110,424 bytes**, SHA-256 `b2216fdc373824db5a4e5116793e18bca26f771441e801e852c1c750314734dd`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `8c96edfe3f595cc0eee9488efe3e3443ead2945a5b9799044e0d037768eadd0a`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `74fb85bb91ccc8a7a5b4793fb7f869c176c8803bef512c7e05d6a226f7792a82`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,128,880 bytes**, SHA-256 `1006d4da70468f78243b72fb8f55b8263fed4f035f9f59a9054205695d2d4f26` (`size`: text 38,924,575, data 929,888, bss 99,733,824 after removing the dead 16 MiB worker stack).
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `89929bd01164ab96076347751f99388ac3cfbbeb8902358d27ba507711b1b2cb`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `64e157677835df7c0e36f87d169033774edad8572e9148d6af7b2c9a8034182f`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -126,11 +126,11 @@ Built in the Linux x86_64 OpenOrbis container at commit `12ec337` (includes stor
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate72-warning-fixes.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate74-wsi-plane.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current warning-fix package is `candidate72` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current WSI-plane package is `candidate74` evidence |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
