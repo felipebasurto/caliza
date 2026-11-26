@@ -53,7 +53,17 @@ public:
     if (m_handle >= 0)
       sceAudioOutClose(m_handle);
   }
-  void SetPaused(bool paused) override { m_paused = paused; }
+  void SetPaused(bool paused) override
+  {
+    m_paused = paused;
+    m_pause_requested.store(paused, std::memory_order_release);
+    if (!paused)
+      return;
+    // cubeb_stream_stop() waits for the callback before AudioStream reallocates its ring buffer.
+    // Readers publish themselves before checking the request, so a zero count is a real quiescent point.
+    while (m_in_read.load(std::memory_order_acquire) != 0)
+      usleep(100);
+  }
 
   bool Open(bool stretch_enabled, Error* error)
   {
@@ -86,7 +96,7 @@ private:
     bool refill_completed = false;
     while (!m_quit.load(std::memory_order_relaxed))
     {
-      if (m_paused)
+      if (m_pause_requested.load(std::memory_order_acquire))
       {
         std::memset(buf, 0, sizeof(buf));
       }
@@ -94,12 +104,17 @@ private:
       {
         // Count each transition into PCSX2's underrun-refill state, not every silent grain while it refills:
         // startup is intentionally filling and is not an emulation starvation event. Needs proper testing.
-        const bool was_filling = m_filling;
-        ReadFrames(buf, GRAIN);
-        if (!m_filling)
-          refill_completed = true;
-        else if (!was_filling && refill_completed)
-          s_audio_underruns.fetch_add(1, std::memory_order_relaxed);
+        m_in_read.fetch_add(1, std::memory_order_acq_rel);
+        if (!m_pause_requested.load(std::memory_order_acquire))
+        {
+          const bool was_filling = m_filling;
+          ReadFrames(buf, GRAIN);
+          if (!m_filling)
+            refill_completed = true;
+          else if (!was_filling && refill_completed)
+            s_audio_underruns.fetch_add(1, std::memory_order_relaxed);
+        }
+        m_in_read.fetch_sub(1, std::memory_order_acq_rel);
       }
       s_audio_grains.fetch_add(1, std::memory_order_relaxed);
       const int out_rc = sceAudioOutOutput(m_handle, buf); // blocks until the previous grain has been consumed
@@ -119,6 +134,8 @@ private:
   }
   int m_handle = -1;
   std::atomic<bool> m_quit{false};
+  std::atomic<bool> m_pause_requested{false};
+  std::atomic<int> m_in_read{0};
   std::thread m_thread;
 };
 } // namespace
