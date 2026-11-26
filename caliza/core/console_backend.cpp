@@ -597,7 +597,8 @@ private:
 	{
 		if (command.path.empty())
 			return Failure("a folder path is required");
-		std::vector<std::string> folders = settings::SplitFolderList(GlobalFolderList());
+		const std::vector<std::string> original_folders = settings::SplitFolderList(GlobalFolderList());
+		std::vector<std::string> folders = original_folders;
 		const std::string normalized = settings::SplitFolderList(command.path).empty() ? command.path : settings::SplitFolderList(command.path).front();
 		if (std::find(folders.begin(), folders.end(), normalized) == folders.end())
 			folders.push_back(normalized);
@@ -608,7 +609,21 @@ private:
 		const bool linked = std::any_of(snapshot.sources.begin(), snapshot.sources.end(), [&](const LibrarySource& source) {
 			return source.user_added && source.path == normalized;
 		});
-		return linked ? saved : Failure("Folder saved, but Caliza could not add it to the library: " + normalized);
+		if (linked)
+			return saved;
+
+		std::string projection_error;
+		{
+			std::lock_guard<std::mutex> projection_lock(m_projection_mutex);
+			projection_error = m_folder_projection_error;
+		}
+		if (projection_error.empty())
+			projection_error = "the folder is not on a readable discovered volume";
+		const Execution rollback = WriteFolderList(original_folders, "library folder list restored");
+		std::string message = "Caliza could not add " + normalized + " to the library: " + projection_error;
+		if (!rollback.succeeded)
+			message += "; restoring Caliza/GameFolders also failed: " + rollback.message;
+		return Failure(message);
 	}
 
 	std::string SourcePathForId(const std::string& id) const

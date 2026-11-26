@@ -224,6 +224,24 @@ BackendOptions HostBackendOptions(const std::string& data, const std::string& us
 	return options;
 }
 
+void TestInternalRootRejectedAsScanSource()
+{
+	TempDir temp;
+	const std::string data = temp.path + "/data";
+	std::string error;
+	CHECK_TRUE(storage::fs::MakeDirs(data + "/games", &error));
+	VolumeInfo internal = MakeVolume(data, VolumeKind::Internal, -1, "", storage::VolumeFingerprint(data));
+	storage::SavedSourceStore store(temp.path + "/data/library/internal-sources.ini");
+	CHECK_TRUE(store.Load(&error));
+
+	const storage::AddSavedSourceResult root = store.Add(data, internal, "data root");
+	CHECK_EQ(static_cast<int>(root.status), static_cast<int>(storage::AddSavedSourceStatus::InvalidPath));
+	CHECK_TRUE(root.message.find("data root") != std::string::npos);
+
+	const storage::AddSavedSourceResult child = store.Add(data + "/games", internal, "internal games");
+	CHECK_EQ(static_cast<int>(child.status), static_cast<int>(storage::AddSavedSourceStatus::Added));
+}
+
 void TestRealScanCancellationAndDisconnect()
 {
 	TempDir temp;
@@ -339,6 +357,7 @@ int main()
 {
 	TestDiscoveryAndBrowse();
 	TestSavedSourceStore();
+	TestInternalRootRejectedAsScanSource();
 	TestRealScanCancellationAndDisconnect();
 	TestBackendSavedSourceRestartPersistence();
 	if (Failures() == 0)

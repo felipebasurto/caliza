@@ -339,6 +339,11 @@ bool ValidateSourcePath(const std::string& path, const VolumeInfo& volume, std::
 		*message = "the folder is not inside the selected volume";
 		return false;
 	}
+	if (volume.kind == VolumeKind::Internal && fs::NormalizePath(path) == fs::NormalizePath(volume.root_path))
+	{
+		*message = "the Caliza data root cannot be a scan source; choose a folder inside it or on removable storage";
+		return false;
+	}
 	if (fs::IsSymlink(path))
 	{
 		*message = "symlinked folders are not saved as scan sources";

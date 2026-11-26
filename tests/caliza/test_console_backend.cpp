@@ -4,6 +4,7 @@
 #include "test_contract_common.h"
 #include "../../caliza/core/console_backend.h"
 
+#include <algorithm>
 #include <set>
 
 using namespace caliza;
@@ -197,6 +198,26 @@ void TestLibraryFolderCommandUsesSettingsOwner()
 	CHECK_TRUE(written.find(folder) != std::string::npos);
 }
 
+void TestLibraryFolderRejectsDataRootAndRestoresSettings()
+{
+	TempDir root;
+	const std::string existing = root.path + "/games/Existing";
+	MakeMinimalIso(existing + "/Existing Game (USA).iso");
+	CHECK_TRUE(WriteFile(root.path + "/settings/gs.ini", "Caliza/GameFolders=" + existing + "\n"));
+	ConsoleBackend backend(TestOptions(root));
+	EventLog log;
+
+	const CommandEvent rejected = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::AddLibraryFolder, {}, root.path, "Data root")));
+	CHECK_EQ(static_cast<int>(rejected.status), static_cast<int>(CommandStatus::Failed));
+	CHECK_TRUE(rejected.message.find("data root") != std::string::npos);
+	const std::string written = ReadFile(root.path + "/settings/gs.ini");
+	CHECK_EQ(written, "Caliza/GameFolders=" + existing + "\n");
+	const Snapshot snapshot = backend.GetSnapshot();
+	CHECK_FALSE(std::any_of(snapshot.sources.begin(), snapshot.sources.end(), [&](const LibrarySource& source) {
+		return source.user_added && source.path == root.path;
+	}));
+}
+
 void TestExternalPs2FolderDiscoveredAfterStartup()
 {
 	TempDir root, drive;
@@ -376,6 +397,7 @@ int main()
 	TestCompleteSchemaProjection();
 	TestSerializedSettingsAndAccessibilityMutation();
 	TestLibraryFolderCommandUsesSettingsOwner();
+	TestLibraryFolderRejectsDataRootAndRestoresSettings();
 	TestExternalPs2FolderDiscoveredAfterStartup();
 	TestLaunchHandoffAndRuntimeHonesty();
 	TestProductionServiceCommandHooks();

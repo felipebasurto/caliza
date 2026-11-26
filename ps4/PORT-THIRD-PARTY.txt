@@ -14,7 +14,8 @@ In-repository components:
 
 External build components:
 - Crema/CEMUPS4 PS4 runtime: Mozilla Public License 2.0,
-  https://github.com/iHaiDeeZ/Crema
+  https://github.com/iHaiDeeZ/Crema (ps4/ps4_crashlog_safe.cpp is a modified copy
+  of its crash diagnostics runtime)
 - Mesa RADV PS4/GNM port: MIT License, part of the Crema/PS4 kit work
 - glslang: BSD-3-Clause, https://github.com/KhronosGroup/glslang
 - zlib: zlib License, https://zlib.net/

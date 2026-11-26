@@ -12,6 +12,18 @@ endif ()
 set(PS4_PORT_DIR "$ENV{HOME}/cemups4" CACHE PATH "CEMUPS4 checkout (toolchain/ and port/)")
 include(${PS4_PORT_DIR}/toolchain/ps4-love-style.cmake)
 
+# Use Caliza's bounded copy of the crashlog runtime. CEMUPS4's ps4_crashlog.cpp scans 400 words of
+# stack from every open(); shallow worker threads do not have that much stack above them, so the
+# diagnostic itself can cross the guard page. The copy keeps the direct caller without scanning.
+set(_caliza_runtime_sources)
+foreach (_runtime_source IN LISTS PS4_RUNTIME_SOURCES)
+    if (NOT _runtime_source MATCHES "/ps4_crashlog\\.cpp$")
+        list(APPEND _caliza_runtime_sources "${_runtime_source}")
+    endif ()
+endforeach ()
+list(APPEND _caliza_runtime_sources "${CMAKE_CURRENT_SOURCE_DIR}/../ps4_crashlog_safe.cpp")
+set(PS4_RUNTIME_SOURCES "${_caliza_runtime_sources}")
+
 set(PCSX2_OBJECTS_FILE "" CACHE FILEPATH "objects.txt written by Makefile.ps4")
 if (NOT EXISTS "${PCSX2_OBJECTS_FILE}")
     message(FATAL_ERROR "PCSX2_OBJECTS_FILE: run make -f Makefile.ps4 objects.txt first")
