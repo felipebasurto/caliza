@@ -565,13 +565,17 @@ bool Pad::HasConnectedPad(u8 unifiedSlot)
 
 PadBase* Pad::GetPad(u8 port, u8 slot)
 {
-	const u8 unifiedSlot = sioConvertPortAndSlotToPad(port, slot);
+	const u32 unifiedSlot = sioConvertPortAndSlotToPad(port, slot);
+	if (unifiedSlot >= NUM_CONTROLLER_PORTS)
+		return nullptr;
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	return s_controllers[unifiedSlot].get();
 }
 
 PadBase* Pad::GetPad(const u8 unifiedSlot)
 {
+	if (unifiedSlot >= NUM_CONTROLLER_PORTS)
+		return nullptr;
 	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	return s_controllers[unifiedSlot].get();
 }
