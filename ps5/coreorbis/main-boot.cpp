@@ -536,6 +536,28 @@ int sceUserServiceGetForegroundUser(int32_t *userId);
 int sceUserServiceGetLoginUserIdList(int32_t *userIds);
 }
 
+// The first controller's user, and the user excluded from the extra-controller list. As in
+// ProsperoKbdMouse, some Orbis user-service states expose the foreground user even when the
+// initial-user query fails (or answers no user); use it rather than losing player 1. rc_out is
+// the initial query's result, or zero when the foreground fallback supplied a usable user.
+static int32_t orbis_initial_or_foreground_user(int *rc_out = nullptr)
+{
+  int32_t user = -1;
+  int rc = sceUserServiceGetInitialUser(&user);
+  if (rc != 0 || user < 0)
+  {
+    int32_t foreground = -1;
+    if (sceUserServiceGetForegroundUser(&foreground) == 0 && foreground >= 0)
+    {
+      user = foreground;
+      rc = 0;
+    }
+  }
+  if (rc_out)
+    *rc_out = rc;
+  return user >= 0 ? user : -1;
+}
+
 // ---- Orbis sampling profiler (flag /data/PCSX2/prof): ITIMER_PROF -> SIGPROF on the running thread,
 // histogram of interrupted RIP (PS5 mcontext: rip at ctx+0xe0). Reports every 20 s.
 #include <sys/time.h>
@@ -853,17 +875,9 @@ static void *orbis_pad_thread(void *)
 {
   auto p_read = [](int32_t h, OrbisPadData *d) { return scePadReadState(h, d); };
   void *pad = (void *)&scePadInit, *us = (void *)&sceUserServiceInitialize;
-  int32_t user = -1;
   int rc_ui = sceUserServiceInitialize(nullptr);
-  int rc_uu = sceUserServiceGetInitialUser(&user);
-  if (rc_uu != 0)
-  {
-    // Some Orbis user-service states expose the foreground user even when the initial-user
-    // query fails. Match the keyboard/mouse path rather than losing player 1 permanently.
-    const int rc_fg = sceUserServiceGetForegroundUser(&user);
-    if (rc_fg == 0)
-      rc_uu = 0;
-  }
+  int rc_uu = 0;
+  const int32_t user = orbis_initial_or_foreground_user(&rc_uu);
   int rc_pi = scePadInit();
   int handle = user >= 0 ? scePadOpen(user, 0, 0, nullptr) : -999;
   if (handle < 0 && user >= 0)
@@ -3700,9 +3714,8 @@ int main()
   printf("[boot] PS2 network adapter %s\n", orbis_flag("nonetwork") ? "off (flag nonetwork)" : "on by default (sockets, DHCP)");
   {
     // vk-285-109: player 2 (see g_orbis_second_user).
-    int32_t first = -1;
     (void)sceUserServiceInitialize(nullptr);
-    (void)sceUserServiceGetInitialUser(&first);
+    const int32_t first = orbis_initial_or_foreground_user();
     g_orbis_second_user = orbis_find_second_user(first);
     // vk-285-118 (AI-assisted): PS5SX2/Multitap from gs.ini and the game's file (a copy: the base keeps them out, as the
     // live reload expects), or PCSX2's own Pad/MultitapPort1 or MultitapPort2 there. Pad types and the multitap go into
