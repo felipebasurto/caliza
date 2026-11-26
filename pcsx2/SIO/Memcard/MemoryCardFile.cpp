@@ -29,6 +29,9 @@
 
 #include <atomic>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <limits.h>
 #include "OrbisPaths.h" // vk-285-33 (the port's include-orbis)
 
 static constexpr int MCD_SIZE = 1024 * 8 * 16; // Legacy PSX card default size
@@ -142,6 +145,21 @@ static bool ConvertNoECCtoRAW(const char* file_in, const char* file_out)
 	return true;
 }
 
+#ifndef _WIN32
+static void SyncCardParentDirectoryBestEffort(const std::string& path)
+{
+	std::string parent(Path::GetDirectory(path));
+	if (parent.empty())
+		parent = ".";
+	const int fd = open(parent.c_str(), O_RDONLY);
+	if (fd >= 0)
+	{
+		(void)fsync(fd);
+		close(fd);
+	}
+}
+#endif
+
 static bool ConvertRAWtoNoECC(const char* file_in, const char* file_out)
 {
 	auto fin = FileSystem::OpenManagedCFile(file_in, "rb");
@@ -150,7 +168,18 @@ static bool ConvertRAWtoNoECC(const char* file_in, const char* file_out)
 
 	// Never truncate the live card image before the conversion is complete. Write a
 	// sibling temporary and replace the original only after all data reaches storage.
-	const std::string temp_output = std::string(file_out) + ".pcsx2tmp";
+	// When the card path is a symlink, replace the resolved target instead: renaming over
+	// the link would destroy the redirect, and a target on another mount (USB) would make
+	// the cross-device rename fail outright. needs proper testing.
+	std::string target(file_out);
+#ifndef _WIN32
+	char resolved[PATH_MAX];
+	if (realpath(file_out, resolved))
+		target = resolved;
+#endif
+	struct stat st = {};
+	const bool have_mode = stat(target.c_str(), &st) == 0;
+	const std::string temp_output = target + ".pcsx2tmp";
 	bool ok = false;
 	{
 		auto fout = FileSystem::OpenManagedCFile(temp_output.c_str(), "wb");
@@ -169,14 +198,22 @@ static bool ConvertRAWtoNoECC(const char* file_in, const char* file_out)
 			     std::fread(checksum, sizeof(checksum), 1, fin.get()) == 1;
 		}
 
+#ifndef _WIN32
+		// Preserve the original file's permission bits across the atomic replacement.
+		if (ok && have_mode)
+			(void)fchmod(fileno(fout.get()), st.st_mode & 07777);
+#endif
 		ok = ok && std::fflush(fout.get()) == 0 && fsync(fileno(fout.get())) == 0;
 	}
 
-	if (!ok || !FileSystem::RenamePath(temp_output.c_str(), file_out))
+	if (!ok || !FileSystem::RenamePath(temp_output.c_str(), target.c_str()))
 	{
 		FileSystem::DeleteFilePath(temp_output.c_str());
 		return false;
 	}
+#ifndef _WIN32
+	SyncCardParentDirectoryBestEffort(target);
+#endif
 	return true;
 }
 
