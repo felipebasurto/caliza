@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `587d2f8`.
+Last updated: 2026-11-26 after commit `ae30f34`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **41 local commits** on top of the baseline.
+- Current candidate: **43 local commits** on top of the baseline.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -55,6 +55,8 @@ Last updated: 2026-11-26 after commit `587d2f8`.
 39. `6c5b260` — report early memory reset failure accurately.
 40. `60c3a75` — add read-only console log collection helper.
 41. `587d2f8` — bound network-share boot checks with parallelism.
+42. `194568a` — record parallel-netfs and libc interposition evidence.
+43. `ae30f34` — persist VM boot stages in boot trace.
 
 ## Completed work
 
@@ -79,11 +81,11 @@ Last updated: 2026-11-26 after commit `587d2f8`.
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container after commit `587d2f8`:
+Built in the Linux x86_64 OpenOrbis container after commit `ae30f34`:
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,956,944 bytes**, SHA-256 `e7191ac866b297744336332746e160c4fea4d3dc160407f5dda3ee092d884201`.
-- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: **41,004,240 bytes**, SHA-256 `cdd44431a6355925e32e841fab6070772f8944b153fc8af7281d2528e1a8b1ec`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `1d463adfb0f753fad957a5f37f3111fab2be32b9820699d6e51ee0b328eb1857`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,974,720 bytes**, SHA-256 `77764032caff372e8fff28284106e9a0871fc40b1e7e06cc391e74b525f9bbec`.
+- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: **41,020,656 bytes**, SHA-256 `34080e800fa7a34bd5a867fcf5db215568ce3da57f7655d3b9099637b5d4da2a`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `56f6b7885ebcec93253d40420f9dec848c65107d3514dd90ac1444a8de8b7665`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -95,10 +97,10 @@ Built in the Linux x86_64 OpenOrbis container after commit `587d2f8`:
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate35-netfs-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate36-boottrace.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Host tests | PASS | `ps4/logs/host-tests-netfs-final.log` |
+| Host tests | PASS | `ps4/logs/host-tests-boottrace.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
