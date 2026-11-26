@@ -31,16 +31,20 @@ struct config_mdec Config;
 static constexpr size_t MDEC_BUFFER_WORDS = 0x100000;
 static u32* mdecArr2 = nullptr;
 static u32* mdecMem = nullptr;
+static bool s_mdec_allocation_failed = false;
 
 static bool mdecEnsureBacking()
 {
 	if (mdecArr2 && mdecMem)
 		return true;
+	if (s_mdec_allocation_failed)
+		return false;
 
 	u32* arr2 = static_cast<u32*>(std::calloc(MDEC_BUFFER_WORDS, sizeof(u32)));
 	u32* mem = static_cast<u32*>(std::calloc(MDEC_BUFFER_WORDS, sizeof(u32)));
 	if (!arr2 || !mem)
 	{
+		s_mdec_allocation_failed = true;
 		std::free(arr2);
 		std::free(mem);
 		static bool reported = false;
@@ -198,7 +202,7 @@ void idct(int* block, int k)
 
 void mdecInit(void)
 {
-
+	s_mdec_allocation_failed = false; // retry once per VM/IOP reset, but do not allocator-spin during one FMV
 	Config.Mdec = 0; //XXXXXXXXXXXXXXXXX  0 or 1 // 1 is black and white decoding
 
 	mdec.rl = mdecMem ? (u16*)PSXM(0) : nullptr;
