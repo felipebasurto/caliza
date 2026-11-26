@@ -59,6 +59,7 @@ extern bool SaveState_ZipToDisk(
 	const char* filename, Error* error);
 extern bool SaveState_ReadScreenshot(const std::string& filename, u32* out_width, u32* out_height, std::vector<u32>* out_pixels);
 extern bool SaveState_UnzipFromDisk(const std::string& filename, Error* error);
+extern bool SaveState_WriteStreamingToDisk(const char* filename, bool backup_old_state, Error* error);
 
 // --------------------------------------------------------------------------------------
 //  SaveStateBase class

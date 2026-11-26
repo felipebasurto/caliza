@@ -44,6 +44,7 @@
 #include <csetjmp>
 // eerec-282: no libpng/libzip on Orbis: states are flat files without a screenshot (see below).
 #include <cstdio>
+#include <cstring>
 extern "C" zip_file_t* orbis_zip_mem_fopen(const void* data, zip_uint64_t size);
 extern "C" zip_file_t* orbis_zip_file_fopen(std::FILE* fp, zip_uint64_t size);
 
@@ -472,6 +473,13 @@ public:
 	virtual bool FreezeIn(zip_file_t* zf) const = 0;
 	virtual bool FreezeOut(SaveStateBase& writer) const = 0;
 	virtual bool IsRequired() const = 0;
+	// Orbis streaming saves can write contiguous memory entries without a second copy.
+	virtual bool GetDirectData(const u8*& data, u32& size) const
+	{
+		(void)data;
+		(void)size;
+		return false;
+	}
 };
 
 class MemorySavestateEntry : public BaseSavestateEntry
@@ -484,6 +492,12 @@ public:
 	virtual bool FreezeIn(zip_file_t* zf) const;
 	virtual bool FreezeOut(SaveStateBase& writer) const;
 	virtual bool IsRequired() const { return true; }
+	bool GetDirectData(const u8*& data, u32& size) const override
+	{
+		data = GetDataPtr();
+		size = GetDataSize();
+		return data != nullptr && size != 0;
+	}
 
 protected:
 	virtual u8* GetDataPtr() const = 0;
@@ -1081,6 +1095,109 @@ bool SaveState_ZipToDisk(
 		return false;
 	}
 	std::printf("[state] wrote %s: %u entries, %llu bytes\n", filename, count, static_cast<unsigned long long>(total));
+	std::fflush(stdout);
+	return true;
+}
+
+// Orbis synchronous save path: serialize and write one entry at a time. The file layout is byte-for-byte
+// the OPS2STAT layout written by SaveState_ZipToDisk, but contiguous memory entries stream directly and
+// component state reuses one small buffer instead of duplicating the whole state in flexible memory.
+bool SaveState_WriteStreamingToDisk(const char* filename, bool backup_old_state, Error* error)
+{
+	const std::string tmp = std::string(filename) + ".tmp";
+	std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(tmp.c_str(), "wb"), &std::fclose);
+	if (!fp)
+	{
+		Error::SetStringFmt(error, "Failed to open '{}' for writing.", tmp);
+		return false;
+	}
+	const auto put = [&fp](const void* p, size_t n) { return n == 0 || std::fwrite(p, 1, n, fp.get()) == n; };
+	const u32 version = g_SaveVersion;
+	u32 count = 0;
+	u64 total = 0;
+	bool ok = put(ORBIS_STATE_MAGIC, sizeof(ORBIS_STATE_MAGIC)) && put(&version, sizeof(version)) && put(&count, sizeof(count));
+
+	SaveStateBase::VmStateBuffer buffer;
+	const auto write_entry = [&](const char* name, const u8* data, u64 size) {
+		if (!ok || size == 0)
+			return ok;
+		const u32 name_len = static_cast<u32>(std::strlen(name));
+		ok = put(&name_len, sizeof(name_len)) && put(name, name_len) && put(&size, sizeof(size)) && put(data, static_cast<size_t>(size));
+		if (ok)
+		{
+			count++;
+			total += size;
+		}
+		return ok;
+	};
+	const auto serialize_entry = [&](const BaseSavestateEntry& entry) -> bool {
+		buffer.clear();
+		memSavingState writer(buffer);
+		if (!entry.FreezeOut(writer))
+		{
+			Error::SetString(error, fmt::format("FreezeOut() failed for {}.", entry.GetFilename()));
+			return false;
+		}
+		return write_entry(entry.GetFilename(), buffer.data(), writer.GetCurrentPos());
+	};
+
+	if (ok)
+	{
+		buffer.clear();
+		memSavingState internals_writer(buffer);
+		if (!internals_writer.FreezeBios())
+		{
+			Error::SetString(error, "FreezeBios() failed");
+			ok = false;
+		}
+		else if (!internals_writer.FreezeInternals(error))
+		{
+			if (!error->IsValid())
+				Error::SetString(error, "FreezeInternals() failed");
+			ok = false;
+		}
+		else
+			ok = write_entry(EntryFilename_InternalStructures, buffer.data(), internals_writer.GetCurrentPos());
+	}
+	for (const std::unique_ptr<BaseSavestateEntry>& entry : SavestateEntries)
+	{
+		if (!ok)
+			break;
+		const u8* direct = nullptr;
+		u32 direct_size = 0;
+		if (entry->GetDirectData(direct, direct_size))
+			ok = write_entry(entry->GetFilename(), direct, direct_size);
+		else
+			ok = serialize_entry(*entry);
+	}
+	// The count lives after magic+version. Rewriting it here avoids serializing every entry once just
+	// to learn which optional entries are empty; the finished bytes are identical to the old format.
+	if (ok && (std::fseek(fp.get(), sizeof(ORBIS_STATE_MAGIC) + sizeof(version), SEEK_SET) != 0 ||
+	           !put(&count, sizeof(count)) || std::fseek(fp.get(), 0, SEEK_END) != 0))
+		ok = false;
+	if (std::fclose(fp.release()) != 0)
+		ok = false;
+	// The temporary file is complete before the live state is touched. This keeps a serialization or
+	// write failure from turning the previous state into only a .backup, and preserves the backup step's
+	// original ordering relative to the final rename.
+	if (ok && backup_old_state && FileSystem::FileExists(filename))
+	{
+		const std::string backup_filename(fmt::format("{}.backup", filename));
+		Console.WriteLn(fmt::format("Creating save state backup {}...", backup_filename));
+		if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
+		{
+			std::remove(tmp.c_str());
+			Error::SetStringFmt(error, "Cannot back up old save state '{}'.", Path::GetFileName(filename));
+			return false;
+		}
+	}
+	if (!ok || std::rename(tmp.c_str(), filename) != 0)
+	{
+		std::remove(tmp.c_str());
+		Error::SetStringFmt(error, "Failed to write save state '{}'.", filename);
+		return false;
+	}
+	std::printf("[state] wrote %s: %u entries, %llu bytes (streaming)\n", filename, count, static_cast<unsigned long long>(total));
 	std::fflush(stdout);
 	return true;
 }

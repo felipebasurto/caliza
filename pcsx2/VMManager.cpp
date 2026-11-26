@@ -1962,6 +1962,44 @@ void VMManager::DoSaveState(const char* filename, s32 slot_for_message, bool zip
 		return;
 	}
 
+	const auto backup_existing = [&]() -> bool {
+		if (!FileSystem::FileExists(filename) || !backup_old_state)
+			return true;
+		const std::string backup_filename(fmt::format("{}.backup", filename));
+		Console.WriteLn(fmt::format("Creating save state backup {}...", backup_filename));
+		if (FileSystem::RenamePath(filename, backup_filename.c_str()))
+			return true;
+		error_callback(fmt::format(
+			TRANSLATE_FS("VMManager", "Cannot back up old save state '{}'."),
+			Path::GetFileName(filename)));
+		return false;
+	};
+
+#ifdef __ORBIS__
+	// Orbis' pad/hotkey flow is synchronous (zip_on_thread=false), so the VM remains paused for the
+	// whole write. Use that guarantee to stream entries instead of materializing a second 40 MiB state
+	// in flexible memory. Threaded saves keep the original snapshot-then-write contract because the VM
+	// may resume before the write finishes. Needs proper testing on the console.
+	if (!zip_on_thread)
+	{
+		Error error;
+		if (!SaveState_WriteStreamingToDisk(filename, backup_old_state, &error))
+		{
+			error_callback(error.GetDescription());
+			return;
+		}
+		if (slot_for_message >= 0 && VMManager::HasValidVM())
+		{
+			Host::AddIconOSDMessage(fmt::format("SaveStateSlot{}", slot_for_message), ICON_FA_FLOPPY_DISK,
+				fmt::format(TRANSLATE_FS("VMManager", "Saved state to slot {}."), slot_for_message),
+				Host::OSD_QUICK_DURATION);
+		}
+		Host::OnSaveStateSaved(filename);
+		MemcardBusy::CheckSaveStateDependency();
+		return;
+	}
+#endif
+
 	Error error;
 	std::unique_ptr<ArchiveEntryList> elist = SaveState_DownloadState(&error);
 	if (!elist)
@@ -1972,18 +2010,8 @@ void VMManager::DoSaveState(const char* filename, s32 slot_for_message, bool zip
 
 	std::unique_ptr<SaveStateScreenshotData> screenshot = SaveState_SaveScreenshot();
 
-	if (FileSystem::FileExists(filename) && backup_old_state)
-	{
-		const std::string backup_filename(fmt::format("{}.backup", filename));
-		Console.WriteLn(fmt::format("Creating save state backup {}...", backup_filename));
-		if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
-		{
-			error_callback(fmt::format(
-				TRANSLATE_FS("VMManager", "Cannot back up old save state '{}'."),
-				Path::GetFileName(filename)));
-			return;
-		}
-	}
+	if (!backup_existing())
+		return;
 
 	if (zip_on_thread)
 	{
