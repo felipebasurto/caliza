@@ -114,6 +114,30 @@ namespace
 		return reader.HasError() && loaded.empty();
 	}
 
+	bool wide_vector_exact_size_remains_valid()
+	{
+		std::vector<u8> bytes;
+		append32(bytes, 1);
+		bytes.resize(4 + sizeof(u32), 0x2a);
+		StateWrapper::ReadOnlyMemoryStream stream(bytes.data(), static_cast<u32>(bytes.size()));
+		StateWrapper reader(&stream, StateWrapper::Mode::Read, 0);
+		std::vector<u32> loaded;
+		reader.Do(&loaded);
+		return reader.IsGood() && loaded.size() == 1;
+	}
+
+	bool malicious_wide_vector_rejected()
+	{
+		std::vector<u8> bytes;
+		append32(bytes, 2);
+		bytes.resize(4 + sizeof(u32), 0x2a);
+		StateWrapper::ReadOnlyMemoryStream stream(bytes.data(), static_cast<u32>(bytes.size()));
+		StateWrapper reader(&stream, StateWrapper::Mode::Read, 0);
+		std::vector<u32> loaded;
+		reader.Do(&loaded);
+		return reader.HasError() && loaded.empty();
+	}
+
 	bool malicious_deque_rejected()
 	{
 		std::vector<u8> bytes;
@@ -134,6 +158,8 @@ int main()
 	expect(malicious_string_rejected(0xffffffffu, 0), "huge string length rejected");
 	expect(vector_roundtrip(), "valid byte vector roundtrip");
 	expect(malicious_vector_rejected(), "huge vector length rejected");
+	expect(wide_vector_exact_size_remains_valid(), "exact-size wide vector remains valid");
+	expect(malicious_wide_vector_rejected(), "wide vector length scaled by element size rejected");
 	expect(malicious_deque_rejected(), "huge deque length rejected");
 
 	if (failures == 0)

@@ -218,7 +218,10 @@ public:
 		Do(&length);
 		if (m_mode == Mode::Read)
 		{
-			if (length > GetRemainingBytes())
+			u32 max_length = GetRemainingBytes();
+			if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>)
+				max_length /= static_cast<u32>(sizeof(T));
+			if (length > max_length)
 			{
 				m_error = true;
 				return;
@@ -235,7 +238,10 @@ public:
 		Do(&length);
 		if (m_mode == Mode::Read)
 		{
-			if (length > GetRemainingBytes())
+			u32 max_length = GetRemainingBytes();
+			if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>)
+				max_length /= static_cast<u32>(sizeof(T));
+			if (length > max_length)
 			{
 				m_error = true;
 				return;
