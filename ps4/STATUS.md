@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after lazy MDEC/CDVD memory integration; binary artifact validated at `06f7b4b`.
+Last updated: 2026-11-26 after lazy Vulkan diagnostic-ring integration; binary artifact validated at `c7034af`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **81 local commits** on top of the baseline after this documentation checkpoint.
+- Current candidate: **84 local commits** on top of the baseline after this documentation checkpoint.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -95,6 +95,9 @@ Last updated: 2026-11-26 after lazy MDEC/CDVD memory integration; binary artifac
 79. `f2b9493` — collect canonical and rotated console logs.
 80. `38460cc` — separate rotated logs from current analysis input.
 81. `06f7b4b` — allocate large MDEC and CDVD backing lazily.
+82. `06cd4e8` — record lazy memory artifact and migration audit.
+83. `564a940` — detect lazy backing failures in log analysis.
+84. `c7034af` — allocate big Vulkan diagnostic ring lazily.
 
 ## Completed work
 
@@ -125,11 +128,11 @@ Last updated: 2026-11-26 after lazy MDEC/CDVD memory integration; binary artifac
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at `06f7b4b` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, and lazy MDEC/CDVD backing):
+Built in the Linux x86_64 OpenOrbis container at `c7034af` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, and lazy MDEC/CDVD backing):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,144,560 bytes**, SHA-256 `b11f14a5a8473d837b7b9e16ac0c6ece695ced7f3e017661cc6b12b6298ae4c4` (`size`: bss **56,827,200**, down another **18,023,424 bytes** from the memory-card-review artifact).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `dba24db57732e95ddf64d445782d18d7609d815794635d57dc10490ae55d426e`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `8935f2bd37835d17f299bd15f127ce16231264ee6364411caeb32ebc0759c628`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,145,536 bytes**, SHA-256 `50bb11bbff9f094b5ef99f02ff272eebef37398d3c63a783a6956723feac9f06` (`size`: bss **54,795,584**, down another **20,055,040 bytes** from the memory-card-review artifact).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `2992c849896c4d10b1786c1749e634fab76ef0aa587b0105da4f10ac474f8cad`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `6ed5ca19d51819be1d7ca6696727abe84bede368bc35307b104b9bad77f36807`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -141,11 +144,11 @@ Built in the Linux x86_64 OpenOrbis container at `06f7b4b` (includes storage dur
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-memory-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-vkring-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current memory-card-review package is `candidate77` evidence |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -165,7 +168,7 @@ Built in the Linux x86_64 OpenOrbis container at `06f7b4b` (includes storage dur
 | P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 shares mount through CEMUPS4 `/net/shareN`; per-share boot checks now run concurrently (maximum four workers) with deterministic result logging; failed shares stay registered for explicit retry but are excluded from automatic scans; query options/ports unsupported; SMB remains deliberately unexposed |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
-| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured; host-measured static memory footprint reduced by 42,906,624 bytes of BSS through dead worker-stack removal, lazy legacy-overlay allocation, lazy MDEC backing, and lazy CDVD sector-cache backing |
+| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured; host-measured static memory footprint reduced by 44,938,240 bytes of BSS through dead worker-stack removal, lazy legacy-overlay allocation, lazy MDEC backing, lazy CDVD sector-cache backing, and lazy big Vulkan diagnostic-ring allocation |
 
 ## Console smoke-test priority
 
