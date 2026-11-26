@@ -475,7 +475,7 @@ protected:
 
 	// adds a file to the quick-access dictionary, so it can be accessed more efficiently (ie, without searching through the entire file system) later
 	// returns the MemoryCardFileMetadataReference of the first file cluster, or nullptr if the file is zero-length
-	MemoryCardFileMetadataReference* AddFileEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent);
+	MemoryCardFileMetadataReference* AddFileEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent, bool useTraversalMarks = false);
 
 	// creates a reference to a directory entry, so it can be passed as parent to other files/directories
 	MemoryCardFileMetadataReference* AddDirEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent);

@@ -749,7 +749,7 @@ MemoryCardFileMetadataReference* FolderMemoryCard::AddDirEntryToMetadataQuickAcc
 	return ref;
 }
 
-MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent)
+MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent, bool useTraversalMarks)
 {
 	const u32 firstFileCluster = entry->entry.data.cluster;
 
@@ -763,14 +763,25 @@ MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAc
 
 	// FAT contents can be influenced by guest writes. Never index the fixed FAT
 	// backing with an unchecked link, and bound cyclic chains even though valid
-	// file chains terminate at LastDataCluster. Needs proper testing.
+	// file chains terminate at LastDataCluster. During the flush rebuild, share
+	// the directory traversal marks as well so many malformed files cannot each
+	// re-expand the same cyclic/shared chain. Needs proper testing.
 	u32 clusterNumber = 0;
+	bool addedFirstCluster = false;
 	while (clusterNumber < MaxImplementedFatClusters)
 	{
+		if (useTraversalMarks)
+		{
+			if (m_directoryTraversalMarks.test(clusterIndex))
+				break;
+			m_directoryTraversalMarks.set(clusterIndex);
+		}
+
 		MemoryCardFileMetadataReference* ref = &m_fileMetadataQuickAccess[clusterIndex];
 		ref->parent = parent;
 		ref->entry = entry;
 		ref->consecutiveCluster = clusterNumber;
+		addedFirstCluster = addedFirstCluster || clusterNumber == 0;
 		++clusterNumber;
 
 		const u32 nextCluster = m_fat.data[0][0][clusterIndex];
@@ -782,7 +793,7 @@ MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAc
 			break;
 	}
 
-	return &m_fileMetadataQuickAccess[firstFileCluster & NextDataClusterMask];
+	return addedFirstCluster ? &m_fileMetadataQuickAccess[firstFileCluster & NextDataClusterMask] : nullptr;
 }
 
 s32 FolderMemoryCard::IsPresent() const
@@ -1483,7 +1494,7 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 				}
 				else if (entry->IsFile())
 				{
-					AddFileEntryToMetadataQuickAccess(entry, parent);
+					AddFileEntryToMetadataQuickAccess(entry, parent, true);
 
 					if (entry->entry.data.length == 0)
 					{
