@@ -132,6 +132,14 @@ int InputIsoFile::FinishRead3(u8* dst, uint mode)
 
 	switch (mode)
 	{
+		case CDVD_MODE_2368:
+			// The transfer buffer/API currently carries the 2352-byte main channel only. Treat
+			// mode 2368 as that main channel here; without a case the length calculation below can
+			// go negative for 2048-byte ISO images. The 16-byte suffix remains a documented gap.
+			// needs proper testing with CDDA images and CDDA-capable software.
+			_offset = 0;
+			length = 2352;
+			break;
 		case CDVD_MODE_2352:
 			_offset = 0;
 			length = 2352;

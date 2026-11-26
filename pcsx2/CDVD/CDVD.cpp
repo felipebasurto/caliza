@@ -1269,7 +1269,13 @@ int cdvdReadSector()
 	}
 	else
 	{
-		memcpy(mdest, &cdr.Transfer[0], cdvd.BlockSize);
+		// cdr.Transfer is the 2352-byte main-channel buffer. Mode 2368 asks for a
+		// 16-byte suffix that the current image backends do not transport; bound the copy
+		// and zero the suffix rather than reading adjacent cdrStruct state. needs proper testing.
+		const size_t transfer_bytes = std::min<size_t>(static_cast<size_t>(cdvd.BlockSize), sizeof(cdr.Transfer));
+		memcpy(mdest, &cdr.Transfer[0], transfer_bytes);
+		if (static_cast<size_t>(cdvd.BlockSize) > transfer_bytes)
+			std::memset(mdest + transfer_bytes, 0, static_cast<size_t>(cdvd.BlockSize) - transfer_bytes);
 	}
 
 	// decrypt sector's bytes
