@@ -214,10 +214,12 @@ bool SaveStateBase::gifPathFreeze(u32 path)
 		// against the fixed runtime allocation before copying packet bytes;
 		// otherwise a hostile state can overwrite past the GIF buffer and keep
 		// invalid landmines in the post-load queue state. Needs proper testing.
+		const u64 gsPacketEnd = static_cast<u64>(gifPath.gsPack.offset) + gifPath.gsPack.size;
 		const bool validPathState = gifPath.buffSize == realBuffSize && gifPath.buffLimit == realBuffLimit &&
 			gifPath.idx == realPathIndex && gifPath.curSize <= realBuffSize &&
-			gifPath.curOffset <= gifPath.curSize && gifPath.gsPack.size <= gifPath.curOffset &&
-			gifPath.gsPack.offset <= realBuffSize && gifPath.dmaRewind <= realBuffSize - gifPath.curSize &&
+			gifPath.curOffset <= gifPath.curSize && gsPacketEnd == gifPath.curOffset &&
+			(!gifPath.gifTag.isValid || gifPath.gifTag.hasAD) &&
+			gifPath.dmaRewind <= realBuffSize - gifPath.curSize &&
 			gifPath.gifTag.len <= realBuffSize && gifPath.gifTag.nLoop <= 32767 &&
 			gifPath.gifTag.nRegs <= 16 && gifPath.gifTag.nRegIdx <= 16 &&
 			g_orbis_gif_fake.count[path] <= MTGS::RingBufferSize &&

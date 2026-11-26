@@ -471,13 +471,29 @@ bool USB::DoState(StateWrapper& sw)
 		}
 
 		USB::DoPacketState(&s_qemu_ohci->usb_packet, sw, valid_devices);
-		if (s_qemu_ohci->async_td &&
-			(!s_qemu_ohci->usb_packet.ep || !usb_packet_is_inflight(&s_qemu_ohci->usb_packet)))
+		USBPacket& packet = s_qemu_ohci->usb_packet;
+		const bool packetInflight = usb_packet_is_inflight(&packet);
+		bool validAsyncTuple;
+		if (s_qemu_ohci->async_td != 0)
 		{
-			// Cancellation paths trust async_td to describe the one live controller packet.
-			// A hostile or partially-invalid state must not turn it into a queue removal of
-			// a packet that was never linked.
-			s_qemu_ohci->async_td = 0;
+			// async_td is the guest TD address and is also the id passed to usb_packet_setup.
+			// Before completion the host packet must be linked/inflight; after completion it has
+			// been removed from the endpoint queue but async_complete records the pending writeback.
+			validAsyncTuple = packet.ep != nullptr && packet.id == s_qemu_ohci->async_td &&
+				(s_qemu_ohci->async_complete ? !packetInflight : packetInflight);
+		}
+		else
+		{
+			// Without an active TD there is no owner for a queued host packet and no meaningful
+			// pending asynchronous completion. Such a tuple would otherwise let OHCI reuse the
+			// same QTAILQ node or skip a real completion.
+			validAsyncTuple = !s_qemu_ohci->async_complete && !packetInflight;
+		}
+		if (!validAsyncTuple)
+		{
+			Console.Error("USB asynchronous packet state is inconsistent, resetting.");
+			USBreset();
+			return true;
 		}
 		if (sw.HasError())
 		{
