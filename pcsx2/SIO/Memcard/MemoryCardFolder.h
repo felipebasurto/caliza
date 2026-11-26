@@ -201,7 +201,10 @@ public:
 	// Force metadata to be written on next file access, not sure if this is necessary but it can't hurt.
 	void ClearMetadataWriteState();
 
-	// removes characters from a PS2 file name that would be illegal in a Windows file system
+	// Copy a fixed-size memcard name into a NUL-terminated buffer without reading past it.
+	static void CopyMemcardFilename(char* dst, const u8* src);
+
+	// removes characters from a PS2 file name that would be illegal in a host file system
 	// returns true if any changes were made
 	static bool CleanMemcardFilename(char* name);
 

@@ -1473,8 +1473,8 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 				{
 					if (!entry->IsDotDir())
 					{
-						char cleanName[sizeof(entry->entry.data.name)];
-						memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+						char cleanName[sizeof(entry->entry.data.name) + 1];
+						FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 						bool filenameCleaned = FileAccessHelper::CleanMemcardFilename(cleanName);
 						const std::string subDirPath(Path::Combine(dirPath, cleanName));
 
@@ -1571,8 +1571,8 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 						// empty files need to be explicitly created, as there will be no data cluster referencing it later
 						if (m_performFileWrites)
 						{
-							char cleanName[sizeof(entry->entry.data.name)];
-							memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+							char cleanName[sizeof(entry->entry.data.name) + 1];
+							FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 							FileAccessHelper::CleanMemcardFilename(cleanName);
 							const std::string fullDirPath(Path::Combine(m_folderName, dirPath));
 							const std::string fn(Path::Combine(fullDirPath, cleanName));
@@ -1629,8 +1629,8 @@ void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const st
 			if (newEntry == nullptr)
 			{
 				// file/dir doesn't exist anymore, remove!
-				char cleanName[sizeof(entry->entry.data.name)];
-				memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+				char cleanName[sizeof(entry->entry.data.name) + 1];
+				FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 				FileAccessHelper::CleanMemcardFilename(cleanName);
 				const std::string fullDirPath(Path::Combine(m_folderName, dirPath));
 				const std::string filePath(Path::Combine(fullDirPath, cleanName));
@@ -1649,8 +1649,8 @@ void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const st
 			else if (entry->IsDir())
 			{
 				// still exists and is a directory, recursive call for subdir
-				char cleanName[sizeof(entry->entry.data.name)];
-				memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+				char cleanName[sizeof(entry->entry.data.name) + 1];
+				FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 				FileAccessHelper::CleanMemcardFilename(cleanName);
 				const std::string subDirPath(Path::Combine(dirPath, cleanName));
 				FlushDeletedFilesAndRemoveUnchangedDataFromCache(it->subdir, newEntry->entry.data.cluster, newEntry->entry.data.length, subDirPath, directoryDepth + 1);
@@ -1808,15 +1808,18 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 						NoteFileWriteFailure();
 						return false;
 					}
-					const u32 diff = fileOffsetStart - actualFileSize;
-					u8 temp = 0xFF;
-					for (u32 i = 0; i < diff; ++i)
+					u32 remaining = fileOffsetStart - actualFileSize;
+					u8 gap[PageSize];
+					std::memset(gap, 0xFF, sizeof(gap));
+					while (remaining > 0)
 					{
-						if (std::fwrite(&temp, 1, 1, file) != 1)
+						const u32 chunk = std::min<u32>(remaining, sizeof(gap));
+						if (std::fwrite(gap, chunk, 1, file) != 1)
 						{
 							NoteFileWriteFailure();
 							return false;
 						}
+						remaining -= chunk;
 						hostDataWritten = true;
 					}
 				}
@@ -1854,6 +1857,10 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 		return true;
 	}
 
+	// The FAT says this cluster is in use, but rebuild could not associate it with a file
+	// (for example a shared/cyclic chain bounded by traversal marks). Retain dirty data for
+	// retry and report it rather than silently dropping the guest write. needs proper testing.
+	NoteFileWriteFailure();
 	return false;
 }
 
@@ -2393,8 +2400,8 @@ void FileAccessHelper::WriteIndex(const std::string& baseFolderName, MemoryCardF
 		Console.Warning(fmt::format("(FileAccesHelper::WriteIndex()) '{}' has null parent", Path::Combine(baseFolderName, (const char*)entry->entry.data.name)));
 	}
 
-	char cleanName[sizeof(entry->entry.data.name)];
-	memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+	char cleanName[sizeof(entry->entry.data.name) + 1];
+	FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 	FileAccessHelper::CleanMemcardFilename(cleanName);
 
 	const std::string indexFileName(Path::Combine(folderName, "_pcsx2_index"));
@@ -2528,12 +2535,18 @@ void FileAccessHelper::ClearMetadataWriteState()
 	m_lastWrittenFileRef = nullptr;
 }
 
+void FileAccessHelper::CopyMemcardFilename(char* dst, const u8* src)
+{
+	std::memcpy(dst, src, 0x20);
+	dst[0x20] = '\0';
+}
+
 bool FileAccessHelper::CleanMemcardFilename(char* name)
 {
 	// invalid characters for filenames in the PS2 file system: { '/', '?', '*' }
 	// the following characters are valid in a PS2 memcard file system but invalid in Windows
 	// there's less restrictions on Linux but by cleaning them always we keep the folders cross-compatible
-	const char illegalChars[] = {'\\', '%', ':', '|', '"', '<', '>'};
+	const char illegalChars[] = {'/', '\\', '%', ':', '|', '"', '<', '>'};
 	bool cleaned = false;
 
 	const size_t filenameLength = strlen(name);
@@ -2583,8 +2596,8 @@ bool MemoryCardFileMetadataReference::GetPath(std::string* fileName) const
 		parentCleaned = parent->GetPath(fileName);
 	}
 
-	char cleanName[sizeof(entry->entry.data.name)];
-	memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+	char cleanName[sizeof(entry->entry.data.name) + 1];
+	FileAccessHelper::CopyMemcardFilename(cleanName, entry->entry.data.name);
 	bool localCleaned = FileAccessHelper::CleanMemcardFilename(cleanName);
 
 	if (entry->IsDir() || entry->IsFile())
@@ -2602,7 +2615,9 @@ void MemoryCardFileMetadataReference::GetInternalPath(std::string* fileName) con
 		parent->GetInternalPath(fileName);
 	}
 
-	fileName->append((const char*)entry->entry.data.name);
+	char boundedName[sizeof(entry->entry.data.name) + 1];
+	FileAccessHelper::CopyMemcardFilename(boundedName, entry->entry.data.name);
+	fileName->append(boundedName);
 
 	if (entry->IsDir())
 	{
