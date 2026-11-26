@@ -149,7 +149,7 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
             ev.warnings.append("folder memory-card host write failure occurred but a later retry succeeded; inspect storage reliability")
         else:
             ev.failures.append("folder memory-card host write failure evidence present without later recovery; dirty pages were retained but guest saves are at risk")
-    folder_close_failures = sum("FolderMcd:" in line and "failed to close" in line for line in ev.lines)
+    folder_close_failures = sum("FolderMcd:" in line and ("failed to close" in line or "closing slot" in line and "host write failures" in line) for line in ev.lines)
     if folder_close_failures:
         ev.failures.append(f"folder memory-card close failure evidence present in {folder_close_failures} line(s); flushed save data may not have reached storage")
     folder_metadata_failures = sum("FolderMcd: metadata write failed" in line for line in ev.lines)

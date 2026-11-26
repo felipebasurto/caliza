@@ -127,6 +127,12 @@ def main() -> int:
         ok &= expect("folder memory-card close failure is fatal", folderclosefail, (), 1,
                      "folder memory-card close failure evidence")
 
+        foldercloseloss = root / "foldercloseloss.log"
+        foldercloseloss.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                   "FolderMcd: closing slot 0 with host write failures; pending memory-card data may be lost\n")
+        ok &= expect("folder memory-card close pending-write loss is fatal", foldercloseloss, (), 1,
+                     "folder memory-card close failure evidence")
+
         foldermetadatafail = root / "foldermetadatafail.log"
         foldermetadatafail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                                       "FolderMcd: metadata write failed; could not open '/data/PCSX2/memcards/card/_pcsx2_index'\n")
