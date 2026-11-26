@@ -72,6 +72,12 @@ public:
     {
       const int r = sceAudioOutInit();
       std::printf("[audio] sceAudioOutInit=%x\n", r);
+      // CEMUPS4 treats 0x8026000e as already-initialized by the launcher/another component.
+      if (r != 0 && r != static_cast<int>(0x8026000e))
+      {
+        Error::SetString(error, "sceAudioOutInit failed");
+        return false;
+      }
       s_inited = true;
     }
     // userId 255 = system, port type 0 = main, param 4 = FLOAT_STEREO (2 = S16_8CH, 1 = S16_STEREO)
