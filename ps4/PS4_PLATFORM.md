@@ -41,7 +41,7 @@ PS4 Jaguar constraints:
 
 - weak single-thread performance; EE and VU1 can each consume a core;
 - MTVU defaults on for PS4;
-- ring default is 2048 KiB on PS4 versus 16384 KiB on PS5;
+- ring default and maximum backing are 2048 KiB on PS4 versus a 16384 KiB maximum on PS5;
 - spin waits default on, batching default off;
 - Jaguar-aware pinning/topology work already exists;
 - PS4 Pro detection selects 2x upscale default, which can shift load from GPU to CPU bandwidth and must be measured.

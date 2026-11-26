@@ -30,6 +30,12 @@
 4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
 5. JIT shared-memory ownership remains incomplete on the PS5-only opt-in path because the kernel handle is lost; do not reintroduce those imports on PS4.
 
+
+## Memory-pressure tradeoffs
+
+1. The PS4 MTVU backing is capped at the existing 2048 KiB default lap, removing the ability to test larger 4/8/16 MiB laps on the normal PS4 candidate. This preserves default behavior while avoiding 14 MiB of always-resident BSS, but heavy-MTVU games still need hardware comparison before the cap is treated as final.
+2. Folder memory-card corrupt-superblock validation remains incomplete. Malformed host-side `_pcsx2_superblock` data can still drive some out-of-range FAT/cluster indexing in upstream folder-card logic; do not treat folder cards as hardened untrusted input yet.
+
 ## User-data layout
 
 1. `OrbisDir()` still uses a flat `/data/PCSX2` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files. The audited design is rename-only, per-category transactional, idempotent after power loss, creates a target directory only when it will receive files, classifies BIOS before `.bin` memory cards, moves BIOS sidecars as families, honors configured custom card names, skips destination collisions, and leaves ambiguous patches/covers/disc images flat. It should be implemented flag-gated off and console-validated before becoming default.

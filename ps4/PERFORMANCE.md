@@ -44,12 +44,15 @@ Metrics:
 ## Safe performance hypotheses to test later
 
 1. Measure EE thread breakdown before considering an IOP thread.
-2. Validate 2048 KiB MTVU ring against 1/4/8/16 MiB on hardware using MTVU counters.
+2. Validate the fixed 2048 KiB PS4 MTVU ring on hardware using MTVU counters. Larger laps are no longer available on PS4 because the upstream 16 MiB backing is not kept resident; compare only against a separately built experimental wide-ring candidate if that tradeoff is questioned.
 3. Measure spin vs sleep behavior by scene; do not assume spinning is always better.
 4. Measure base PS4 native vs Pro 2x defaults separately.
 5. Measure shader pipeline compile hitches from `[shaders]` before considering VU/pipeline caching.
 6. Reduce CPU-side GPU copies/readbacks only after `[copies]`/`[readbacks]` evidence identifies the dominant kind.
 
+## Static-memory reduction checkpoint
+
+The current normal candidate has reduced ELF `.bss` from the original 99,733,824-byte reference to 24,445,952 bytes. The largest single step caps the PS4 MTVU backing at its existing 2048 KiB default lap instead of keeping the upstream 16 MiB maximum resident. Default PS4 behavior is unchanged because the logical ring already defaulted to 2048 KiB; explicit user settings above 2048 KiB are now clamped. This is a deliberate memory-pressure tradeoff and needs proper hardware testing.
 
 ## ThinLTO experiment checkpoint (2026-11-26)
 
