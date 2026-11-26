@@ -89,6 +89,8 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     rejected = ev.count("did not execute; rejecting")
     if rejected:
         ev.warnings.append(f"executable-memory probe rejected a candidate mapping {rejected} time(s); inspect firmware/loader behavior")
+    if ev.has("non-executable interpreter fallback") or ev.has("recompiler memory is not executable"):
+        ev.warnings.append("recompiler memory was not executable; boot used the slow interpreter compatibility fallback")
 
     pad_handle = ev.has("[pad] player 1 has no handle yet") or ev.has("[pad] player 1 controller handle appeared") or ev.has("[pad] player 1 data[56..84]") or ev.has("[pad] lib=")
     require(ev, args.expect_input, "controller input", pad_handle, "player-1 pad initialization/hotplug/data evidence")

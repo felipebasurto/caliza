@@ -108,6 +108,9 @@ namespace SysMemory
 	/// Returns memory used for the recompilers.
 	u8* GetCodePtr(size_t offset);
 
+	/// Whether the recompiler memory passed the platform's runtime execution probe.
+	bool IsCodeMemoryExecutable();
+
 	/// Returns the file mapping which backs the data memory.
 	void* GetDataFileHandle();
 

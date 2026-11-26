@@ -1498,19 +1498,31 @@ namespace EmuFolders
 
 // ------------ CPU / Recompiler Options ---------------
 
+#ifdef ORBIS_VULKAN
+namespace SysMemory
+{
+	bool IsCodeMemoryExecutable();
+}
+#define CHECK_JITMEM (SysMemory::IsCodeMemoryExecutable())
+#else
+#define CHECK_JITMEM true
+#endif
+
 #ifdef _M_X86 // TODO: Remove me once EE/VU/IOP recs are added.
-#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1)
+#define REC_VU0 (EmuConfig.Cpu.Recompiler.EnableVU0 && CHECK_JITMEM)
+#define REC_VU1 (EmuConfig.Cpu.Recompiler.EnableVU1 && CHECK_JITMEM)
 #define THREAD_VU1 (REC_VU1 && EmuConfig.Speedhacks.vuThread)
 #else
 #define THREAD_VU1 false
+#define REC_VU0 false
 #define REC_VU1 false
 #endif
 #define INSTANT_VU1 (EmuConfig.Speedhacks.vu1Instant)
-#define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE)
+#define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE && CHECK_JITMEM)
 #define CHECK_CACHE (EmuConfig.Cpu.Recompiler.EnableEECache)
-#define CHECK_IOPREC (EmuConfig.Cpu.Recompiler.EnableIOP)
+#define CHECK_IOPREC (EmuConfig.Cpu.Recompiler.EnableIOP && CHECK_JITMEM)
 extern bool vtlb_IsFastmemAvailable();
-#define CHECK_FASTMEM (EmuConfig.Cpu.Recompiler.EnableEE && EmuConfig.Cpu.Recompiler.EnableFastmem && vtlb_IsFastmemAvailable())
+#define CHECK_FASTMEM (CHECK_EEREC && EmuConfig.Cpu.Recompiler.EnableFastmem && vtlb_IsFastmemAvailable())
 #define CHECK_EXTRAMEM (memGetExtraMemMode())
 
 //------------ SPECIAL GAME FIXES!!! ---------------

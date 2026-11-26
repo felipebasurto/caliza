@@ -2753,7 +2753,10 @@ void VMManager::InitializeCPUProviders()
 	vu1Thread.Open();
 #endif
 
-	VifUnpackSSE_Init();
+	if (SysMemory::IsCodeMemoryExecutable())
+		VifUnpackSSE_Init();
+	else
+		printf("[dbg] icp: VIF unpack JIT generation skipped (non-executable code memory)\n");
 }
 
 void VMManager::ShutdownCPUProviders()
@@ -2798,8 +2801,8 @@ void VMManager::UpdateCPUImplementations()
 	printf("[dbg] vm uci: Cpu=%p psxCpu=%p\n", (void*)Cpu, (void*)psxCpu);
 	fflush(stdout);
 
-	CpuVU0 = EmuConfig.Cpu.Recompiler.EnableVU0 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU0) : static_cast<BaseVUmicroCPU*>(&CpuIntVU0);
-	CpuVU1 = EmuConfig.Cpu.Recompiler.EnableVU1 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
+	CpuVU0 = REC_VU0 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU0) : static_cast<BaseVUmicroCPU*>(&CpuIntVU0);
+	CpuVU1 = REC_VU1 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
 #else
 	Cpu = &intCpu;
 	psxCpu = &psxInt;
@@ -2819,7 +2822,7 @@ void VMManager::Internal::ClearCPUExecutionCaches()
 
 #ifdef _M_X86 // TODO(Stenzek): Remove me once EE/VU/IOP recs are added.
 	// mVU's VU0 needs to be properly initialized for macro mode even if it's not used for micro mode!
-	if (CHECK_EEREC && !EmuConfig.Cpu.Recompiler.EnableVU0)
+	if (CHECK_EEREC && !REC_VU0)
 		CpuMicroVU0.Reset();
 	printf("[dbg] clear: CpuMicroVU0 done\n"); fflush(stdout);
 #endif

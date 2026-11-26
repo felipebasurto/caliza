@@ -8,6 +8,7 @@
 #include "Vif_Dma.h"
 #include "Vif_Dynarec.h"
 #include "MTVU.h"
+#include "Memory.h"
 #include "OrbisPaths.h" // vk-285-33 (the port's include-orbis)
 
 enum UnpackOffset {
@@ -515,7 +516,7 @@ __ri void _nVifUnpackLoop(const u8* data)
 	{
 		u8* dest = getVUptr(idx, vif.tag.addr);
 
-		static const bool s_ps5_cvif = OrbisFlag("cvif");
+		static const bool s_ps5_cvif = OrbisFlag("cvif") || !SysMemory::IsCodeMemoryExecutable();
 		if (doMode || s_ps5_cvif)
 		{
 			//if (1) {

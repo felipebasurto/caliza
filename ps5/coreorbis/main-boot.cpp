@@ -3842,6 +3842,29 @@ int main()
       orbis_exit_quietly(1);
     }
     fflush(stdout);
+#ifdef ORBIS_PS4
+    if (!SysMemory::IsCodeMemoryExecutable())
+    {
+      // The direct-memory probe could not execute code. Keep the RW mapping for the few startup
+      // emitters, but never run generated code: this is a slow compatibility fallback, not a JIT path.
+      g_ee_interp = true;
+      g_iop_interp = true;
+      g_vu_interp = true;
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableEE", false);
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableIOP", false);
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableVU0", false);
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableVU1", false);
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableFastmem", false);
+      EmuConfig.Cpu.Recompiler.EnableEE = false;
+      EmuConfig.Cpu.Recompiler.EnableIOP = false;
+      EmuConfig.Cpu.Recompiler.EnableVU0 = false;
+      EmuConfig.Cpu.Recompiler.EnableVU1 = false;
+      EmuConfig.Cpu.Recompiler.EnableFastmem = false;
+      printf("[boot] recompiler memory is not executable: forcing EE/IOP/VU interpreters, C VIF unpack, and C scanline\n");
+      fflush(stdout);
+      ORBIS_PS4_STEP("non-executable code memory: interpreters");
+    }
+#endif
     // Orbis: the CPU overlay owns VideoOut and presents the frame the GL
     // renderer reads back (GSDeviceOGL::PresentRect -> orbis_present_frame).
     // ps5-opengl's own flip path is not used (it kernel-panicked when driven

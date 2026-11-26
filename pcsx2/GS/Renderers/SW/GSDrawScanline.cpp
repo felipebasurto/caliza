@@ -7,6 +7,7 @@
 #include "GS/Renderers/SW/GSRasterizer.h"
 
 #include "common/Console.h"
+#include "Memory.h"
 
 #include <fstream>
 #include <unistd.h>
@@ -134,8 +135,8 @@ bool GSDrawScanline::SetupDraw(GSRasterizerData& data)
 	// FMV hack's videos run through it too. The JIT ran on the console in the SW-renderer builds (2026-09-21), before
 	// the code memory moved to direct memory (vk-285-115): needs proper testing on the console.
 	static const bool s_ps5_swjit = [] {
-		const bool on = !OrbisFlag("noswjit");
-		std::printf("[sw] scanline JIT %s\n", on ? "on (flags/noswjit: the C++ scanline)" : "off (flags/noswjit): the C++ scanline");
+		const bool on = !OrbisFlag("noswjit") && SysMemory::IsCodeMemoryExecutable();
+		std::printf("[sw] scanline JIT %s\n", on ? "on" : "off (C scanline)");
 		return on;
 	}();
 	if (s_ps5_swjit)

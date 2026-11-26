@@ -68,6 +68,7 @@ namespace SysMemory
 	static unsigned long long s_orbis_code_map_size = 0;
 	static unsigned long long s_orbis_code_alloc_size = 0;
 	static bool s_orbis_code_direct = false;
+	static bool s_code_memory_executable = true;
 	static std::unique_ptr<SharedMemoryMappingArea> s_memory_mapping_area;
 } // namespace SysMemory
 
@@ -340,10 +341,10 @@ bool SysMemory::AllocateMemoryMap()
 				rcc2 = -1;
 				bool phys2_owned = rcc == 0;
 #ifdef ORBIS_PS4
-				// PS4: never accept a non-executable fallback. Try both direct-memory permission
-				// transitions (initial RWX, then RW promoted with mprotect) and prove execution before use.
-				// Keep the successful in/out mapping pointer separate: a failed kernel call is not
-				// relied upon to preserve the hint it was given.
+				// PS4: try both direct-memory permission transitions (initial RWX, then RW promoted
+				// with mprotect) and prove execution before using the memory as JIT code. If execution
+				// is impossible but an RW mapping exists, keep it as a non-executable fallback; boot
+				// then forces interpreters instead of dying before the UI/BIOS can start.
 				void* mapped = nullptr;
 				if (rcc == 0)
 				{
@@ -363,21 +364,31 @@ bool SysMemory::AllocateMemoryMap()
 						mapped = attempt;
 					rcc2 = rw_prot;
 				}
+				bool executable_mapping = false;
 				if (rcc2 == 0)
 				{
 					code = static_cast<u8*>(mapped);
-					if (!orbis_probe_executable_memory(code, code_size))
-					{
-						printf("[dbg] memmap: executable code direct mapping did not execute; rejecting it\n");
-						rcc2 = -1;
-					}
+					executable_mapping = orbis_probe_executable_memory(code, code_size);
+					if (!executable_mapping)
+						printf("[dbg] memmap: executable code direct mapping did not execute; using non-executable interpreter fallback\n");
 				}
-				if (rcc2 == 0)
+				if (executable_mapping)
 				{
 					used_code_phys = phys2;
 					used_code_map_size = code_size;
 					used_code_alloc_size = code_size;
 					used_code_direct = true;
+					s_code_memory_executable = true;
+				}
+				else if (rcc == 0 && mapped)
+				{
+					code = static_cast<u8*>(mapped);
+					rcc2 = 0;
+					used_code_phys = phys2;
+					used_code_map_size = code_size;
+					used_code_alloc_size = code_size;
+					used_code_direct = true;
+					s_code_memory_executable = false;
 				}
 				else if (rcc == 0)
 				{
@@ -491,6 +502,7 @@ void SysMemory::ReleaseMemoryMap()
 	s_orbis_code_map_size = 0;
 	s_orbis_code_alloc_size = 0;
 	s_orbis_code_direct = false;
+	s_code_memory_executable = true;
 	g_orbis_data_phys = -1;
 	g_orbis_data_base = 0;
 	g_orbis_data_size = 0;
@@ -588,6 +600,11 @@ u8* SysMemory::GetCodePtr(size_t offset)
 {
 	pxAssert(offset <= HostMemoryMap::CodeSize);
 	return s_code_memory + offset;
+}
+
+bool SysMemory::IsCodeMemoryExecutable()
+{
+	return s_code_memory_executable;
 }
 
 void* SysMemory::GetDataFileHandle()

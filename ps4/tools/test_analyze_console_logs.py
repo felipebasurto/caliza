@@ -103,6 +103,12 @@ def main() -> int:
         ok &= expect("canonical SysMemory allocation failure is fatal", allocatefail, (), 1,
                      "VM memory initialization failed")
 
+        noexec = root / "noexec.log"
+        noexec.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x680000000 (direct, executable=0)\n"
+                          "[boot] recompiler memory is not executable: forcing EE/IOP/VU interpreters, C VIF unpack, and C scanline\n")
+        ok &= expect("nonexecutable fallback warns without failing", noexec, (), 0,
+                     "slow interpreter compatibility fallback")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
