@@ -216,7 +216,12 @@ bool SaveStateBase::gifPathFreeze(u32 path)
 		// invalid landmines in the post-load queue state. Needs proper testing.
 		const bool validPathState = gifPath.buffSize == realBuffSize && gifPath.buffLimit == realBuffLimit &&
 			gifPath.idx == realPathIndex && gifPath.curSize <= realBuffSize &&
-			gifPath.curOffset <= gifPath.curSize && static_cast<u32>(gifPath.state) <= static_cast<u32>(GIF_PATH_WAIT);
+			gifPath.curOffset <= gifPath.curSize && gifPath.gsPack.size <= gifPath.curOffset &&
+			gifPath.gsPack.offset <= realBuffSize && gifPath.dmaRewind <= gifPath.curSize &&
+			gifPath.gifTag.len <= realBuffSize && gifPath.gifTag.nLoop <= 32767 &&
+			gifPath.gifTag.nRegs <= 16 && gifPath.gifTag.nRegIdx <= 16 &&
+			g_orbis_gif_fake.count[path] <= MTGS::RingBufferSize &&
+			static_cast<u32>(gifPath.state) <= static_cast<u32>(GIF_PATH_WAIT);
 		if (!validPathState)
 		{
 			gifPath.buffer = bufferPtr;

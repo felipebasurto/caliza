@@ -231,6 +231,17 @@ bool USB::DoOHCIState(StateWrapper& sw)
 	sw.DoArray(s_qemu_ohci->usb_buf, sizeof(s_qemu_ohci->usb_buf));
 	sw.Do(&s_qemu_ohci->async_td);
 	sw.Do(&s_qemu_ohci->async_complete);
+	if (sw.IsReading())
+	{
+		// The controller's writeback countdown is a small hardware state machine. Values outside
+		// it, or the impossible zero-count/no-writeback/no-done-list combination, reach abort() on
+		// the next frame boundary rather than a recoverable emulated USB error. Needs proper testing.
+		const bool validDoneCount = s_qemu_ohci->done_count >= 0 && s_qemu_ohci->done_count <= 7;
+		const bool validWritebackState = s_qemu_ohci->done_count != 0 ||
+			(s_qemu_ohci->intr_status & OHCI_INTR_WD) != 0 || s_qemu_ohci->done != 0;
+		if (!validDoneCount || !validWritebackState)
+			return false;
+	}
 	return true;
 }
 
@@ -248,6 +259,22 @@ void USB::DoDeviceState(USBDevice* dev, StateWrapper& sw)
 	sw.Do(&dev->setup_state);
 	sw.Do(&dev->setup_len);
 	sw.Do(&dev->setup_index);
+	if (sw.IsReading())
+	{
+		// qemu-usb's control-transfer state machine uses setup_index as a raw offset into
+		// data_buf in release builds. Keep impossible frozen control transfers idle rather
+		// than letting them copy outside the fixed staging buffer.
+		constexpr s32 SETUP_STATE_IDLE_LOADED = 0;
+		constexpr s32 SETUP_STATE_PARAM_LOADED = 4;
+		if (dev->setup_state < SETUP_STATE_IDLE_LOADED || dev->setup_state > SETUP_STATE_PARAM_LOADED ||
+			dev->setup_len < 0 || dev->setup_len > static_cast<s32>(sizeof(dev->data_buf)) ||
+			dev->setup_index < 0 || dev->setup_index > dev->setup_len)
+		{
+			dev->setup_state = SETUP_STATE_IDLE_LOADED;
+			dev->setup_len = 0;
+			dev->setup_index = 0;
+		}
+	}
 
 	sw.Do(&dev->configuration);
 	if (sw.IsReading())
@@ -353,7 +380,7 @@ void USB::DoPacketState(USBPacket* p, StateWrapper& sw, const std::array<bool, 2
 		const bool validPid = p->pid == USB_TOKEN_SETUP || p->pid == USB_TOKEN_IN || p->pid == USB_TOKEN_OUT;
 		const bool validBuffer = p->buffer_size <= sizeof(s_qemu_ohci->usb_buf) &&
 			p->actual_length >= 0 && static_cast<unsigned int>(p->actual_length) <= p->buffer_size;
-		const bool validQueued = !queued || p->state == USB_PACKET_QUEUED || p->state == USB_PACKET_ASYNC;
+		const bool validQueued = queued == (p->state == USB_PACKET_QUEUED || p->state == USB_PACKET_ASYNC);
 		const bool validTarget = dev_index >= 0 && dev_index < static_cast<s32>(NUM_PORTS) &&
 			ep_index >= 0 && valid_devices[static_cast<u32>(dev_index)];
 
@@ -444,6 +471,14 @@ bool USB::DoState(StateWrapper& sw)
 		}
 
 		USB::DoPacketState(&s_qemu_ohci->usb_packet, sw, valid_devices);
+		if (s_qemu_ohci->async_td &&
+			(!s_qemu_ohci->usb_packet.ep || !usb_packet_is_inflight(&s_qemu_ohci->usb_packet)))
+		{
+			// Cancellation paths trust async_td to describe the one live controller packet.
+			// A hostile or partially-invalid state must not turn it into a queue removal of
+			// a packet that was never linked.
+			s_qemu_ohci->async_td = 0;
+		}
 		if (sw.HasError())
 		{
 			Console.WriteLn("Failed to read USB packet, resetting all devices.");
