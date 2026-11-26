@@ -22,6 +22,7 @@
 #include "fmt/format.h"
 
 #include <optional>
+#include <set>
 #include <chrono>
 #include <new>
 
@@ -855,44 +856,56 @@ u8* FolderMemoryCard::GetFileEntryPointer(const u32 searchCluster, const u32 ent
 MemoryCardFileEntryCluster* FolderMemoryCard::GetFileEntryCluster(const u32 currentCluster, const u32 searchCluster, const u32 fileCount)
 {
 	constexpr u32 maxFatClusters = IndirectFatClusterCount * (ClusterSize / 4) * (ClusterSize / 4);
-	if (currentCluster >= maxFatClusters)
+	if (currentCluster >= maxFatClusters || searchCluster >= maxFatClusters)
 		return nullptr;
 
-	// we found the correct cluster, return pointer to it
-	if (currentCluster == searchCluster)
+	// FAT links and directory entries are guest-controlled once the card has been
+	// written. A cycle in either structure must not turn a simple metadata lookup
+	// into unbounded recursion or stack exhaustion. Use an explicit depth-first
+	// worklist, preserving the old order: finish each directory's cluster chain
+	// before descending into its subdirectories. Needs proper testing.
+	struct SearchNode
 	{
-		return &m_fileEntryDict[currentCluster];
-	}
+		u32 cluster;
+		u32 fileCount;
+	};
+	std::vector<SearchNode> pending;
+	std::set<u32> visited;
+	pending.push_back({currentCluster, fileCount});
 
-	// check other clusters of this directory
-	const u32 nextCluster = m_fat.data[0][0][currentCluster] & NextDataClusterMask;
-	if (nextCluster != LastDataCluster)
+	while (!pending.empty())
 	{
-		MemoryCardFileEntryCluster* ptr = GetFileEntryCluster(nextCluster, searchCluster, fileCount - 2);
-		if (ptr != nullptr)
+		const SearchNode node = pending.back();
+		pending.pop_back();
+		if (node.cluster >= maxFatClusters || !visited.insert(node.cluster).second)
+			continue;
+
+		if (node.cluster == searchCluster)
 		{
-			return ptr;
+			// Preserve the former lookup contract, including its default-inserting
+			// map access for a cluster not present in the metadata dictionary.
+			return &m_fileEntryDict[node.cluster];
 		}
-	}
 
-	// check subdirectories
-	auto it = m_fileEntryDict.find(currentCluster);
-	if (it != m_fileEntryDict.end())
-	{
-		const u32 filesInThisCluster = std::min(fileCount, 2u);
-		for (unsigned int i = 0; i < filesInThisCluster; ++i)
+		const u32 nextCluster = m_fat.data[0][0][node.cluster] & NextDataClusterMask;
+
+		// Push subdirectories in reverse order, then the chain next. The LIFO
+		// worklist therefore visits the rest of the chain first, then each
+		// subdirectory in the same order as the former recursion.
+		auto it = m_fileEntryDict.find(node.cluster);
+		if (it != m_fileEntryDict.end())
 		{
-			const MemoryCardFileEntry* const entry = &it->second.entries[i];
-			if (entry->IsValid() && entry->IsUsed() && entry->IsDir() && !entry->IsDotDir())
+			const u32 filesInThisCluster = std::min(node.fileCount, 2u);
+			for (int i = static_cast<int>(filesInThisCluster) - 1; i >= 0; --i)
 			{
-				const u32 newFileCount = entry->entry.data.length;
-				MemoryCardFileEntryCluster* ptr = GetFileEntryCluster(entry->entry.data.cluster, searchCluster, newFileCount);
-				if (ptr != nullptr)
-				{
-					return ptr;
-				}
+				const MemoryCardFileEntry* const entry = &it->second.entries[i];
+				if (entry->IsValid() && entry->IsUsed() && entry->IsDir() && !entry->IsDotDir())
+					pending.push_back({entry->entry.data.cluster, entry->entry.data.length});
 			}
 		}
+
+		if (nextCluster != LastDataCluster)
+			pending.push_back({nextCluster, node.fileCount > 2 ? node.fileCount - 2 : 0});
 	}
 
 	return nullptr;
