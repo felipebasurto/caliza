@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `1846c3b`; binary artifact validated at that commit. The subsequent commit is documentation-only.
+Last updated: 2026-11-26 after commit `364adfd`; binary artifact validated at that commit.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **64 local commits** on top of the baseline after this documentation checkpoint.
+- Current candidate: **66 local commits** on top of the baseline after this documentation checkpoint.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -78,6 +78,8 @@ Last updated: 2026-11-26 after commit `1846c3b`; binary artifact validated at th
 62. `a6fbbf6` — fall back to the backup savestate when slot one is unusable.
 63. `3882a5f` — enforce RW-only memory in the interpreter fallback.
 64. `1846c3b` — record robustness review and candidate evidence.
+65. `dabaa3c` — record final candidate hashes and layout risks.
+66. `364adfd` — report effective interpreter fallback in performance warnings.
 
 ## Completed work
 
@@ -108,11 +110,11 @@ Last updated: 2026-11-26 after commit `1846c3b`; binary artifact validated at th
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at commit `1846c3b` (includes the RW-only fallback invariant from `3882a5f`):
+Built in the Linux x86_64 OpenOrbis container at commit `364adfd` (includes the RW-only fallback invariant from `3882a5f`):
 
 - ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,095,672 bytes**, SHA-256 `5bcf0ded417dc3985d4499fabbb4141377f36fc99a75c0b58308c5ee30de7c02`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `6d5e083dbf512cc30688439291556fff2d96fd914beb8432f8aac867723f4bc3`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `e70d618f633bf568e1bcf72ec77553b6ecf3246fc41ce994c91a94c41b89b15f`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `ac65690bebd5e9b51248684d2445fd0a99a5bc4e979cab9e84c8d32c5b76b28e`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `b8ee9286ad9fc497efd42ce6d38e290b4bc949a13d89a16c38dc5fa90eead290`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -127,7 +129,7 @@ Built in the Linux x86_64 OpenOrbis container at commit `1846c3b` (includes the 
 | Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate64-final.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; `candidate64-final.log` plus repeat command output |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current `364adfd` package is `candidate65/66` evidence |
 | Host tests | PASS | current validator/analyzer/WSI/shell suite passes in `ps4/logs/host-tests-latest.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
