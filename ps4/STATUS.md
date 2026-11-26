@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `5bfdb00`.
+Last updated: 2026-11-26 after commit `bb0d1ad`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **25 local commits** on top of the baseline.
+- Current candidate: **30 local commits** on top of the baseline.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -39,6 +39,11 @@ Last updated: 2026-11-26 after commit `5bfdb00`.
 23. `e5288be` — harden pad detection, WSI teardown, and memory probing.
 24. `ce85c44` — stream savestate entries during load.
 25. `5bfdb00` — harden package build reproducibility.
+26. `8485982` — record final validation evidence and remaining risks.
+27. `4598aff` — make crash hooks async-signal-safe.
+28. `b128266` — stream synchronous savestate writes.
+29. `9b5fb08` — integrate robustness review fixes.
+30. `bb0d1ad` — arm executable probe only after sigsetjmp.
 
 ## Completed work
 
@@ -57,17 +62,17 @@ Last updated: 2026-11-26 after commit `5bfdb00`.
 | P1-WSI | WSI telemetry and lifetime | implemented, console-unverified | semaphore destroy/device teardown tracking; noteworthy-delta `[ps4wsi]` telemetry |
 | P1-AUDIO | Audio starvation/error telemetry | implemented, console-unverified | initial fill no longer counted as underrun; output errors back off instead of spinning |
 | P1-COVERS | Cover downloads | implemented, console-unverified | cover fetches now use the existing mbedTLS HTTPS client instead of PS5-only `sceHttp2*`; HTTP/SSL system-library dependencies removed |
-| P1-CRASH | Crash/hang diagnostics | implemented, console-unverified | guest EE/IOP PCs/cycles/instruction words and JIT range evidence emitted to crash/hang logs |
+| P1-CRASH | Crash/hang diagnostics | implemented, console-unverified | guest EE/IOP PCs/cycles/instruction words and JIT range evidence emitted through async-signal-safe fixed-buffer writes |
 | P1-DEBUG | Debug allocation protocol corruption | fixed | `ps5dbgclient.cpp` allocation body now matches documented wire layout |
 | P2-DOCS | Required technical docs | done, still evolving | all requested docs exist under `ps4/` |
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container after commit `5bfdb00`:
+Built in the Linux x86_64 OpenOrbis container after commit `bb0d1ad`:
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,781,000 bytes**, SHA-256 `2aecc2a964f62450e02bf40f387d7ac887571e951c834adef9104e48a64d3a08`.
-- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: **40,987,456 bytes**, SHA-256 `fcd3059ef3e9fc31188c2ada1977af0c487f1158044345ba9afc51320acc31cc`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `a313ea30e1eb60db9a8be8f26e0ea2f11eb0550c76d6454242181b4ddcc50ef7`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,831,608 bytes**, SHA-256 `f5b06b178a493776682aa33f5de4c4af54239e04b1466e990a8d474c975f5610`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,004,240 bytes**, SHA-256 `d090accd3b4cceb4ebffbcd21b6aac34d84a4a79ae80be8ea861171d9ff99cf9`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `29f0dc0c85b03d7949e7bb2c3c6c9e7b12974fed14fac501cb844cdb50cf7bdf`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -78,10 +83,10 @@ Built in the Linux x86_64 OpenOrbis container after commit `5bfdb00`:
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package before final build-hardening commit | PASS | `ps4/logs/candidate21-build-hardening.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate27-final-probe.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Host tests | PASS | `ps4/logs/host-tests-savestate-stream.log` |
+| Host tests | PASS | `ps4/logs/host-tests-integrate.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -97,7 +102,7 @@ Built in the Linux x86_64 OpenOrbis container after commit `5bfdb00`:
 | P1-FW | Firmware/loader matrix | empty | requires console evidence per firmware/loader |
 | P1-INTERPRETER | Automatic fallback when no executable memory exists | absent | currently rejects memory and fails clearly; implement explicit fallback policy if needed |
 | P1-NFS | NFS support on PS4 | explicitly disabled as unusable | mount attempts skipped with actionable boot log; port libc wrap layer before enabling |
-| P1-SAVESTATE | Savestate memory peak | load path improved, console-unverified | entries now stream from disk instead of buffering the whole state; save-path serialization buffer remains |
+| P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
 | P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol |
 

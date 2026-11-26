@@ -24,7 +24,7 @@
 
 ## Memory/robustness
 
-1. Savestate loading now streams entry payloads instead of buffering the whole state file; the save path still uses a large serialized buffer and needs console memory validation.
+1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract.
 2. Compiler warning count is 148 in baseline and not triaged.
 3. No automatic fallback to interpreter if executable memory cannot be validated; allocation now fails clearly instead of accepting non-executable memory.
 

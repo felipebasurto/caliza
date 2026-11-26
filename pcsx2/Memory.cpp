@@ -172,7 +172,7 @@ bool orbis_probe_executable_memory(void* mem)
 	static const unsigned char ret_instruction[] = {0xC3};
 	pthread_mutex_lock(&s_orbis_exec_probe_mutex);
 	s_orbis_exec_probe_thread = pthread_self();
-	s_orbis_exec_probe_active = 1;
+	s_orbis_exec_probe_active = 0;
 	struct sigaction action{};
 	action.sa_sigaction = orbis_exec_probe_fault;
 	action.sa_flags = SA_SIGINFO;
@@ -194,6 +194,9 @@ bool orbis_probe_executable_memory(void* mem)
 	bool ok = false;
 	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
 	{
+		// Arm the jump target only after sigsetjmp has initialized it; a fault between handler
+		// installation and arming still chains to the process's real crash handler.
+		s_orbis_exec_probe_active = 1;
 		std::memcpy(mem, ret_instruction, sizeof(ret_instruction));
 		__builtin___clear_cache(static_cast<char*>(mem), static_cast<char*>(mem) + sizeof(ret_instruction));
 		reinterpret_cast<void (*)()>(mem)();
