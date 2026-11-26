@@ -580,6 +580,13 @@ bool VKSwapChain::CreateSwapChain()
 	if (res != VK_SUCCESS)
 	{
 		LOG_VULKAN_ERROR(res, "vkCreateSwapchainKHR failed: ");
+#ifdef ORBIS_VULKAN
+		// Vulkan retires oldSwapchain even when creation of its replacement fails. The Orbis WSI
+		// has already detached the display images by then; without this destroy the failed resize
+		// strands the old swapchain and its tens of megabytes until process exit.
+		if (old_swap_chain != VK_NULL_HANDLE)
+			vkDestroySwapchainKHR(GSDeviceVK::GetInstance()->GetDevice(), old_swap_chain, nullptr);
+#endif
 		return false;
 	}
 
