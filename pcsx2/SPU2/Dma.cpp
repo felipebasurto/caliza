@@ -286,10 +286,16 @@ void V_Core::FinishDMAwrite()
 		// second branch needs copied:
 		// It starts at the beginning of memory and moves forward to buff2end
 
-		// endpoint cache should be irrelevant, since it's almost certainly dynamic
-		// memory below 0x2800 (registers and such)
-		//const u32 endpt2 = (buff2end + roundUp) / indexer_scalar;
-		//memset( pcm_cache_flags, 0, endpt2 );
+		// Wrapped writes usually land in the dynamic/register area, but a large
+		// transfer can pass 0x2800 and overwrite cacheable sample memory too.
+		// Invalidate that wrapped prefix as well; otherwise stale decoded audio
+		// survives a write to the same SPU2 RAM. Needs proper testing.
+		if (buff2end > SPU2_DYN_MEMLINE)
+		{
+			const int cacheIdxEnd2 = std::min<u32>((buff2end + pcm_WordsPerBlock - 1) / pcm_WordsPerBlock, pcm_BlockCount);
+			for (int i = 0; i < cacheIdxEnd2; ++i)
+				pcm_cache_data[i].Validated = false;
+		}
 		const u32 start = ActiveTSA;
 		TDA = buff1end;
 
