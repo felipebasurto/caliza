@@ -232,8 +232,18 @@ void Host::RequestExitBigPicture()
 {
 }
 
+extern std::atomic<int> g_orbis_state_request;
 void Host::RequestVMShutdown(bool allow_confirm, bool allow_save_state, bool default_save_state)
 {
+	// Orbis has no independently shutdown-able VM lifecycle; its closest supported shutdown path is
+	// the back-to-menu flow, which flushes cards/NVRAM and re-executes into the frontend. Route game
+	// power-off requests there rather than leaving the guest frozen on a power-off screen.
+	int expected = 0;
+	if (g_orbis_state_request.compare_exchange_strong(expected, 3, std::memory_order_acq_rel, std::memory_order_relaxed))
+		std::printf("[state] VM shutdown requested; returning to the menu\n");
+	else
+		std::printf("[state] VM shutdown requested while state request %d is pending\n", expected);
+	std::fflush(stdout);
 }
 
 // eerec-282: savestate requests from the pad thread (1 = save slot 1, 2 = load slot 1), run here at
