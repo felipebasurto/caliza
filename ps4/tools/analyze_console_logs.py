@@ -192,6 +192,10 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("audio teardown waited unusually long for an in-flight worker read; investigate scheduler starvation")
     if ev.has("[frontend] sound worker stuck in output"):
         ev.warnings.append("frontend shelf sound worker stuck in audio output; port deliberately abandoned and worker detached")
+    if ev.has("[smarttune] cannot write") or ev.has("[smarttune] cannot persist"):
+        ev.warnings.append("smart tune could not write the game's settings file; tuning aborted or winner not persisted")
+    if ev.has("[smarttune] baseline 1x fails"):
+        ev.warnings.append("smart tune found the game is not GPU-limited even at 1x; it is CPU/engine-limited and upscaling cannot help")
 
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
