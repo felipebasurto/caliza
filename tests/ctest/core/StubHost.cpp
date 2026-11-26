@@ -238,11 +238,10 @@ void Host::RequestVMShutdown(bool allow_confirm, bool allow_save_state, bool def
 	// Orbis has no independently shutdown-able VM lifecycle; its closest supported shutdown path is
 	// the back-to-menu flow, which flushes cards/NVRAM and re-executes into the frontend. Route game
 	// power-off requests there rather than leaving the guest frozen on a power-off screen.
-	int expected = 0;
-	if (g_orbis_state_request.compare_exchange_strong(expected, 3, std::memory_order_acq_rel, std::memory_order_relaxed))
-		std::printf("[state] VM shutdown requested; returning to the menu\n");
-	else
-		std::printf("[state] VM shutdown requested while state request %d is pending\n", expected);
+	// Queue shutdown even when pad/menu requests are pending. The consumer prioritizes it,
+	// so a guest power-off cannot be erased by a same-frame combo or hotkey.
+	g_orbis_state_request.fetch_or(1 << 3, std::memory_order_acq_rel);
+	std::printf("[state] VM shutdown requested; returning to the menu\n");
 	std::fflush(stdout);
 }
 
@@ -291,7 +290,20 @@ void Host::PumpMessagesOnCPUThread()
 		OrbisApplyPinning(pin);
 	if (g_orbis_rb_auto_request.exchange(0, std::memory_order_acq_rel))
 		OrbisReadbackAutoCpu();
-	const int req = g_orbis_state_request.exchange(0, std::memory_order_acq_rel);
+	// Bits 1..6 queue independent requests. Consume at most one per pump, clearing only the
+	// selected bit so a producer cannot be overwritten by this read-modify-write. Shutdown is
+	// intentionally first: guest power-off must not wait behind ordinary combos. needs proper testing.
+	const int pending = g_orbis_state_request.load(std::memory_order_acquire);
+	int req = 0;
+	for (const int candidate : {3, 1, 2, 4, 6, 5})
+	{
+		if (pending & (1 << candidate))
+		{
+			req = candidate;
+			g_orbis_state_request.fetch_and(~(1 << candidate), std::memory_order_acq_rel);
+			break;
+		}
+	}
 	if (req == 1)
 	{
 		bool failed = false;

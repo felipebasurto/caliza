@@ -86,6 +86,13 @@ bool g_orbis_sw_on_gl = false;
 // eerec-278: bumped by the pad thread when L3+R3 are held ~0.4 s (cycles the present filter).
 std::atomic<int> g_orbis_filter_cycle{0};
 extern std::atomic<int> g_orbis_state_request; // eerec-282 (StubHost.cpp)
+// State requests are a small bitmask, not a single slot: simultaneous pad/menu/guest requests
+// must not erase each other. StubHost consumes one request per CPU-thread pump in priority order.
+static inline void orbis_queue_state_request(int request)
+{
+  if (request >= 1 && request <= 6)
+    g_orbis_state_request.fetch_or(1 << request, std::memory_order_acq_rel);
+}
 // vk-285-48: back to the menu. The pad thread asks with request 3: since vk-285-49 on a touchpad
 // click with L1+R1 held (48 used L3+R3 + D-pad Left). StubHost's PumpMessagesOnCPUThread then calls
 // OrbisBackToMenuCpu() at vsync on the CPU thread, which stops the VM; main() writes the memory
@@ -971,7 +978,7 @@ static void *orbis_pad_thread(void *)
       s_kbm_was_active = active;
       if (const int hotkey = OrbisKbdMouseTakeHotkey())
       {
-        g_orbis_state_request.store(hotkey, std::memory_order_release);
+        orbis_queue_state_request(hotkey);
         printf("[pad] keyboard: %s\n", hotkey == 1 ? "F1, save the state" : hotkey == 2 ? "F3, load the state" : "Esc held, back to the menu");
         fflush(stdout);
       }
@@ -1007,21 +1014,21 @@ static void *orbis_pad_thread(void *)
         const bool disc = s_disc.Update(cfg.disc, cfg.hold_ms, cs, now_ms, block) && !save && !load && !fast;
         if (disc)
         {
-          g_orbis_state_request.store(6, std::memory_order_release);
+          orbis_queue_state_request(6);
           state_fired = true;
           printf("[pad] change disc: %s\n", orbis_padmap::DescribeCombo(cfg.disc, cfg.hold_ms).c_str());
           fflush(stdout);
         }
         if (fast)
         {
-          g_orbis_state_request.store(4, std::memory_order_release);
+          orbis_queue_state_request(4);
           state_fired = true;
           printf("[pad] fast forward on/off: %s\n", orbis_padmap::DescribeCombo(cfg.fast, cfg.hold_ms).c_str());
           fflush(stdout);
         }
         if (save || load)
         {
-          g_orbis_state_request.store(save ? 1 : 2, std::memory_order_release);
+          orbis_queue_state_request(save ? 1 : 2);
           state_fired = true;
           printf("[pad] %s the state (slot 1): %s\n", save ? "save" : "load",
             orbis_padmap::DescribeCombo(save ? cfg.save : cfg.load, cfg.hold_ms).c_str());
@@ -1062,7 +1069,7 @@ static void *orbis_pad_thread(void *)
         const bool click = (d.buttons & 0x00100000u) != 0; // the touchpad button
         if (click && !s_prev_click && (d.buttons & 0x00000C00u) == 0x00000C00u) // L1 0x400, R1 0x800
         {
-          g_orbis_state_request.store(3, std::memory_order_release);
+          orbis_queue_state_request(3);
           s_click_consumed = true;
           printf("[pad] L1+R1+touchpad click: back to the menu\n");
           fflush(stdout);
@@ -2605,7 +2612,7 @@ bool orbis_request_disc(const std::string& path)
       return false; // no game (or the PS2 menu, or an ELF with no disc)
     s_disc_request = path;
   }
-  g_orbis_state_request.store(5, std::memory_order_release);
+  orbis_queue_state_request(5);
   return true;
 }
 
