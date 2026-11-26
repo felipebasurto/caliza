@@ -17,10 +17,10 @@
 
 ## Storage correctness hardening status
 
-1. ISO and physical-disc sector reads now propagate device failures instead of returning stale static sector-buffer contents. Physical discs remain unsupported/unreachable on Orbis, but the ISO path is live and now converts corrupt/truncated image reads into retryable errors rather than silent corruption. Emulated retry exhaustion behavior is still an upstream-design gap and needs hardware/homebrew validation.
+1. ISO and physical-disc sector reads now propagate device failures instead of returning stale static sector-buffer contents. Physical discs remain unsupported/unreachable on Orbis, but the ISO path is live and now converts corrupt/truncated image reads into retryable errors rather than silent corruption. Retry exhaustion now completes the command with error 0x30 instead of wedging the drive; game-visible error recovery still needs hardware/homebrew validation.
 2. Folder-card metadata/index writes now detect open/write/flush/close failures and surface them to console-log analysis as warnings. Save ordering/timestamps can still be incomplete if storage fails; metadata/index writes now use scanner-excluded temporary siblings plus rename; fsync-level crash durability is still not proven.
 3. Folder-card empty files can no longer claim stale shared FAT chains during the bounded flush rebuild. Malformed cards remain best-effort input, not fully benign hostile input.
-4. `CDVD_MODE_2368` remains an inherited upstream correctness gap: the ISO/disc backends fill at most the 2352-byte transfer buffer, while the generic CDVD completion path copies 2368 bytes when full-sector-plus-subchannel mode is requested. This is deterministic-garbage adjacent-state leakage inside the emulated machine rather than a host-memory overwrite, but it is not correct subchannel emulation and needs a format-aware fix rather than a cosmetic zero-fill.
+4. `CDVD_MODE_2368` remains an inherited upstream correctness gap: the ISO/disc backends fill at most the 2352-byte transfer buffer, while the generic CDVD completion path copies 2368 bytes when full-sector-plus-subchannel mode is requested. This is deterministic-garbage adjacent-state leakage inside the emulated machine rather than a host-memory overwrite, but it is not correct subchannel emulation and now uses bounded main-channel transfer plus a zero suffix as a defensive fallback; correct subchannel emulation still needs a format-aware fix.
 
 
 ## Input/audio/filesystem
