@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <thread>
 #include <chrono>
+#include <new>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -531,7 +532,7 @@ int sceUserServiceGetLoginUserIdList(int32_t *userIds);
 // histogram of interrupted RIP (PS5 mcontext: rip at ctx+0xe0). Reports every 20 s.
 #include <sys/time.h>
 static constexpr unsigned long long kProfElfBase = 0x400000ULL, kProfElfSize = 0x2000000ULL;
-static std::atomic<unsigned> g_prof_elf[kProfElfSize >> 8];
+static std::atomic<unsigned>* g_prof_elf = nullptr;
 static std::atomic<unsigned> g_prof_jit[256];   // 0x900000000 + i*1MB
 static std::atomic<unsigned> g_prof_other, g_prof_lib, g_prof_total;
 static void orbis_prof_handler(int, siginfo_t*, void* ctx)
@@ -540,7 +541,10 @@ static void orbis_prof_handler(int, siginfo_t*, void* ctx)
   const unsigned long long rip = static_cast<const unsigned long long*>(ctx)[0xe0 / 8];
   g_prof_total.fetch_add(1, std::memory_order_relaxed);
   if (rip >= kProfElfBase && rip < kProfElfBase + kProfElfSize)
-    g_prof_elf[(rip - kProfElfBase) >> 8].fetch_add(1, std::memory_order_relaxed);
+  {
+    if (g_prof_elf)
+      g_prof_elf[(rip - kProfElfBase) >> 8].fetch_add(1, std::memory_order_relaxed);
+  }
   else if (rip >= 0x900000000ULL && rip < 0x910000000ULL)
     g_prof_jit[(rip - 0x900000000ULL) >> 20 & 255].fetch_add(1, std::memory_order_relaxed);
   else if (rip >= 0x800000000ULL && rip < 0x880000000ULL)
@@ -555,10 +559,13 @@ static void* orbis_prof_report_thread(void*)
     std::this_thread::sleep_for(std::chrono::seconds(20));
     const unsigned total = g_prof_total.exchange(0);
     std::vector<std::pair<unsigned, unsigned>> top;
-    for (unsigned i = 0; i < (kProfElfSize >> 8); i++)
+    if (g_prof_elf)
     {
-      const unsigned c = g_prof_elf[i].exchange(0);
-      if (c) top.emplace_back(c, i);
+      for (unsigned i = 0; i < (kProfElfSize >> 8); i++)
+      {
+        const unsigned c = g_prof_elf[i].exchange(0);
+        if (c) top.emplace_back(c, i);
+      }
     }
     std::sort(top.begin(), top.end(), [](auto& a, auto& b) { return a.first > b.first; });
     unsigned elf_sum = 0;
@@ -578,6 +585,15 @@ static void* orbis_prof_report_thread(void*)
 static void orbis_prof_start()
 {
   if (!OrbisFlag("prof")) return; // vk-285-33
+  if (!g_prof_elf)
+  {
+    g_prof_elf = new (std::nothrow) std::atomic<unsigned>[kProfElfSize >> 8]();
+    if (!g_prof_elf)
+    {
+      printf("[prof] backing allocation failed: profiler stays off\n");
+      return;
+    }
+  }
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.sa_sigaction = orbis_prof_handler;

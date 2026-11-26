@@ -151,6 +151,24 @@ def main() -> int:
         ok &= expect("big Vulkan diagnostic ring failure warns without failing", vkringfail, (), 0,
                      "WARN big Vulkan diagnostic ring allocation failed")
 
+        dev9flashfail = root / "dev9flashfail.log"
+        dev9flashfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                 "DEV9: flash backing allocation failed; flash memory is read-only erased\n")
+        ok &= expect("DEV9 flash backing failure warns without failing", dev9flashfail, (), 0,
+                     "WARN DEV9 flash backing allocation failed")
+
+        gpproffail = root / "gpproffail.log"
+        gpproffail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[gpuprof] backing allocation failed: the profiler stays off\n")
+        ok &= expect("GPU profiler backing failure warns without failing", gpproffail, (), 0,
+                     "WARN GPU profiler backing allocation failed")
+
+        proffail = root / "proffail.log"
+        proffail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                            "[prof] backing allocation failed: profiler stays off\n")
+        ok &= expect("sampling profiler backing failure warns without failing", proffail, (), 0,
+                     "WARN sampling profiler backing allocation failed")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

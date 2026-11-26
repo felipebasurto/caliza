@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <limits>
 #include <mutex>
+#include <new>
 #include <sstream>
 #ifdef ORBIS_VULKAN
 #include <unistd.h> // vk-285-14: fsync, _exit (GPU-hang forensics)
@@ -1697,8 +1698,6 @@ namespace
 		bool on = false, overflow = false;
 		OrbisGpMeta meta[ORBIS_GP_MAX];
 	};
-	OrbisGpFrame s_gp_frame[3]; // GSDeviceVK::NUM_COMMAND_BUFFERS (checked in OrbisGpBegin)
-	u64 s_gp_ts[ORBIS_GP_MAX];
 	VkQueryPool s_gp_pool = VK_NULL_HANDLE;
 	bool s_gp_want = false, s_gp_pool_failed = false;
 
@@ -1710,12 +1709,6 @@ namespace
 		u32 count;
 	};
 	constexpr u32 ORBIS_GP_GROUPS = 2048;
-	OrbisGpGroup s_gp_group[ORBIS_GP_GROUPS];
-	u32 s_gp_groups_used = 0, s_gp_groups_lost = 0;
-	u64 s_gp_kind_ticks[GPK_KINDS];
-	u32 s_gp_kind_n[GPK_KINDS];
-	u64 s_gp_span_ticks = 0;
-	u32 s_gp_cbs = 0, s_gp_overflows = 0, s_gp_bad = 0, s_gp_seconds = 0;
 
 	// One command buffer's costliest steps, for the 5-second timeline.
 	struct OrbisGpStep
@@ -1725,7 +1718,41 @@ namespace
 		u32 at;
 	};
 	constexpr u32 ORBIS_GP_TL = 40;
-	OrbisGpStep s_gp_tl[ORBIS_GP_TL];
+	constexpr u32 ORBIS_GP_FRAME_COUNT = 3;
+
+	// The profiler is a diagnostic and is normally off. Keep its multi-megabyte backing out of
+	// BSS and allocate it only when flags/gpuprof first profiles a command buffer.
+	struct OrbisGpBacking
+	{
+		OrbisGpFrame frame[ORBIS_GP_FRAME_COUNT]; // GSDeviceVK::NUM_COMMAND_BUFFERS (checked in OrbisGpBegin)
+		u64 ts[ORBIS_GP_MAX];
+		OrbisGpGroup group[ORBIS_GP_GROUPS];
+		OrbisGpStep tl[ORBIS_GP_TL];
+	};
+	OrbisGpBacking* s_gp = nullptr;
+	bool s_gp_allocation_failed = false;
+
+	OrbisGpBacking* OrbisGpEnsureBacking()
+	{
+		if (s_gp)
+			return s_gp;
+		if (s_gp_allocation_failed)
+			return nullptr;
+		s_gp = new (std::nothrow) OrbisGpBacking();
+		if (!s_gp)
+		{
+			s_gp_allocation_failed = true;
+			printf("[gpuprof] backing allocation failed: the profiler stays off\n");
+			return nullptr;
+		}
+		return s_gp;
+	}
+
+	u32 s_gp_groups_used = 0, s_gp_groups_lost = 0;
+	u64 s_gp_kind_ticks[GPK_KINDS];
+	u32 s_gp_kind_n[GPK_KINDS];
+	u64 s_gp_span_ticks = 0;
+	u32 s_gp_cbs = 0, s_gp_overflows = 0, s_gp_bad = 0, s_gp_seconds = 0;
 	u32 s_gp_tl_n = 0, s_gp_tl_steps = 0;
 	u64 s_gp_tl_span = 0;
 	bool s_gp_tl_want = false;
@@ -1775,7 +1802,7 @@ namespace
 		u32 i = static_cast<u32>(key) & (ORBIS_GP_GROUPS - 1);
 		for (u32 probe = 0; probe < 32; probe++, i = (i + 1) & (ORBIS_GP_GROUPS - 1))
 		{
-			OrbisGpGroup& g = s_gp_group[i];
+			OrbisGpGroup& g = s_gp->group[i];
 			if (g.key == key)
 			{
 				g.ticks += ticks;
@@ -1903,13 +1930,20 @@ namespace
 
 void GSDeviceVK::OrbisGpBegin(u32 index)
 {
-	static_assert(std::size(s_gp_frame) == NUM_COMMAND_BUFFERS);
-	OrbisGpFrame& f = s_gp_frame[index];
+	static_assert(ORBIS_GP_FRAME_COUNT == NUM_COMMAND_BUFFERS);
+	if (s_gp)
+	{
+		OrbisGpFrame& oldf = s_gp->frame[index];
+		oldf.count = 0;
+		oldf.overflow = false;
+		oldf.on = false;
+	}
+	if (!s_gp_want || s_gp_pool_failed || !OrbisGpEnsureBacking())
+		return;
+	OrbisGpFrame& f = s_gp->frame[index];
 	f.count = 0;
 	f.overflow = false;
-	f.on = s_gp_want && !s_gp_pool_failed;
-	if (!f.on)
-		return;
+	f.on = true;
 	if (s_gp_pool == VK_NULL_HANDLE)
 	{
 		const VkQueryPoolCreateInfo ci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, nullptr, 0, VK_QUERY_TYPE_TIMESTAMP,
@@ -1935,12 +1969,14 @@ void GSDeviceVK::OrbisGpBegin(u32 index)
 
 static inline bool OrbisGpOn(u32 frame)
 {
-	return s_gp_frame[frame].on;
+	return s_gp && s_gp->frame[frame].on;
 }
 
 void GSDeviceVK::OrbisGpWrite(const void* meta)
 {
-	OrbisGpFrame& f = s_gp_frame[m_current_frame];
+	if (!s_gp)
+		return;
+	OrbisGpFrame& f = s_gp->frame[m_current_frame];
 	if (!f.on)
 		return;
 	if (f.count >= ORBIS_GP_MAX)
@@ -2035,7 +2071,9 @@ void GSDeviceVK::OrbisGpStampPass(bool clear)
 
 void GSDeviceVK::OrbisGpCollect(u32 index)
 {
-	OrbisGpFrame& f = s_gp_frame[index];
+	if (!s_gp)
+		return;
+	OrbisGpFrame& f = s_gp->frame[index];
 	if (!f.on)
 		return;
 	f.on = false;
@@ -2044,19 +2082,19 @@ void GSDeviceVK::OrbisGpCollect(u32 index)
 	const u32 n = f.count;
 	if (n < 2 || s_gp_pool == VK_NULL_HANDLE)
 		return;
-	const VkResult res = vkGetQueryPoolResults(m_device, s_gp_pool, index * ORBIS_GP_MAX, n, sizeof(u64) * n, s_gp_ts,
+	const VkResult res = vkGetQueryPoolResults(m_device, s_gp_pool, index * ORBIS_GP_MAX, n, sizeof(u64) * n, s_gp->ts,
 		sizeof(u64), VK_QUERY_RESULT_64_BIT);
-	if (res != VK_SUCCESS || s_gp_ts[0] == 0)
+	if (res != VK_SUCCESS || s_gp->ts[0] == 0)
 	{
 		s_gp_bad++;
 		return;
 	}
 	const bool tl = s_gp_tl_want;
 	u32 tl_n = 0;
-	u64 prev = s_gp_ts[0];
+	u64 prev = s_gp->ts[0];
 	for (u32 i = 1; i < n; i++)
 	{
-		const u64 t = s_gp_ts[i];
+		const u64 t = s_gp->ts[i];
 		if (t == 0 || t < prev)
 		{
 			s_gp_bad++;
@@ -2073,27 +2111,27 @@ void GSDeviceVK::OrbisGpCollect(u32 index)
 			// Keep the ORBIS_GP_TL costliest (replace the cheapest kept).
 			if (tl_n < ORBIS_GP_TL)
 			{
-				s_gp_tl[tl_n++] = {m, d, i};
+				s_gp->tl[tl_n++] = {m, d, i};
 			}
 			else
 			{
 				u32 lo = 0;
 				for (u32 k = 1; k < ORBIS_GP_TL; k++)
-					if (s_gp_tl[k].ticks < s_gp_tl[lo].ticks)
+					if (s_gp->tl[k].ticks < s_gp->tl[lo].ticks)
 						lo = k;
-				if (d > s_gp_tl[lo].ticks)
-					s_gp_tl[lo] = {m, d, i};
+				if (d > s_gp->tl[lo].ticks)
+					s_gp->tl[lo] = {m, d, i};
 			}
 		}
 	}
-	s_gp_span_ticks += prev - s_gp_ts[0];
+	s_gp_span_ticks += prev - s_gp->ts[0];
 	s_gp_cbs++;
 	if (tl)
 	{
-		std::sort(s_gp_tl, s_gp_tl + tl_n, [](const OrbisGpStep& a, const OrbisGpStep& b) { return a.at < b.at; });
+		std::sort(s_gp->tl, s_gp->tl + tl_n, [](const OrbisGpStep& a, const OrbisGpStep& b) { return a.at < b.at; });
 		s_gp_tl_n = tl_n;
 		s_gp_tl_steps = n;
-		s_gp_tl_span = prev - s_gp_ts[0];
+		s_gp_tl_span = prev - s_gp->ts[0];
 		s_gp_tl_want = false;
 	}
 }
@@ -2209,7 +2247,7 @@ void GSDeviceVK::OrbisGpSecond()
 		s_gp_want = want;
 		s_gp_seconds = 0;
 	}
-	if (s_gp_cbs != 0)
+	if (s_gp && s_gp_cbs != 0)
 	{
 		const double tick_ms = static_cast<double>(m_device_properties.limits.timestampPeriod) / 1e6;
 		const double per_cb = 1.0 / s_gp_cbs;
@@ -2227,7 +2265,7 @@ void GSDeviceVK::OrbisGpSecond()
 		u32 top_n = 0;
 		for (u32 i = 0; i < ORBIS_GP_GROUPS; i++)
 		{
-			if (s_gp_group[i].key == 0)
+			if (s_gp->group[i].key == 0)
 				continue;
 			if (top_n < TOP)
 			{
@@ -2236,15 +2274,15 @@ void GSDeviceVK::OrbisGpSecond()
 			}
 			u32 lo = 0;
 			for (u32 k = 1; k < TOP; k++)
-				if (s_gp_group[top[k]].ticks < s_gp_group[top[lo]].ticks)
+				if (s_gp->group[top[k]].ticks < s_gp->group[top[lo]].ticks)
 					lo = k;
-			if (s_gp_group[i].ticks > s_gp_group[top[lo]].ticks)
+			if (s_gp->group[i].ticks > s_gp->group[top[lo]].ticks)
 				top[lo] = i;
 		}
-		std::sort(top, top + top_n, [](u32 a, u32 b) { return s_gp_group[a].ticks > s_gp_group[b].ticks; });
+		std::sort(top, top + top_n, [](u32 a, u32 b) { return s_gp->group[a].ticks > s_gp->group[b].ticks; });
 		for (u32 r = 0; r < top_n; r++)
 		{
-			const OrbisGpGroup& g = s_gp_group[top[r]];
+			const OrbisGpGroup& g = s_gp->group[top[r]];
 			char desc[1024];
 			OrbisGpDescribe(&g.ex, desc, sizeof(desc));
 			printf("[gpuprof] #%u %4.1f%% %.3f ms/cb n %.1f/cb avg %.1f us, %.2f Mpx/step (%.0f Mpx/ms) | %s\n", r + 1,
@@ -2253,7 +2291,7 @@ void GSDeviceVK::OrbisGpSecond()
 				g.ticks ? (static_cast<double>(g.pixels) / 1e6) / (g.ticks * tick_ms) : 0.0, desc);
 		}
 	}
-	if (s_gp_tl_n != 0)
+	if (s_gp && s_gp_tl_n != 0)
 	{
 		const double tick_ms = static_cast<double>(m_device_properties.limits.timestampPeriod) / 1e6;
 		printf("[gpuprof] one command buffer: %u steps, %.2f ms; its %u costliest steps in order:\n", s_gp_tl_steps,
@@ -2261,8 +2299,8 @@ void GSDeviceVK::OrbisGpSecond()
 		for (u32 i = 0; i < s_gp_tl_n; i++)
 		{
 			char desc[1024];
-			OrbisGpDescribe(&s_gp_tl[i].m, desc, sizeof(desc));
-			printf("[gpuprof]   step %5u %7.3f ms | %s\n", s_gp_tl[i].at, s_gp_tl[i].ticks * tick_ms, desc);
+			OrbisGpDescribe(&s_gp->tl[i].m, desc, sizeof(desc));
+			printf("[gpuprof]   step %5u %7.3f ms | %s\n", s_gp->tl[i].at, s_gp->tl[i].ticks * tick_ms, desc);
 		}
 		s_gp_tl_n = 0;
 	}
@@ -2270,7 +2308,8 @@ void GSDeviceVK::OrbisGpSecond()
 		s_gp_tl_want = true;
 	if (s_gp_cbs != 0 || s_gp_tl_n != 0)
 		fflush(stdout);
-	std::memset(s_gp_group, 0, sizeof(s_gp_group));
+	if (s_gp)
+		std::memset(s_gp->group, 0, sizeof(s_gp->group));
 	s_gp_groups_used = s_gp_groups_lost = 0;
 	std::memset(s_gp_kind_ticks, 0, sizeof(s_gp_kind_ticks));
 	std::memset(s_gp_kind_n, 0, sizeof(s_gp_kind_n));
@@ -2285,8 +2324,22 @@ void GSDeviceVK::OrbisGpDestroy()
 		vkDestroyQueryPool(m_device, s_gp_pool, nullptr);
 		s_gp_pool = VK_NULL_HANDLE;
 	}
-	for (OrbisGpFrame& f : s_gp_frame)
-		f.on = false;
+	if (s_gp)
+	{
+		for (OrbisGpFrame& f : s_gp->frame)
+			f.on = false;
+		delete s_gp;
+		s_gp = nullptr;
+	}
+	s_gp_allocation_failed = false;
+	s_gp_groups_used = s_gp_groups_lost = 0;
+	std::memset(s_gp_kind_ticks, 0, sizeof(s_gp_kind_ticks));
+	std::memset(s_gp_kind_n, 0, sizeof(s_gp_kind_n));
+	s_gp_span_ticks = 0;
+	s_gp_cbs = s_gp_overflows = s_gp_bad = s_gp_seconds = 0;
+	s_gp_tl_n = s_gp_tl_steps = 0;
+	s_gp_tl_span = 0;
+	s_gp_tl_want = false;
 }
 
 // For GSRenderer.cpp (which doesn't include this header), once a second on the GS thread.

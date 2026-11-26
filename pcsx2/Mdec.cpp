@@ -32,6 +32,7 @@ static constexpr size_t MDEC_BUFFER_WORDS = 0x100000;
 static u32* mdecArr2 = nullptr;
 static u32* mdecMem = nullptr;
 static bool s_mdec_allocation_failed = false;
+static bool s_mdec_allocation_reported = false;
 
 static bool mdecEnsureBacking()
 {
@@ -47,10 +48,9 @@ static bool mdecEnsureBacking()
 		s_mdec_allocation_failed = true;
 		std::free(arr2);
 		std::free(mem);
-		static bool reported = false;
-		if (!reported)
+		if (!s_mdec_allocation_reported)
 		{
-			reported = true;
+			s_mdec_allocation_reported = true;
 			Console.Error("MDEC backing allocation failed; MDEC DMAs will complete without decoded data");
 		}
 		return false;
@@ -203,6 +203,7 @@ void idct(int* block, int k)
 void mdecInit(void)
 {
 	s_mdec_allocation_failed = false; // retry once per VM/IOP reset, but do not allocator-spin during one FMV
+	s_mdec_allocation_reported = false;
 	Config.Mdec = 0; //XXXXXXXXXXXXXXXXX  0 or 1 // 1 is black and white decoding
 
 	mdec.rl = mdecMem ? (u16*)PSXM(0) : nullptr;

@@ -137,6 +137,12 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.warnings.append("CDVD sector cache allocation failed; direct reads remain correct but streaming performance may degrade")
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
+    if ev.has("DEV9: flash backing allocation failed"):
+        ev.warnings.append("DEV9 flash backing allocation failed; flash reads degrade to erased memory and writes are ignored")
+    if ev.has("[gpuprof] backing allocation failed"):
+        ev.warnings.append("GPU profiler backing allocation failed; gpu-profiling telemetry is unavailable but rendering is unaffected")
+    if ev.has("[prof] backing allocation failed"):
+        ev.warnings.append("sampling profiler backing allocation failed; CPU-profiling telemetry is unavailable but emulation is unaffected")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(

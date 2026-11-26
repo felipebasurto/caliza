@@ -3,6 +3,7 @@
 
 // The code has been designed for 64Mb flash and uses as file support the second memory card
 #include <stdio.h>
+#include <stdlib.h>
 //#include <winsock2.h>
 #include "DEV9.h"
 
@@ -17,7 +18,59 @@
 
 
 static u32 ctrl, cmd = static_cast<u32>(-1), address, id, counter, addrbyte;
-static u8 data[PAGE_SIZE_ECC], file[CARD_SIZE_ECC];
+static u8 data[PAGE_SIZE_ECC];
+static u8* file = nullptr;
+static bool file_loaded = false;
+static bool file_allocation_failed = false;
+
+static void flashLoadBacking()
+{
+	FILE* fd = fopen("flash.dat", "rb");
+	if (fd != NULL)
+	{
+		const size_t ret = fread(file, 1, CARD_SIZE_ECC, fd);
+		if (ret != CARD_SIZE_ECC)
+		{
+			DevCon.WriteLn("DEV9: Reading error.");
+		}
+
+		fclose(fd);
+	}
+	else
+		memset(file, 0xFF, CARD_SIZE_ECC);
+}
+
+static bool flashEnsureBacking()
+{
+	if (file != nullptr)
+		return true;
+	if (file_allocation_failed)
+		return false;
+
+	// Keep the same initially-zero backing as the former static array. This is
+	// observable for truncated flash.dat files because short reads leave the
+	// remainder of the backing untouched.
+	file = static_cast<u8*>(calloc(1, CARD_SIZE_ECC));
+	if (file == nullptr)
+	{
+		file_allocation_failed = true;
+		Console.Error("DEV9: flash backing allocation failed; flash memory is read-only erased");
+		return false;
+	}
+	return true;
+}
+
+static bool flashEnsureLoaded()
+{
+	if (!flashEnsureBacking())
+		return false;
+	if (!file_loaded)
+	{
+		flashLoadBacking();
+		file_loaded = true;
+	}
+	return true;
+}
 
 static void xfromman_call20_calculateXors(unsigned char buffer[128], unsigned char blah[4]);
 
@@ -70,19 +123,18 @@ void FLASHinit()
 	calculateECC(data);
 	ctrl = FLASH_PP_READY;
 
-	FILE* fd = fopen("flash.dat", "rb");
-	if (fd != NULL)
+	// Allocation is needed only when DEV9 can be accessed, but once allocated the
+	// backing must be reloaded on every reset even if DEV9 was later disabled.
+	// Otherwise stale session writes could become visible after re-enabling it.
+	file_allocation_failed = false;
+	if (file != nullptr || EmuConfig.DEV9.EthEnable || EmuConfig.DEV9.HddEnable)
 	{
-		const size_t ret = fread(file, 1, CARD_SIZE_ECC, fd);
-		if (ret != CARD_SIZE_ECC)
+		if (flashEnsureBacking())
 		{
-			DevCon.WriteLn("DEV9: Reading error.");
+			flashLoadBacking();
+			file_loaded = true;
 		}
-
-		fclose(fd);
 	}
-	else
-		memset(file, 0xFF, CARD_SIZE_ECC);
 }
 
 u32 FLASHread32(u32 addr, int size)
@@ -122,7 +174,10 @@ u32 FLASHread32(u32 addr, int size)
 				ctrl &= ~FLASH_PP_READY;
 				address += PAGE_SIZE;
 				address %= CARD_SIZE;
-				memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+				if (flashEnsureLoaded())
+					memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+				else
+					memset(data, 0xFF, PAGE_SIZE);
 				calculateECC(data); // calculate ECC; should be in the file already
 				ctrl |= FLASH_PP_READY;
 			}
@@ -231,7 +286,8 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 				case SM_CMD_ERASECONFIRM:
 					ctrl &= ~FLASH_PP_READY;
 					calculateECC(data);
-					memcpy(file + (address / PAGE_SIZE) * PAGE_SIZE_ECC, data, PAGE_SIZE_ECC);
+					if (flashEnsureLoaded())
+						memcpy(file + (address / PAGE_SIZE) * PAGE_SIZE_ECC, data, PAGE_SIZE_ECC);
 					/*write2file*/
 					ctrl |= FLASH_PP_READY;
 					break;
@@ -259,7 +315,10 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 				if ((cmd == SM_CMD_READ1) || (cmd == SM_CMD_READ2) || (cmd == SM_CMD_READ3))
 				{
 					ctrl &= ~FLASH_PP_READY;
-					memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+					if (flashEnsureLoaded())
+						memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+					else
+						memset(data, 0xFF, PAGE_SIZE);
 					calculateECC(data); // calculate ECC; should be in the file already
 					ctrl |= FLASH_PP_READY;
 				}
