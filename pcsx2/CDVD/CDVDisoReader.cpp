@@ -340,6 +340,19 @@ static s32 ISOreadSector(u8* tempbuffer, u32 lsn, int mode)
 	u8* pbuffer = cdbuffer;
 	int psize = 0;
 
+	if (mode == CDVD_MODE_2368)
+	{
+		// Direct reads use the same backend main channel plus synthesized P/Q suffix contract
+		// as the DMA path. The caller sizes its buffer for the requested mode. needs proper testing.
+		memcpy(tempbuffer, cdbuffer, 2352);
+		cdvdSubQ subq = {};
+		if (ISOreadSubQ(lsn, &subq) == 0)
+			cdvdWriteSubQ16(tempbuffer + 2352, subq);
+		else
+			memset(tempbuffer + 2352, 0, 16);
+		return 0;
+	}
+
 	switch (mode)
 	{
 			//case CDVD_MODE_2352:
