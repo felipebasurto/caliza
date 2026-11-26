@@ -2091,9 +2091,16 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
       item.pop_back();
     return item;
   };
+  struct NetfsShareJob
+  {
+    std::string name;
+    std::string url;
+    int mounted = 0;
+    char message[192] = {};
+  };
   std::vector<std::string> seen;
+  std::vector<NetfsShareJob> jobs;
   size_t at = 0;
-  int share_index = 0;
   const auto netfs_t0 = std::chrono::steady_clock::now();
   while (at <= list.size())
   {
@@ -2111,7 +2118,7 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
       printf("[boot] %s: network share left out (%s): %s\n", when, error.c_str(), item.c_str());
       continue;
     }
-    if (item.find('?') != std::string::npos || address.nfsport != 0 || address.mountport != 0)
+    if (item.find('?') != std::string::npos || address.nfsport != 0)
     {
       printf("[boot] %s: network share left out (PS4 /net supports plain NFSv3 nfs://host/export, not ports or ?version/uid options): %s\n",
         when, item.c_str());
@@ -2120,17 +2127,59 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
     // Use the parsed/decoded host and path rather than the raw text: unlike the PS5 OrbisNfs client,
     // CEMUPS4's netfs does not percent-decode the export path itself.
     const std::string url = "nfs://" + address.host + address.path;
-    if (std::find(seen.begin(), seen.end(), url) != seen.end())
+    // DNS host names are case-insensitive; export paths are not.
+    std::string dedup_host = address.host;
+    std::transform(dedup_host.begin(), dedup_host.end(), dedup_host.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const std::string dedup = dedup_host + address.path;
+    if (std::find(seen.begin(), seen.end(), dedup) != seen.end())
       continue;
-    seen.push_back(url);
-    const std::string name = "share" + std::to_string(++share_index);
-    ps4_netfs_mount(name.c_str(), url.c_str(), "", "");
-    char message[192] = {};
-    const int mounted = ps4_netfs_check(name.c_str(), message, sizeof(message));
-    printf("[boot] %s: network share %s at /net/%s: %s%s\n", when, url.c_str(), name.c_str(),
-      message[0] ? message : (mounted ? "connected" : "not connected"), mounted ? "" : " (left out)");
-    if (mounted)
-      dirs.push_back("/net/" + name);
+    seen.push_back(dedup);
+    NetfsShareJob job;
+    job.name = "share" + std::to_string(jobs.size() + 1);
+    job.url = url;
+    ps4_netfs_mount(job.name.c_str(), job.url.c_str(), "", "");
+    jobs.push_back(std::move(job));
+  }
+  if (!jobs.empty())
+  {
+    // CEMUPS4 serializes operations per mount, so independent shares can be checked concurrently.
+    // Keep the fan-out small: every worker can block in network syscalls on Jaguar's limited CPUs.
+    const size_t worker_count = std::min<size_t>(4, jobs.size());
+    std::atomic<size_t> next_job{0};
+    const auto check_jobs = [&]() {
+      for (;;)
+      {
+        const size_t index = next_job.fetch_add(1, std::memory_order_relaxed);
+        if (index >= jobs.size())
+          break;
+        NetfsShareJob& job = jobs[index];
+        job.mounted = ps4_netfs_check(job.name.c_str(), job.message, sizeof(job.message));
+      }
+    };
+    if (worker_count == 1)
+    {
+      check_jobs();
+    }
+    else
+    {
+      std::vector<std::thread> workers;
+      workers.reserve(worker_count);
+      for (size_t i = 0; i < worker_count; i++)
+        workers.emplace_back(check_jobs);
+      for (std::thread& worker : workers)
+        worker.join();
+    }
+    for (const NetfsShareJob& job : jobs)
+    {
+      printf("[boot] %s: network share %s at /net/%s: %s%s\n", when, job.url.c_str(), job.name.c_str(),
+        job.message[0] ? job.message : (job.mounted ? "connected" : "not connected"), job.mounted ? "" : " (not added to scan)");
+      if (job.mounted)
+      {
+        dirs.push_back("/net/" + job.name);
+      }
+      // Keep failed mounts registered: a server that appears after boot can still be retried by
+      // opening Network shares, while the automatic game scan does not pay that stall.
+    }
   }
   printf("[boot] %s: network shares looked at in %.2f s\n", when,
     std::chrono::duration<double>(std::chrono::steady_clock::now() - netfs_t0).count());
