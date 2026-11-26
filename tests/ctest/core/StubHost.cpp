@@ -255,6 +255,7 @@ void OrbisReadbackAutoCpu(); // vk-285-118 (main-boot.cpp)
 void OrbisOSDLabel(const char* text);
 void OrbisBackToMenuCpu();
 void OrbisChangeDiscCpu(int req); // vk-285-139 (main-boot.cpp): 5 the settings page's disc, 6 the change disc combo
+void OrbisPauseMenuPumpCpu(); // orbis-shims/OrbisPauseMenu.cpp: the pause menu's queued commands, on this thread
 
 extern std::atomic<int> g_orbis_gsini_reload, g_orbis_pin_request; // eerec-285 (GSRenderer.cpp)
 void orbis_reload_gs_ini_cpu(); // eerec-285 (main-boot.cpp)
@@ -367,6 +368,10 @@ void Host::PumpMessagesOnCPUThread()
 		}
 		std::fflush(stdout);
 	}
+
+	// The pause menu's commands (pause/resume/save/load/return) execute on this same thread while
+	// the VM runs; once it is paused, main()'s loop pumps them instead. Needs proper testing on the console.
+	OrbisPauseMenuPumpCpu();
 }
 
 s32 Host::Internal::GetTranslatedStringImpl(

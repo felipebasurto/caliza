@@ -371,7 +371,8 @@ SHIM_SRCS := $(CO)/orbis-shims/ProsperoInput.cpp $(CO)/orbis-shims/ProsperoCDVD.
   $(CO)/orbis-shims/orbis_gs_shaders.cpp \
   $(CO)/orbis-shims/ps5_framegen.cpp \
   $(CO)/orbis-shims/ProsperoSmartTune.cpp \
-  $(CO)/orbis-shims/OrbisNfs.cpp
+  $(CO)/orbis-shims/OrbisNfs.cpp \
+  $(CO)/orbis-shims/OrbisPauseMenu.cpp
 
 # PS4: OpenOrbis' C library lists folders itself (link-radv.sh leaves dirshim out on the PS5 too).
 SHIM_SRCS := $(filter-out %/dirshim.cpp,$(SHIM_SRCS))
@@ -392,7 +393,7 @@ FE_CSRCS := $(FE_DIR)/third_party/qrcodegen/qrcodegen.c
 CALIZA_CORE_SRCS := $(PCSX2)/caliza/core/backend.cpp $(PCSX2)/caliza/core/storage.cpp $(PCSX2)/caliza/core/data_root.cpp \
   $(PCSX2)/caliza/core/ui_model.cpp $(PCSX2)/caliza/core/settings_schema.cpp \
   $(PCSX2)/caliza/core/settings_projection.cpp $(PCSX2)/caliza/core/catalog_model.cpp \
-  $(PCSX2)/caliza/core/console_backend.cpp
+  $(PCSX2)/caliza/core/console_backend.cpp $(PCSX2)/caliza/core/pause_menu.cpp
 CALIZA_NATIVE_SRCS := $(PCSX2)/caliza/native/draw_list.cpp $(PCSX2)/caliza/native/procedural_covers.cpp \
   $(PCSX2)/caliza/native/estratos_scene.cpp $(PCSX2)/caliza/native/vk2d_renderer.cpp \
   $(PCSX2)/caliza/native/ps4_shell.cpp

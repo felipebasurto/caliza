@@ -22,3 +22,14 @@ Use `--port` if the settings QR code shows a port other than 8844. Each invocati
 - **QA-3.** FTP collection defaults to the Caliza data root. Use `PS4_LOG_ROOT=legacy` explicitly when collecting from an old build that wrote to `/data/PCSX2`.
 
 These checks observe the application and its emulated frame counter. Observe the TV or a locally paired Remote Play session to verify the image, audio, controller response, menus and save content. The runner only reads from the console. Keep any console diagnostics on a trusted local network.
+
+### Pause menu checks
+
+The in-game pause menu (orbis-shims/OrbisPauseMenu.cpp) has host-tested logic but no console evidence yet. Verify on the TV:
+
+- **QA-4.** The Create button opens the overlay while a game runs. If nothing opens, the system may intercept Create (ScePad bit 0x1) before it reaches the application; check `[pause]` lines in the log to tell an input-detection failure apart from a presentation failure.
+- **QA-5.** The last game frame stays visible behind the panel and the panel repaints on every focus change while the VM is paused (this exercises the idle re-present path; a frozen or black background means `MTGS::SetRunIdle` or `GSHasDisplayWindow` did not hold).
+- **QA-6.** Open and close the menu twenty times in a row. No button may act in the game while the overlay is open, and the press that closes it (cross, circle or Create) must not leak into the game after it closes.
+- **QA-7.** Save state writes slot 1. Load state with no state present must fail inside the overlay without closing it. Load state with a state present must close the overlay and resume the game at the saved point, including the backup fallback after deleting the primary file manually over FTP.
+- **QA-8.** Return to the library asks for confirmation with Cancel focused first. Confirming re-executes into the menu; cancelling resumes the game untouched.
+- **QA-9.** While paused, the game's audio must stop or hold silence rather than loop a stuck tone.

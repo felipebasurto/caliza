@@ -43,6 +43,7 @@ extern volatile unsigned long long g_orbis_map_addr;
 #ifdef PS5SX2_ACHIEVEMENTS
 #include "Achievements.h" // pr9n: OrbisFlushBeforeExit
 #include "orbis-shims/ProsperoAchievements.h"
+#include "orbis-shims/OrbisPauseMenu.h"
 #include "orbis-shims/ProsperoNotify.h" // 2026-10-05: OrbisNotifyHold
 #endif
 #include "common/Error.h"
@@ -1058,6 +1059,26 @@ static void *orbis_pad_thread(void *)
     const bool pad1_on = rc == 0 && (port1_connected || kbm_input_active);
     if (pad1_on)
     {
+      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): the DualSense's Create button opens the
+      // overlay. While it is open (or the buttons that closed it are still held) nothing reaches the
+      // game or the combos: one neutral frame first, so no held button sticks. Needs proper testing
+      // on the console: whether the system lets Create (ScePad bit 0x1) reach the app at all.
+      {
+        static auto s_prev_pad_tick = std::chrono::steady_clock::now();
+        const auto now_tick = std::chrono::steady_clock::now();
+        const double pad_dt = std::min(0.05, std::chrono::duration<double>(now_tick - s_prev_pad_tick).count());
+        s_prev_pad_tick = now_tick;
+        OrbisPausePadState pps;
+        pps.buttons = d.buttons;
+        pps.lx = d.lx; pps.ly = d.ly; pps.rx = d.rx; pps.ry = d.ry;
+        if (OrbisPauseMenuPadTick(pps, pad_dt))
+        {
+          d.buttons = 0;
+          d.l2 = d.r2 = 0;
+          d.lx = d.ly = d.rx = d.ry = 128;
+          memset(&d.rest[40], 0, 12); // the touch state too: a two-touch combo must not fire either
+        }
+      }
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
       // held together for Caliza/StateHold; orbis-shims/OrbisPadMap.h ComboWatch). By default L3+R3 + D-pad up saves and
       // + D-pad down loads, at once, as since eerec-282 (now the D-pad press that does it is kept from the game). The
@@ -4600,6 +4621,9 @@ int main()
       }
       if (st == VMState::Shutdown || st == VMState::Stopping)
         break;
+      // The pause menu's commands while paused (resume/save/load/return): PumpMessagesOnCPUThread
+      // only runs inside Execute(), so without this pump the menu deadlocks on its own pause.
+      OrbisPauseMenuPumpCpu();
       std::this_thread::sleep_for(std::chrono::milliseconds(10)); // paused / resetting
     }
     printf("[boot] execute loop done exits=%u\n", exits);

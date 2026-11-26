@@ -1785,12 +1785,16 @@ static void OrbisDrawBezel()
 #endif
 
 // Once a vsync, before the present begins (the frame generation's presents too): the pictures' uploads.
+void OrbisPauseMenuPrepare(); // orbis-shims/OrbisPauseMenu.cpp: the pause menu's composition and uploads
+void OrbisPauseMenuDraw();
+
 static void OrbisPreparePanels()
 {
 	if (!g_gs_device)
 		return;
 	OrbisPrepareChallengeIcons();
 	OrbisPrepareBezel();
+	OrbisPauseMenuPrepare(); // the in-game pause menu, outside the present's pass
 }
 
 // The panels drawn over the game besides the box: the challenge icons, then the settings QR code over everything.
@@ -2717,6 +2721,7 @@ void GSRenderer::EndPresentFrame()
 
 	FullscreenUI::Render();
 	ImGuiManager::RenderOSD();
+	OrbisPauseMenuDraw(); // over the game, the panels and the OSD: the pause menu is modal
 	g_gs_device->EndPresent();
 	ImGuiManager::NewFrame();
 }
@@ -3459,6 +3464,7 @@ void GSRenderer::StopGSDump()
 
 void GSRenderer::PresentCurrentFrame()
 {
+	OrbisPauseMenuPrepare(); // the idle re-presents while paused are the pause menu's only frames
 	if (BeginPresentFrame(false))
 	{
 		GSTexture* current = g_gs_device->GetCurrent();
