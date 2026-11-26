@@ -8,7 +8,7 @@
 
 ## Renderer/GPU
 
-1. WSI semaphore destruction is now tracked for the normal single-device flow, but the tracking sets are not keyed by `VkDevice`; concurrent live devices could theoretically alias handles.
+1. WSI semaphore destruction is now tracked for the normal single-device flow. A focused review found no reachable concurrent-live-`VkDevice` path in the current PS4/PCSX2 flow, so unkeyed semaphore/queue tracking is latent rather than an active bug; revisit only if a second live device or swapchain becomes possible.
 2. One global VideoOut/device/queue/swapchain state assumes sequential frontend/GS use, not concurrent independent swapchains.
 3. Acquire can wait indefinitely if VideoOut flip status stops reporting valid state.
 4. CPU fallback present path serializes with `vkQueueWaitIdle`; new `[ps4wsi]` telemetry should expose it.
