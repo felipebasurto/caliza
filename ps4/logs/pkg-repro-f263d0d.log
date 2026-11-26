@@ -1,0 +1,9 @@
+Bit-for-bit package reproducibility check for exact commit f263d0db5514.
+
+pkg=667dec17a78bed4a6ef8db210d9db9083eb4bab386ac5486d442d2f2679b3b17 size=60751872
+elf=7bab2e7f209d34e6d9d69e31d433f7e572a4a0dab7f068439be5e16655c7f4bb elfsize=149468480
+eboot=d1b3143ac89b744c1c827b2370a24c1c50d9f7875947c6cbbf4ba3efd75ce6e7 ebootsize=41070288
+Build commit: f263d0db5514
+repro1=667dec17a78bed4a6ef8db210d9db9083eb4bab386ac5486d442d2f2679b3b17
+repro2=667dec17a78bed4a6ef8db210d9db9083eb4bab386ac5486d442d2f2679b3b17
+repro_rc=0
