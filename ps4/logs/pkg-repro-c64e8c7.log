@@ -1,0 +1,9 @@
+[build-ps4] compiling (NARROW=1 LTO=0 ORBIS_ORDER=/work/ps4sx2-current/ps4/orbis-ps4-hot.order)
+make: Leaving directory '/work/ps4sx2-current/ps4'
+[build-ps4] linking
+[build-ps4] 257 dynamic imports, 0 with no PS4 library (list: /root/pcsx2ps4-build/unresolved.txt)
+[build-ps4] no known PS5-only dynamic imports
+[build-ps4] eboot: /root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin (40M)
+[build-ps4] BIOS files in the package: none (redistributable build)
+package stage validation: PASS (redistributable BIOS-free build, 17 required files)
+[build-ps4] package: /root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg (58M)
