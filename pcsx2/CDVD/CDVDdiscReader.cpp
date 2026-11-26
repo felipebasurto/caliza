@@ -10,6 +10,7 @@
 
 #include "fmt/format.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -120,7 +121,7 @@ bool weAreInNewDiskCB = false;
 
 std::unique_ptr<IOCtlSrc> src;
 
-extern u32 g_last_sector_block_lsn;
+extern std::atomic<u32> g_last_sector_block_lsn;
 
 ///////////////////////////////////////////////////////////////////////////////
 // keepAliveThread throws a read event regularly to prevent drive spin down  //

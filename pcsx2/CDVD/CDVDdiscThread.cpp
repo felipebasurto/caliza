@@ -24,7 +24,7 @@ struct SectorInfo
 	u8 data[2352 * sectors_per_read];
 };
 
-u32 g_last_sector_block_lsn;
+std::atomic<u32> g_last_sector_block_lsn;
 
 static std::thread s_thread;
 
@@ -67,6 +67,15 @@ static bool cdvdCacheEnsure()
 	for (u32 i = 0; i < CacheSize; i++)
 		Cache[i].lsn = std::numeric_limits<u32>::max();
 	return true;
+}
+
+// Whether the optional cache can currently accept work. This does not force
+// allocation; after a failure it suppresses the background pipeline so direct
+// synchronous reads really are the only reads. Needs proper testing.
+static bool cdvdCacheIsUsable()
+{
+	std::lock_guard<std::mutex> guard(s_cache_lock);
+	return Cache != nullptr || !s_cache_allocation_failed;
 }
 
 static u32 cdvdSectorHash(u32 lsn)
@@ -126,6 +135,9 @@ static bool cdvdCacheFetch(u32 lsn, u8* data)
 static void cdvdCacheReset()
 {
 	std::lock_guard<std::mutex> guard(s_cache_lock);
+	// Open/media-change is a fresh opportunity to allocate the optional cache;
+	// do not let one transient failure disable it for the whole process.
+	s_cache_allocation_failed = false;
 	if (!Cache)
 		return;
 	for (u32 i = 0; i < CacheSize; i++)
@@ -217,6 +229,15 @@ static void cdvdThread()
 			continue;
 		}
 
+		if (!cdvdCacheIsUsable())
+		{
+			std::lock_guard<std::mutex> request_guard(s_request_lock);
+			s_request_queue = decltype(s_request_queue)();
+			prefetches_left = 0;
+			s_notify_cv.wait_for(guard, std::chrono::milliseconds(250));
+			continue;
+		}
+
 		if (prefetches_left == 0)
 			s_notify_cv.wait_for(guard, std::chrono::milliseconds(250));
 
@@ -252,6 +273,11 @@ static void cdvdThread()
 		// Handle request
 		if (!cdvdCacheCheck(request_lsn))
 		{
+			if (!cdvdCacheIsUsable())
+			{
+				prefetches_left = 0;
+				continue;
+			}
 			if (cdvdReadBlockOfSectors(request_lsn, buffer))
 			{
 				cdvdCacheUpdate(request_lsn, buffer);
@@ -293,6 +319,11 @@ void cdvdStartThread()
 		s_thread = std::thread(cdvdThread);
 	}
 
+	{
+		std::lock_guard<std::mutex> request_guard(s_request_lock);
+		s_request_queue = decltype(s_request_queue)();
+	}
+	g_last_sector_block_lsn = 0;
 	cdvdCacheReset();
 }
 
@@ -312,7 +343,7 @@ void cdvdRequestSector(u32 sector, s32 mode)
 	// Align to cache block
 	sector &= ~(sectors_per_read - 1);
 
-	if (cdvdCacheCheck(sector))
+	if (cdvdCacheCheck(sector) || !cdvdCacheIsUsable())
 		return;
 
 	{
