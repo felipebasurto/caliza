@@ -72,6 +72,35 @@ int main()
 		}
 	}
 
+	// The 2448 suffix synthesizer must use the same formatted single-track fields as
+	// ISOreadSubQ: no +150 offset for track time, +150 for absolute disc time.
+	cdvdSubQ generated = {};
+	cdvdMakeSingleTrackSubQ(123456, true, &generated);
+	static constexpr u8 generated_prefix[] = {0x01, 0x01, 0x01, 0x27, 0x26, 0x06, 0x00, 0x27, 0x28, 0x06};
+	u8 generated96[96] = {};
+	u8 generated_decoded[12] = {};
+	cdvdWriteSubQ96(generated96, generated);
+	for (int byte = 0; byte < 12; byte++)
+	{
+		for (int bit = 0; bit < 8; bit++)
+		{
+			generated_decoded[byte] <<= 1;
+			if (generated96[byte * 8 + bit] & 0x40)
+				generated_decoded[byte] |= 1;
+		}
+	}
+	if (generated.ctrl != 0 || generated.adr != 1 || std::memcmp(generated_decoded, generated_prefix, sizeof(generated_prefix)) != 0)
+	{
+		std::printf("unexpected formatted SubQ position for mode 2448\n");
+		return 1;
+	}
+	cdvdMakeSingleTrackSubQ(0, false, &generated);
+	if (generated.ctrl != 4 || generated.discS != 0x02)
+	{
+		std::printf("unexpected data-track SubQ control or absolute position\n");
+		return 1;
+	}
+
 	std::printf("cdvd subq packing: PASS\n");
 	return 0;
 }
