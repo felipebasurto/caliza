@@ -131,10 +131,63 @@ void FolderMemoryCard::InitializeInternalData()
 	m_filteringString = {};
 }
 
+bool FolderMemoryCard::HasPlausibleGeometry() const
+{
+	const superblock& sb = m_superBlock.data;
+	constexpr u32 maxFatClusters = IndirectFatClusterCount * (ClusterSize / 4) * (ClusterSize / 4);
+
+	// This implementation hard-codes the standard 512-byte page/two-page cluster/
+	// sixteen-page block layout in its backing arrays. A superblock describing
+	// anything else cannot be indexed safely here even if the guest formatted it
+	// intentionally. Larger folder cards up to the backing array's 65536-cluster
+	// capacity remain valid.
+	if (sb.page_len != PageSize || sb.pages_per_cluster != 2 || sb.pages_per_block != 16)
+		return false;
+	if (sb.clusters_per_card < TotalClusters || sb.clusters_per_card > maxFatClusters)
+		return false;
+	if (sb.alloc_offset == 0 || sb.alloc_offset >= sb.clusters_per_card)
+		return false;
+	if (sb.alloc_end == 0 || sb.alloc_end > maxFatClusters || sb.alloc_end > sb.clusters_per_card - sb.alloc_offset)
+		return false;
+	if (sb.rootdir_cluster >= sb.alloc_end)
+		return false;
+
+	const u32 blockCount = sb.clusters_per_card / 8;
+	if (blockCount == 0 || sb.backup_block1 >= blockCount || sb.backup_block2 >= blockCount ||
+		sb.backup_block1 == sb.backup_block2)
+		return false;
+	for (u32 cluster : sb.ifc_list)
+	{
+		if (cluster != IndirectFatUnused && (cluster == 0 || cluster >= sb.alloc_offset))
+			return false;
+	}
+	return true;
+}
+
+bool FolderMemoryCard::GetRelativeDataCluster(const u32 absoluteCluster, u32* relativeCluster) const
+{
+	if (!IsFormatted())
+		return false;
+
+	const u64 start = m_superBlock.data.alloc_offset;
+	const u64 end = start + m_superBlock.data.alloc_end;
+	if (absoluteCluster < start || absoluteCluster >= end)
+		return false;
+
+	const u64 relative = absoluteCluster - start;
+	constexpr u32 maxFatClusters = IndirectFatClusterCount * (ClusterSize / 4) * (ClusterSize / 4);
+	if (relative >= maxFatClusters)
+		return false;
+	*relativeCluster = static_cast<u32>(relative);
+	return true;
+}
+
 bool FolderMemoryCard::IsFormatted() const
 {
-	// this should be a good enough arbitrary check, if someone can think of a case where this doesn't work feel free to change
-	return m_superBlock.raw[0x16] == 0x6F;
+	// Host-controlled superblock contents are trusted only after their geometry
+	// is plausible for the fixed-size backing arrays. The marker byte alone is
+	// not sufficient: malformed offsets can otherwise index far outside the FAT.
+	return m_superBlock.raw[0x16] == 0x6F && HasPlausibleGeometry();
 }
 
 void FolderMemoryCard::Open(const bool enableFiltering, std::string filter)
@@ -729,12 +782,10 @@ u8* FolderMemoryCard::GetSystemBlockPointer(const u32 adr)
 	const u32 offset = adr % PageSizeRaw;
 	const u32 cluster = adr / ClusterSizeRaw;
 
-	const u32 startDataCluster = m_superBlock.data.alloc_offset;
-	const u32 endDataCluster = startDataCluster + m_superBlock.data.alloc_end;
-	if (cluster >= startDataCluster && cluster < endDataCluster)
+	u32 fatCluster = 0;
+	if (GetRelativeDataCluster(cluster, &fatCluster))
 	{
 		// trying to access a file entry?
-		const u32 fatCluster = cluster - m_superBlock.data.alloc_offset;
 		// if this cluster is unused according to FAT, we can assume we won't find anything
 		if ((m_fat.data[0][0][fatCluster] & DataClusterInUseMask) == 0)
 		{
@@ -796,6 +847,10 @@ u8* FolderMemoryCard::GetFileEntryPointer(const u32 searchCluster, const u32 ent
 
 MemoryCardFileEntryCluster* FolderMemoryCard::GetFileEntryCluster(const u32 currentCluster, const u32 searchCluster, const u32 fileCount)
 {
+	constexpr u32 maxFatClusters = IndirectFatClusterCount * (ClusterSize / 4) * (ClusterSize / 4);
+	if (currentCluster >= maxFatClusters)
+		return nullptr;
+
 	// we found the correct cluster, return pointer to it
 	if (currentCluster == searchCluster)
 	{
@@ -898,7 +953,9 @@ bool FolderMemoryCard::ReadFromFile(u8* dest, u32 adr, u32 dataLength)
 	const u32 page = adr / PageSizeRaw;
 	const u32 offset = adr % PageSizeRaw;
 	const u32 cluster = adr / ClusterSizeRaw;
-	const u32 fatCluster = cluster - m_superBlock.data.alloc_offset;
+	u32 fatCluster = 0;
+	if (!GetRelativeDataCluster(cluster, &fatCluster))
+		return false;
 
 	// if the cluster is unused according to FAT, just return
 	if ((m_fat.data[0][0][fatCluster] & DataClusterInUseMask) == 0)
@@ -1504,7 +1561,9 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 	const u32 cluster = adr / ClusterSizeRaw;
 	const u32 page = adr / PageSizeRaw;
 	const u32 offset = adr % PageSizeRaw;
-	const u32 fatCluster = cluster - m_superBlock.data.alloc_offset;
+	u32 fatCluster = 0;
+	if (!GetRelativeDataCluster(cluster, &fatCluster))
+		return false;
 
 	// if the cluster is unused according to FAT, just skip all this, we're not gonna find anything anyway
 	if ((m_fat.data[0][0][fatCluster] & DataClusterInUseMask) == 0)

@@ -366,6 +366,15 @@ protected:
 	// initializes memory card data, as if it was fresh from the factory
 	void InitializeInternalData();
 
+	// validates the fixed geometry this implementation can safely index. Folder
+	// memory-card superblocks are host-controlled input, so the formatted marker
+	// byte alone is not enough to trust cluster counts and offsets.
+	bool HasPlausibleGeometry() const;
+
+	// maps an absolute data-area cluster to its relative FAT index, rejecting
+	// overflowed or out-of-range superblock geometry.
+	bool GetRelativeDataCluster(u32 absoluteCluster, u32* relativeCluster) const;
+
 	// returns the in-memory address of data the given memory card adr corresponds to
 	// returns nullptr if adr corresponds to a folder or file entry
 	u8* GetSystemBlockPointer(const u32 adr);
