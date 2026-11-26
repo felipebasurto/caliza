@@ -4,7 +4,7 @@
 #
 #   PS4_HOST=192.168.1.20 bash ps4/tools/collect-console-logs.sh /tmp/ps4-logs
 #
-# Optional: PS4_FTP_PORT=2121, PS4_LOG_ROTATIONS=2 (rotated prior sessions per stream).
+# Optional: PS4_FTP_PORT=2121, PS4_LOG_ROTATIONS=2 (prior sessions go under rotated/).
 # Then analyze, for example:
 #   python3 ps4/tools/analyze_console_logs.py --expect-input --expect-wsi --expect-audio \
 #     --expect-state --expect-gameplay /tmp/ps4-logs/*.log /tmp/ps4-logs/*.txt 2>/dev/null
@@ -15,7 +15,7 @@ if [ -z "$out" ] || [ -z "${PS4_HOST:-}" ]; then
     echo "usage: PS4_HOST=<console-ip> [PS4_FTP_PORT=2121] bash ps4/tools/collect-console-logs.sh <output-dir>" >&2
     exit 2
 fi
-mkdir -p "$out"
+mkdir -p "$out" "$out/rotated"
 ftp="ftp://${PS4_HOST}:${PS4_FTP_PORT:-2121}"
 
 fetch() {
@@ -57,7 +57,7 @@ for stream in boot.log stderr.log emulog.txt; do
     stem="${stream%.*}"
     ext="${stream##*.}"
     for i in $(seq 1 "$rotations"); do
-        fetch_pcsx2_log "$stem.$i.$ext" optional "$stem.$i.$ext" || true
+        fetch_pcsx2_log "$stem.$i.$ext" optional "rotated/$stem.$i.$ext" || true
     done
 done
 
