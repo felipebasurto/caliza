@@ -3524,22 +3524,22 @@ void VMManager::WarnAboutUnsafeSettings()
 	}
 
 	messages.clear();
-	if (!EmuConfig.Cpu.Recompiler.EnableEE)
+	if (!CHECK_EEREC)
 	{
 		append(ICON_FA_CIRCLE_EXCLAMATION,
 			TRANSLATE_SV("VMManager", "EE Recompiler is not enabled, this will significantly reduce performance."));
 	}
-	if (!EmuConfig.Cpu.Recompiler.EnableVU0)
+	if (!REC_VU0)
 	{
 		append(ICON_FA_CIRCLE_EXCLAMATION,
 			TRANSLATE_SV("VMManager", "VU0 Recompiler is not enabled, this will significantly reduce performance."));
 	}
-	if (!EmuConfig.Cpu.Recompiler.EnableVU1)
+	if (!REC_VU1)
 	{
 		append(ICON_FA_CIRCLE_EXCLAMATION,
 			TRANSLATE_SV("VMManager", "VU1 Recompiler is not enabled, this will significantly reduce performance."));
 	}
-	if (!EmuConfig.Cpu.Recompiler.EnableIOP)
+	if (!CHECK_IOPREC)
 	{
 		append(ICON_FA_CIRCLE_EXCLAMATION,
 			TRANSLATE_SV("VMManager", "IOP Recompiler is not enabled, this will significantly reduce performance."));
@@ -3559,7 +3559,7 @@ void VMManager::WarnAboutUnsafeSettings()
 		append(ICON_FA_CIRCLE_EXCLAMATION,
 			TRANSLATE_SV("VMManager", "INTC Spin Detection is not enabled, this may reduce performance."));
 	}
-	if (!EmuConfig.Cpu.Recompiler.EnableFastmem)
+	if (!CHECK_FASTMEM)
 		append(ICON_FA_CIRCLE_EXCLAMATION, TRANSLATE_SV("VMManager", "Fastmem is not enabled, this will reduce performance."));
 	if (!EmuConfig.Speedhacks.vu1Instant)
 	{
