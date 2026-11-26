@@ -164,6 +164,13 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.failures.append("MDEC backing allocation failed; PS1-mode FMV decode cannot be correct in this run")
     if ev.has("CDVD: sector cache allocation failed"):
         ev.warnings.append("CDVD sector cache allocation failed; direct reads remain correct but streaming performance may degrade")
+    cdvd_retries = sum("CDVD read err, retrying" in line for line in ev.lines)
+    if cdvd_retries:
+        ev.warnings.append(f"CDVD sector read retries occurred in {cdvd_retries} line(s); inspect image integrity/storage reliability")
+    if ev.has("CDVD READ ERROR"):
+        ev.warnings.append("CDVD read retry exhaustion evidence present; the command now completes with an emulated-drive error, but image/storage integrity needs investigation")
+    if ev.has("isoFile error"):
+        ev.warnings.append("ISO reader error evidence present; inspect image truncation, filesystem corruption, or out-of-range guest reads")
     if ev.has("[vkhw] big draw ring allocation failed"):
         ev.warnings.append("big Vulkan diagnostic ring allocation failed; GPU-hang evidence is limited to the small ring")
     if ev.has("DEV9: flash backing allocation failed"):

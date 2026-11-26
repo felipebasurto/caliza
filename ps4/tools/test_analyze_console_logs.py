@@ -190,6 +190,20 @@ def main() -> int:
         ok &= expect("CDVD cache backing failure warns without failing", cdvdcachefail, (), 0,
                      "WARN CDVD sector cache allocation failed")
 
+
+        cdvdreaderr = root / "cdvdreaderr.log"
+        cdvdreaderr.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                               "CDVD read err, retrying... (attempt 1 of 256)\n"
+                               "CDVD READ ERROR, sector = 123\n")
+        ok &= expect("CDVD retry exhaustion warns without failing", cdvdreaderr, (), 0,
+                     "WARN CDVD read retry exhaustion evidence")
+
+        isoerr = root / "isoerr.log"
+        isoerr.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                          "isoFile error: Block index is past the end of file!\n")
+        ok &= expect("ISO reader error warns without failing", isoerr, (), 0,
+                     "WARN ISO reader error evidence")
+
         vkringfail = root / "vkringfail.log"
         vkringfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                               "[vkhw] big draw ring allocation failed; using the small ring only\n")
