@@ -10,11 +10,11 @@
 // --record: every frame the steps run (at --record-fps, default 30) goes to ffmpeg, which writes out.mp4 (H.264, near
 // lossless); "shot" steps still write their PNGs. "rec off" / "rec on" steps leave frames out (they still run).
 // --virtual-clock: the texture packs' clock is the shelf's frames and --texpacks-rate counts in it (a recorded download).
-// --places "Label=/path|...": the folder picker's places (a video shows the console's own: /data/PCSX2, /mnt/usb0).
+// --places "Label=/path|...": the folder picker's places (a video shows the console's own: /data/zeruko, /mnt/usb0).
 // --record-audio <out.wav>: the shelf's own sounds (fe_sound's key taps) for the frames recorded, 48 kHz stereo, in step
 // with --record's video; without --record nothing is drawn (a quick pass for a clip recorded before).
 //
-// <folder> for --data is a stand-in for /data/PCSX2: settings/, gs.ini, patches/, memcards/ (made when missing).
+// <folder> for --data is a stand-in for /data/zeruko: settings/, gs.ini, patches/, memcards/ (made when missing).
 // Steps (from --script, one a line, and/or the command line, in that order):
 //   wait <s>               the shelf runs <s> seconds with no button down
 //   press <button> [n]     the button goes down for a frame and up for a frame, n times (default 1)
@@ -279,7 +279,7 @@ void WriteText(const std::string& path, const std::string& text)
 	f << text;
 }
 
-// The stand-in for /data/PCSX2 when it is empty: gs.ini as the Recommended button leaves it, two memory cards and a
+// The stand-in for /data/zeruko when it is empty: gs.ini as the Recommended button leaves it, two memory cards and a
 // patch file with two groups for the first game (the codes are dummies: nothing runs them here).
 void SeedData(const std::string& data, const std::string& presets_text)
 {
@@ -318,7 +318,7 @@ GameInfo Game(const char* title, const char* region, const char* serial, uint64_
 	g.serial = serial;
 	g.stem = std::string(title) + " (" + region + ")";
 	g.file = g.stem + ".iso";
-	g.path = "/data/PCSX2/games/" + g.file;
+	g.path = "/data/zeruko/games/" + g.file;
 	g.bytes = mb << 20;
 	return g;
 }
@@ -671,7 +671,7 @@ int main(int argc, char** argv)
 			std::printf("[host] popup: HD textures %s: %s (%s)\n", ok ? "ready" : "failed", game.c_str(), detail.c_str());
 		};
 		MakeDir(data + "/textures");
-		packs = new TexturePackManager(tp, data + "/textures", data + "/textures/.ps5sx2-downloads", data + "/cache/texture-packs.json");
+		packs = new TexturePackManager(tp, data + "/textures", data + "/textures/.zeruko-downloads", data + "/cache/texture-packs.json");
 		packs->Start();
 		acfg.texture_packs = packs->Service();
 	}
@@ -686,8 +686,8 @@ int main(int argc, char** argv)
 	acfg.build_tag = build_tag;
 	acfg.options = op;
 	acfg.system_menu = true; // 2026-10-08: the sheet for all games' "PS2 system menu" row
-	// vk-285-135: the folder picker's places: the data folder (as /data/PCSX2) and two "drives" in it, when they are folders.
-	acfg.folder_places = {{"PS5SX2's folder", data}, {"USB drive 1", data + "/usb0"}, {"Extended storage", data + "/ext0"}};
+	// vk-285-135: the folder picker's places: the data folder (as /data/zeruko) and two "drives" in it, when they are folders.
+	acfg.folder_places = {{"Zeruko's folder", data}, {"USB drive 1", data + "/usb0"}, {"Extended storage", data + "/ext0"}};
 	if (!places.empty())
 	{
 		acfg.folder_places.clear();
@@ -705,7 +705,7 @@ int main(int argc, char** argv)
 	{
 		acfg.bios_present = [] { return false; };
 		acfg.bios_problem = [no_bios_problem] { return no_bios_problem; };
-		acfg.bios_dir = "/data/PCSX2/bios";
+		acfg.bios_dir = "/data/zeruko/bios";
 	}
 	acfg.refresh_game = [op](GameInfo& g) {
 		g.badges.clear();

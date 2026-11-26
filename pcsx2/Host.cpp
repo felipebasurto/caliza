@@ -157,7 +157,7 @@ void Host::ReportFormattedErrorAsync(const std::string_view title, const char* f
 
 #ifdef PS5SX2_ACHIEVEMENTS
 #include "rc_client.h"
-// pr9n (AI-assisted), PR #9 review item 10: "PS5SX2/<build tag> (PS5 <firmware>)" from main-boot.cpp, which knows both;
+// pr9n (AI-assisted), PR #9 review item 10: "Zeruko/<build tag> (PS5 <firmware>)" from main-boot.cpp, which knows both;
 // RetroAchievements can then tell builds apart (its rules ask for a unique, stable identity of that shape).
 std::string OrbisUserAgentProduct();
 #endif

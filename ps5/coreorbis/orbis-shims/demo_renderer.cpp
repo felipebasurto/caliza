@@ -480,7 +480,7 @@ static inline std::uint32_t orbis_lerp_px(std::uint32_t a, std::uint32_t b, std:
 void Canvas::blit(const std::uint32_t *src, unsigned src_w, unsigned src_h,
                   unsigned dst_x, unsigned dst_y, unsigned dst_w, unsigned dst_h) noexcept
 {
-    // eerec-245: table-driven tiled blit with bilinear scaling (flag /data/PCSX2/nearest = old point sampling).
+    // eerec-245: table-driven tiled blit with bilinear scaling (flag /data/zeruko/nearest = old point sampling).
     if (!src || src_w == 0 || src_h == 0 || dst_x >= frame_width || dst_y >= frame_height)
         return;
     if (dst_w > frame_width - dst_x) dst_w = frame_width - dst_x;
@@ -636,7 +636,7 @@ extern "C" void orbis_present_frame(const unsigned char* pixels, int w, int h, i
         return;
     std::lock_guard<std::mutex> lock(g_display_mutex);
     static unsigned long long present_count = 0;
-    // eerec-257: frame.bmp dump (~35 ms hitch under the display lock) only with /data/PCSX2/framedump.
+    // eerec-257: frame.bmp dump (~35 ms hitch under the display lock) only with /data/zeruko/framedump.
     static const bool s_framedump = OrbisFlag("framedump");
     if ((present_count++ % 500) == 0 && s_framedump)
     {

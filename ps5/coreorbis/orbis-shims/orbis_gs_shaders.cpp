@@ -99,7 +99,7 @@ bool OrbisBuiltinShaderSource(const char* filename, std::string* out)
 
 // vk-285-134 (AI-assisted): the eboot's copy first. A folder copy from another release doesn't match this build's renderer:
 // build 130's logs had a console whose every game failed with "Failed to initialize GS" ("Missing entry point" compiling a
-// utility shader: 17 starts), its /data/PCSX2/resources holding older shader files. Only shadeboost.glsl, the present's
+// utility shader: 17 starts), its /data/zeruko/resources holding older shader files. Only shadeboost.glsl, the present's
 // sharpening that is there to be edited, still comes from the folder first; a file the eboot doesn't carry comes from the
 // folder as before.
 bool OrbisReadShaderSource(const std::string& resources_dir, const char* filename, std::string* out)

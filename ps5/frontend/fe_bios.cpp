@@ -277,7 +277,7 @@ std::string DescribeBiosProblem(const std::string& bios_dir, const std::string& 
 	if (part)
 		return "Only parts of a PS2 BIOS are there (" + part->name + "): the main file, 4 MB (.bin or .ROM0), is missing.";
 	if (small)
-		return small->name + " (512 KB) is a PS1 BIOS or a part of a PS2 one: PS5SX2 needs the PS2 BIOS file, 4 MB.";
+		return small->name + " (512 KB) is a PS1 BIOS or a part of a PS2 one: Zeruko needs the PS2 BIOS file, 4 MB.";
 	if (archive)
 		return "No PS2 BIOS could be taken out of " + archive->name + ": unpack it on a computer and copy the BIOS file to " + where + ".";
 	if (empty)

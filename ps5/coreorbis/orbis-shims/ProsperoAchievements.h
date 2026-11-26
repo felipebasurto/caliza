@@ -18,6 +18,6 @@ void OrbisAchievementsLoginSuccess(const char* username);
 void OrbisAchievementsLoginUnreachable(); // pr9n: a token sign-in that got no answer keeps the account
 void OrbisAchievementsWaitForLogin();
 
-fe::GameAchievementsService OrbisAchievementsBrowserService(const std::string& cache_directory = "/data/PCSX2/achievement-badges");
+fe::GameAchievementsService OrbisAchievementsBrowserService(const std::string& cache_directory = "/data/zeruko/achievement-badges");
 void OrbisAchievementsWaitForBrowser();
 void OrbisAchievementsStopBrowser(); // pr9n: cancels what it's loading, then waits (a game launching)

@@ -311,14 +311,14 @@ IniState ReadState(const std::string& text)
 }
 
 
-// vk-285-110: PS5SX2/ keys (the game language) are the player's own choices, not tuning: the Recommended
+// vk-285-110: Zeruko/ keys (the game language) are the player's own choices, not tuning: the Recommended
 // button keeps them, and they don't stop a file from counting as the recommended one. (vk-285-113: so are the
 // MemoryCards/ keys, the cards in the slots.) PS4 port (AI-assisted): the Orbis MTVU knobs are the tester's
 // own choices too; they are EmuCore keys because the core reads them there, but no recommended preset owns them.
 // PCSX2's EE cycle and vuThread keys stay ordinary tuning: the presets do own those.
 bool IsPlayerKey(const std::string& key)
 {
-	return key.compare(0, 7, "PS5SX2/") == 0 || key.compare(0, 12, "MemoryCards/") == 0 || // vk-285-113: the cards in the slots too
+	return key.compare(0, 7, "Zeruko/") == 0 || key.compare(0, 12, "MemoryCards/") == 0 || // vk-285-113: the cards in the slots too
 	       key == "EmuCore/Speedhacks/OrbisMTVUSpin" || key == "EmuCore/Speedhacks/OrbisMTVUBatch" ||
 	       key == "EmuCore/Speedhacks/OrbisMTVURingKB";
 }
@@ -627,14 +627,14 @@ bool ApplyRecommended(const std::string& path, const std::string& presets, const
 		return false;
 	}
 	preset = FilterPresetForPlatform(preset);
-	std::string text = header + (has ? ": PS5SX2's recommended settings, restored from the shelf" :
+	std::string text = header + (has ? ": Zeruko's recommended settings, restored from the shelf" :
 	                                   ": no settings of its own, so it follows the settings for all games (restored from the shelf)");
 	text += "\n" + preset;
 	std::string old;
 	const bool existed = ReadFile(path, old);
 	if (existed && !WriteFileAtomic(path + ".before-recommended", old))
 		std::printf("[shelf] could not keep a copy of %s (errno %d)\n", path.c_str(), errno);
-	// The player's own choices (PS5SX2/, MemoryCards/ and the PS4 MTVU knobs) stay, as the page keeps them.
+	// The player's own choices (Zeruko/, MemoryCards/ and the PS4 MTVU knobs) stay, as the page keeps them.
 	if (existed)
 	{
 		std::string keep;

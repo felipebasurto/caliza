@@ -3,7 +3,7 @@
 // Build 130's logs: 961 starts on 235 consoles (one console in eight) failed for want of a BIOS, some consoles trying the
 // same game dozens of times in a row. What their BIOS folders held instead: nothing (700 of those starts), folders of
 // folders, PS1 BIOS files (512 KB), only a BIOS's ROM1/NVM parts, a .zip, a game image, a 0-byte file. PCSX2 looks for the
-// BIOS by itself (BiosTools.cpp; on the PS5 also in the BIOS folder's folders, /data/PCSX2 and the drives); these helpers
+// BIOS by itself (BiosTools.cpp; on the PS5 also in the BIOS folder's folders, /data/zeruko and the drives); these helpers
 // take a BIOS out of an archive into the BIOS folder, and say in a sentence what was found instead, for the shelf.
 //
 // Copyright (C) 2026 swordpdf
@@ -32,7 +32,7 @@ std::string ExtractBiosFromArchives(const std::vector<std::string>& dirs, const 
 
 // What `bios_dir` (three levels down) and `dirs` (their own files) hold instead of a PS2 BIOS, as one English sentence for
 // the shelf's line under its translated headline. `top_dir` is the folder `bios_dir` is when no bios folder exists
-// (/data/PCSX2), which the sentence then says.
+// (/data/zeruko), which the sentence then says.
 std::string DescribeBiosProblem(const std::string& bios_dir, const std::string& top_dir, const std::vector<std::string>& dirs,
 	const std::function<bool(const std::string&)>& is_bios);
 } // namespace fe

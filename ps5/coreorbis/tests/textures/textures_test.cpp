@@ -38,15 +38,15 @@ int main()
 	char tmpl[] = "/tmp/texroots-XXXXXX";
 	const std::string root = mkdtemp(tmpl);
 	const std::string mnt = root + "/mnt";
-	// usb0: a drive with the pack of SLUS-20265 under PS5SX2/textures, and SLUS-20072 under textures (no PS5SX2)
-	MkDirs(mnt + "/usb0/PS5SX2/textures/SLUS-20265/replacements");
+	// usb0: a drive with the pack of SLUS-20265 under zeruko/textures, and SLUS-20072 under textures (no zeruko)
+	MkDirs(mnt + "/usb0/zeruko/textures/SLUS-20265/replacements");
 	MkDirs(mnt + "/usb0/textures/SLUS-20072/replacements");
 	// usb1: names in other letter cases
-	MkDirs(mnt + "/usb1/ps5sx2/Textures/slus-21000/Replacements");
+	MkDirs(mnt + "/usb1/Zeruko/Textures/slus-21000/Replacements");
 	// usb2: PCSX2's own layout, and a pack copied to the drive's top as it is
 	MkDirs(mnt + "/usb2/PCSX2/textures/SLES-52432/replacements");
 	MkDirs(mnt + "/usb2/SCUS-97328/replacements");
-	MkDirs(mnt + "/usb2/PS5SX2/SLPS-25000/replacements");
+	MkDirs(mnt + "/usb2/zeruko/SLPS-25000/replacements");
 	// usb3: a drive with a textures folder that has other games only, and a folder of the serial without a replacements folder
 	MkDirs(mnt + "/usb3/textures/SLUS-99999/replacements");
 	MkDirs(mnt + "/usb3/SLUS-11111/notes");
@@ -65,12 +65,12 @@ int main()
 	Check(!has_usb4, "an empty drive slot is not a drive");
 
 	std::string how;
-	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-20265", &how) == mnt + "/usb0/PS5SX2/textures/SLUS-20265", "PS5SX2/textures on a drive: " + how);
+	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-20265", &how) == mnt + "/usb0/zeruko/textures/SLUS-20265", "zeruko/textures on a drive: " + how);
 	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-20072", &how) == mnt + "/usb0/textures/SLUS-20072", "textures at the drive's top: " + how);
-	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-21000", &how) == mnt + "/usb1/ps5sx2/Textures/slus-21000", "names in other cases, path as on the drive: " + how);
+	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-21000", &how) == mnt + "/usb1/Zeruko/Textures/slus-21000", "names in other cases, path as on the drive: " + how);
 	Check(OrbisTextures::FindGameDir(drives, "", "SLES-52432", &how) == mnt + "/usb2/PCSX2/textures/SLES-52432", "PCSX2/textures: " + how);
 	Check(OrbisTextures::FindGameDir(drives, "", "SCUS-97328", &how) == mnt + "/usb2/SCUS-97328", "a pack copied to the drive's top: " + how);
-	Check(OrbisTextures::FindGameDir(drives, "", "SLPS-25000", &how) == mnt + "/usb2/PS5SX2/SLPS-25000", "a pack in PS5SX2/: " + how);
+	Check(OrbisTextures::FindGameDir(drives, "", "SLPS-25000", &how) == mnt + "/usb2/zeruko/SLPS-25000", "a pack in zeruko/: " + how);
 	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-11111", &how).empty(), "a serial folder without a replacements folder is no pack");
 	Check(OrbisTextures::FindGameDir(drives, "", "SLUS-00000", &how).empty(), "a game with no pack");
 	Check(OrbisTextures::FindGameDir(drives, "", "", &how).empty(), "no serial");

@@ -5,7 +5,7 @@
 // libSceHttp2 with one pinned root (GTS Root R4): after the jailbreak libSceSsl can't reach the system's store, and it
 // can't follow a cross-signed chain even with the roots loaded (the texture pack work found that on archive.org and on a
 // Let's Encrypt chain), so a change of RetroAchievements' certificate would have stopped sign-in, unlocks and badges.
-// Roots for a chain Mozilla's list doesn't cover can be added without a release: /data/PCSX2/retroachievements-roots.pem
+// Roots for a chain Mozilla's list doesn't cover can be added without a release: /data/zeruko/retroachievements-roots.pem
 // (PEM, read when a downloader is made). Certificate checks are never turned off.
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ProsperoHTTPDownloader.h"
@@ -24,7 +24,7 @@ int sceNetPoolDestroy(int);
 
 namespace
 {
-	constexpr const char* kExtraRoots = "/data/PCSX2/retroachievements-roots.pem";
+	constexpr const char* kExtraRoots = "/data/zeruko/retroachievements-roots.pem";
 	constexpr size_t kMaxAnswer = 16 * 1024 * 1024;
 
 	void Log(const std::string& line)

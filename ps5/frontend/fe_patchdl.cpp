@@ -295,7 +295,7 @@ void OnlinePatches::SaveManifest() const
 {
 	if (m_manifest_path.empty())
 		return;
-	std::string text = "# Patch and cheat files PS5SX2 downloaded (the sheet's \"Get patches and cheats\"), and what it wrote in each:\n"
+	std::string text = "# Patch and cheat files Zeruko downloaded (the sheet's \"Get patches and cheats\"), and what it wrote in each:\n"
 	                   "# a file that still holds that is replaced when its source changes; one changed since is left alone.\n";
 	for (const auto& [path, print] : m_manifest)
 		text += path + "\t" + print + "\n";

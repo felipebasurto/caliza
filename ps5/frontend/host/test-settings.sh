@@ -33,8 +33,11 @@ common+=("$work/common/lz4.o" "$work/common/chd_stub.o")
 # This tree: the page (fe_web.cpp over fe_settings.cpp) and the sheet's calls.
 "$CXX" -std=c++20 "${flags[@]}" -DFE_HAVE_SETTINGS "$here/settings_test.cpp" "$fe/fe_web.cpp" "$fe/fe_settings.cpp" "${common[@]}" \
   -o "$work/settings_test_new" -lz -lpthread
-# The older page, as it was built then.
-git -C "$pcsx2" show "$old_rev:ps5/frontend/fe_web.cpp" > "$work/old/fe_web.cpp"
+# The older page, as it was built then, with the retired brand and ini section renamed to this tree's.
+# The rebrand is deliberately not backwards compatible; normalising it keeps this a behavioural comparison.
+git -C "$pcsx2" show "$old_rev:ps5/frontend/fe_web.cpp" |
+  sed -e 's/PS5SX2/Zeruko/g' -e 's/PS4SX2/Zeruko/g' -e 's|/data/PCSX2|/data/zeruko|g' -e 's/ps5sx2/zeruko/g' -e 's/ps4sx2/zeruko/g' \
+  > "$work/old/fe_web.cpp"
 "$CXX" -std=c++20 "${flags[@]}" "$here/settings_test.cpp" "$work/old/fe_web.cpp" "${common[@]}" -o "$work/settings_test_old" -lz -lpthread
 
 presets="$fe/assets/presets.ini"

@@ -1139,7 +1139,7 @@ void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string&
 {
 	g.badges.clear();
 	const std::string ini = settings_dir + "/" + g.stem + ".ini";
-	g.hidden = IniValue(ini, "PS5SX2/HideGame") == "true"; // vk-285-137: the game's own file only, never gs.ini
+	g.hidden = IniValue(ini, "Zeruko/HideGame") == "true"; // vk-285-137: the game's own file only, never gs.ini
 	std::string scale = IniValue(ini, "upscale_multiplier");
 	if (scale.empty())
 		scale = IniValue(gs_ini, "upscale_multiplier");
@@ -1165,7 +1165,7 @@ void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string&
 
 bool ShowHiddenGames(const std::string& gs_ini)
 {
-	return IniValue(gs_ini, "PS5SX2/ShowHiddenGames") == "true";
+	return IniValue(gs_ini, "Zeruko/ShowHiddenGames") == "true";
 }
 
 // vk-285-139 (AI-assisted; swordpdf: "multi-disc and disc-change support"). Needs proper testing on the console.

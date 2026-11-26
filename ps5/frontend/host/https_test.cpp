@@ -438,11 +438,11 @@ static void Local(const char* json_path)
 				r.error.c_str());
 			return r;
 		};
-		c.user_agent = "PS5SX2/test (PS5 11.40) rcheevos/12.4.0";
+		c.user_agent = "Zeruko/test (PS5 11.40) rcheevos/12.4.0";
 		f = request("POST", base + "/echo", "r=login2&u=someone&p=secret%20word");
 		CHECK(f.status == 201 && f.body.find("length=34\n") != std::string::npos &&
 			  f.body.find("type=application/x-www-form-urlencoded\n") != std::string::npos &&
-			  f.body.find("agent=PS5SX2/test (PS5 11.40) rcheevos/12.4.0\n") != std::string::npos &&
+			  f.body.find("agent=Zeruko/test (PS5 11.40) rcheevos/12.4.0\n") != std::string::npos &&
 			  f.body.find("body=r=login2&u=someone&p=secret%20word") != std::string::npos);
 		f = request("POST", base + "/api-error", "r=login2&u=someone&p=wrong");
 		CHECK(f.status == 401 && f.body.find("Invalid user/password") != std::string::npos);
@@ -461,7 +461,7 @@ static void Local(const char* json_path)
 		// Get still says kConnect for an untrusted certificate (the texture packs' code reads it that way).
 		f = Get(c, "https://localhost:" + std::to_string(other_port) + "/file");
 		CHECK(f.status == HttpsClient::kConnect);
-		c.user_agent = "PS5SX2/1.0";
+		c.user_agent = "Zeruko/1.0";
 	}
 
 	// 11. Two threads at once: one at a time, both right.

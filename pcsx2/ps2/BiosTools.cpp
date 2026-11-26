@@ -260,8 +260,8 @@ static void LoadIrx(const std::string& filename, u8* dest, size_t maxSize)
 // 689 starts on 146 consoles failed with "PCSX2 requires a PlayStation 2 BIOS" (26 consoles never got past it); in
 // 494 of the 591 reports the BIOS folder had no file at all, and the log didn't say what it held. The BIOS folder is
 // searched as before; then one folder down in it (a BIOS pack unzipped into its own folder), the top folder
-// /data/PCSX2, a folder named bios in another case ("BIOS": /data tells cases apart), and USB drives (their root,
-// bios/, PS5SX2/ and PS5SX2/bios/). Each file of a BIOS's size is checked the way the BIOS folder's are.
+// /data/zeruko, a folder named bios in another case ("BIOS": /data tells cases apart), and USB drives (their root,
+// bios/, zeruko/ and pcsx2/ with their bios/). Each file of a BIOS's size is checked the way the BIOS folder's are.
 #include <dirent.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -342,7 +342,7 @@ std::string OrbisFindBiosElsewhere(std::string* seen)
 			}
 		}
 	}
-	const std::string top = "/data/PCSX2";
+	const std::string top = "/data/zeruko";
 	if (bios != top)
 		dirs.push_back(top);
 	for (const std::string& name : OrbisNames(top))
@@ -361,12 +361,13 @@ std::string OrbisFindBiosElsewhere(std::string* seen)
 		for (const std::string& name : names)
 		{
 			const bool is_bios = strcasecmp(name.c_str(), "bios") == 0;
-			// vk-285-118 (AI-assisted): PCSX2/bios too, a drive laid out like /data/PCSX2 (as its games/ and textures/).
-			const bool is_ps5sx2 = strcasecmp(name.c_str(), "ps5sx2") == 0 || strcasecmp(name.c_str(), "pcsx2") == 0;
-			if (!(is_bios || is_ps5sx2) || !OrbisIsDir(root + "/" + name))
+			// vk-285-118 (AI-assisted): zeruko/ as the data root's shape on a drive (its games/ and textures/ too), and
+			// pcsx2/ for the desktop folder (Documents/PCSX2, its bios/ inside) copied over as it is. Needs proper testing.
+			const bool is_product = strcasecmp(name.c_str(), "zeruko") == 0 || strcasecmp(name.c_str(), "pcsx2") == 0;
+			if (!(is_bios || is_product) || !OrbisIsDir(root + "/" + name))
 				continue;
 			dirs.push_back(root + "/" + name);
-			if (is_ps5sx2)
+			if (is_product)
 			{
 				for (const std::string& sub : OrbisNames(root + "/" + name))
 				{

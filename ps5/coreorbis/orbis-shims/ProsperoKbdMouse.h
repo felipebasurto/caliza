@@ -10,7 +10,7 @@ void OrbisKbdMouseStart();
 // whether a game reads them.
 void OrbisKbdMousePump();
 
-// vk-285-113: the PS5SX2/KeyboardMouse, MouseAim, MouseSpeed and MouseButtons settings (gs.ini or the game's file, live).
+// vk-285-113: the Zeruko/KeyboardMouse, MouseAim, MouseSpeed and MouseButtons settings (gs.ini or the game's file, live).
 //   mode:    0 Auto (the keyboard and mouse drive the PS2 controller until a game reads the PS2's USB keyboard or mouse),
 //            1 Controller only, 2 USB devices only, 3 Off
 //   aim:     0 the mouse's movement does nothing, 1 it moves the right stick, 2 the left stick

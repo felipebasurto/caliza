@@ -186,7 +186,7 @@ extern int g_orbis_upload_mode; // eerec-279
 static std::unordered_map<const void*, const u8*> s_orbis_map_ptr;
 static void orbis_upload_check(GSTextureOGL* t, const char* path, int layer, int rx, int ry, int rw, int rh, const u8* src, int src_pitch)
 {
-	static const bool s_upchk_on = (access("/data/PCSX2/upchk", 0) == 0); // eerec-278: off unless flag
+	static const bool s_upchk_on = (access("/data/zeruko/upchk", 0) == 0); // eerec-278: off unless flag
 	if (!s_upchk_on) return;
 	static int n = 0, logged = 0, bad = 0, zero_all = 0;
 	if (!src || n > 60000) return;

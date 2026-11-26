@@ -1556,7 +1556,7 @@ void Achievements::HandleAchievementChallengeIndicatorHideEvent(const rc_client_
 #ifdef PS5SX2_ACHIEVEMENTS
 // 2026-10-08 (AI-assisted; a tester: "RA challenge indicator icon bottom-right with an on/off"): PCSX2 draws the active
 // challenges' badges with ImGui (DrawGameOverlays), which this port doesn't have; GSRenderer.cpp draws them in the bottom
-// right corner instead (PS5SX2/RAChallengeIcons). Called with the achievements lock held (the event handlers, the unload).
+// right corner instead (Zeruko/RAChallengeIcons). Called with the achievements lock held (the event handlers, the unload).
 // An indicator re-shown in the same session still has its entry here (only DrawGameOverlays erased faded ones): the
 // active ones are what count. Needs proper testing on the console.
 void Achievements::OrbisChallengesChanged()

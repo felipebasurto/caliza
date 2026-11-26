@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b22">
-<title>PS5SX2</title>
+<title>Zeruko</title>
 <link rel="icon" href="data:,">
 <!--
-  PS5SX2's settings page (vk-285-50; Recommended button vk-285-51), served by the console itself
+  Zeruko's settings page (vk-285-50; Recommended button vk-285-51), served by the console itself
   (frontend/fe_web.cpp).
   Copyright (C) 2026 swordpdf. SPDX-License-Identifier: GPL-3.0-or-later.
   The Discord and X icons are Font Awesome Free 7.3.1 (CC BY 4.0, https://fontawesome.com);
@@ -226,7 +226,7 @@ footer a { color: var(--dim); }
 <div class="wrap">
   <header>
     <div>
-      <div class="wordmark">PS5<span>SX2</span></div>
+      <div class="wordmark"><span>Zeruko</span></div>
       <div class="handles">
         <button class="handle" id="discord" title="Copy the Discord username"><i class="icon discord"></i>sword.pdf</button>
         <a class="handle" href="https://x.com/sword_pdf" target="_blank" rel="noopener"><i class="icon x"></i>@sword_pdf</a>
@@ -271,7 +271,7 @@ footer a { color: var(--dim); }
   </main>
 
   <footer>
-    <div><b style="color:var(--dim)">PS5SX2</b> · PCSX2 for jailbroken PS5 · by swordpdf · <span id="build"></span></div>
+    <div><b style="color:var(--dim)">Zeruko</b> · PCSX2 for jailbroken PS5 · by swordpdf · <span id="build"></span></div>
     <div>Based on PCSX2 (GPL-3.0-or-later). Not affiliated with or endorsed by the PCSX2 team or Sony Interactive Entertainment.</div>
     <div>Icons: Font Awesome Free (CC BY 4.0). Covers: xlenore/ps2-covers.</div>
   </footer>
@@ -294,12 +294,12 @@ const TC_HINT = "Moves where textures are read from, in thousandths of a texel (
 const BUTTON_TARGETS = [["Cross","Cross"],["Circle","Circle"],["Square","Square"],["Triangle","Triangle"],["L1","L1"],["R1","R1"],
   ["L2","L2"],["R2","R2"],["L3","L3"],["R3","R3"],["Start","Start"],["Select","Select"],["Up","D-pad up"],["Down","D-pad down"],
   ["Left","D-pad left"],["Right","D-pad right"],["Analog","Analog button"],["Pressure","Light press"],["None","Nothing"]];
-const button = (name, label, def) => ({ key: "PS5SX2/Button" + name, label, type: "pick", def, options: BUTTON_TARGETS });
+const button = (name, label, def) => ({ key: "Zeruko/Button" + name, label, type: "pick", def, options: BUTTON_TARGETS });
 // vk-285-118: how hard each button presses (OrbisPadMap.h Config::pressure), as the sheet's StrengthChoices().
 // vk-285-118: the sticks' dead zones (OrbisPadMap.h Config::deadzone_left/right), as the sheet's DeadzoneChoices().
 const DEADZONES = [["0","Off"],["5","5%"],["10","10%"],["15","15%"],["20","20%"],["25","25%"],["30","30%"]];
 const STRENGTHS = [["1","Full"],["0.75","75%"],["0.5","50%"],["0.4","40%"],["0.3","30%"],["0.25","25%"],["0.2","20%"],["0.15","15%"],["0.1","10%"]];
-const strength = (name, label) => ({ key: "PS5SX2/Button" + name + "Pressure", label, type: "pick", def: "1", options: STRENGTHS });
+const strength = (name, label) => ({ key: "Zeruko/Button" + name + "Pressure", label, type: "pick", def: "1", options: STRENGTHS });
 const INVERT = [["0","Off"],["1","Up-down"],["2","Left-right"],["3","Both"]];
 // vk-285-117: what a save or load button can be (OrbisPadMap.h ComboButtonName), as the sheet's ComboChoices().
 const COMBO_BUTTONS = [["L3R3","L3 + R3"],["Cross","Cross"],["Circle","Circle"],["Square","Square"],["Triangle","Triangle"],["L1","L1"],
@@ -307,43 +307,43 @@ const COMBO_BUTTONS = [["L3R3","L3 + R3"],["Cross","Cross"],["Circle","Circle"],
   ["TouchLeft","Touchpad left"],["TouchRight","Touchpad right"],["Up","D-pad up"],["Down","D-pad down"],["Left","D-pad left"],
   ["Right","D-pad right"],["None","Nothing"]];
 // A save or load combo: two lists in one row on this page ("pair": the row's name; the sheet has a row for each button).
-const combo = (key, label, def, pair) => ({ key: "PS5SX2/" + key, label, type: "pick", def, options: COMBO_BUTTONS, pair });
+const combo = (key, label, def, pair) => ({ key: "Zeruko/" + key, label, type: "pick", def, options: COMBO_BUTTONS, pair });
 const GROUPS = [
   // 2026-10-08 (AI-assisted; testers: "have users select their bios and games scan path ... ext/usb or m2"): where the shelf
-  // finds games and the BIOS besides /data/PCSX2 and the drives it looks through by itself (USB 0-7, extended storage and
-  // M.2: /mnt/ext0, /mnt/ext1). For all games only (main-boot.cpp reads gs.ini when PS5SX2 starts). vk-285-135b: the Settings
+  // finds games and the BIOS besides /data/zeruko and the drives it looks through by itself (USB 0-7, extended storage and
+  // M.2: /mnt/ext0, /mnt/ext1). For all games only (main-boot.cpp reads gs.ini when Zeruko starts). vk-285-135b: the Settings
   // tab's first group, as on the shelf's sheet (swordpdf looked for them at the bottom); the sheet picks these folders with its
   // own picker (fe_app.cpp), the overlays folder is typed here only.
   { title: "Folders", global: true, items: [
-    { key: "PS5SX2/GameFolders", label: "More game folders", type: "text", def: "", restart: true, later: "the game folders",
+    { key: "Zeruko/GameFolders", label: "More game folders", type: "text", def: "", restart: true, later: "the game folders",
       placeholder: "/mnt/ext1/PS2;/mnt/usb0/My games",
-      hint: "Folders to list games from, separated by ; (and the folders inside each, one level down). PS5SX2 already looks in /data/PCSX2/games, /data/PCSX2 and every USB, extended storage and M.2 drive (their root, games/, PS2/... and PCSX2/games/). Read when PS5SX2 starts." },
-    // 2026-10-08: the overlay pictures' folder (PS5SX2/Bezel), read live.
-    { key: "PS5SX2/BezelDir", label: "Overlays folder", type: "text", def: "", placeholder: "/mnt/usb0/PS2/overlays",
-      hint: "Optional: where the overlay pictures are looked for first (<game serial>.png, default.png), before /data/PCSX2/overlays." },
+      hint: "Folders to list games from, separated by ; (and the folders inside each, one level down). Zeruko already looks in /data/zeruko/games, /data/zeruko and every USB, extended storage and M.2 drive (their root, games/, PS2/... and PCSX2/games/). Read when Zeruko starts." },
+    // 2026-10-08: the overlay pictures' folder (Zeruko/Bezel), read live.
+    { key: "Zeruko/BezelDir", label: "Overlays folder", type: "text", def: "", placeholder: "/mnt/usb0/PS2/overlays",
+      hint: "Optional: where the overlay pictures are looked for first (<game serial>.png, default.png), before /data/zeruko/overlays." },
     // vk-285-135 (AI-assisted; testers: "nfs mounting"): games on a PC or NAS share (orbis-shims/OrbisNfs.cpp), mounted
-    // when PS5SX2 starts; each share's games are listed like a drive's.
-    { key: "PS5SX2/NfsShares", label: "NFS shares", type: "text", def: "", restart: true, later: "the NFS shares",
+    // when Zeruko starts; each share's games are listed like a drive's.
+    { key: "Zeruko/NfsShares", label: "NFS shares", type: "text", def: "", restart: true, later: "the NFS shares",
       placeholder: "nfs://192.168.1.10/volume1/PS2",
-      hint: "Games on a PC or NAS shared over NFS: nfs:// addresses separated by ; (the server, then the shared folder or a folder in it). NFS v3 (Windows: WinNFSd or haneWIN; Linux, Synology, QNAP, TrueNAS), else v4. Add ?version=4, ?nfsport=2049&mountport=1058 or ?uid=1000&gid=1000 when the server needs them. On PS4 use plain nfs://server/export (NFS v3); query options are not supported. Read-only. Mounted when PS5SX2 starts; boot.log says how it went." },
-    { key: "PS5SX2/BiosFolder", label: "BIOS folder", type: "text", def: "", restart: true, later: "the BIOS folder",
+      hint: "Games on a PC or NAS shared over NFS: nfs:// addresses separated by ; (the server, then the shared folder or a folder in it). NFS v3 (Windows: WinNFSd or haneWIN; Linux, Synology, QNAP, TrueNAS), else v4. Add ?version=4, ?nfsport=2049&mountport=1058 or ?uid=1000&gid=1000 when the server needs them. On PS4 use plain nfs://server/export (NFS v3); query options are not supported. Read-only. Mounted when Zeruko starts; boot.log says how it went." },
+    { key: "Zeruko/BiosFolder", label: "BIOS folder", type: "text", def: "", restart: true, later: "the BIOS folder",
       placeholder: "/mnt/ext1/PS2/bios",
-      hint: "Where to look for the BIOS first. Without it: /data/PCSX2/bios, then /data/PCSX2 and the drives' bios/ and PCSX2/bios/ folders. Read when PS5SX2 starts." },
+      hint: "Where to look for the BIOS first. Without it: /data/zeruko/bios, then /data/zeruko and the drives' bios/ and PCSX2/bios/ folders. Read when Zeruko starts." },
   ]},
   // vk-285-137 (AI-assisted; swordpdf: "add an option to hide games from the shelf"): a game off the shelf (its own file only;
   // fe_games.cpp ReadBadges), and the switch for all games that puts hidden games back on it, dimmed. The sheet has the
   // same two groups (fe_options.cpp); from here they apply the next time the shelf opens.
   { title: "Shelf", game: true, items: [
-    { key: "PS5SX2/HideGame", label: "Hide from the shelf", type: "toggle", def: "false", short: "Hidden %",
+    { key: "Zeruko/HideGame", label: "Hide from the shelf", type: "toggle", def: "false", short: "Hidden %",
       hint: "Takes this game off the shelf. Show hidden games (All games) puts hidden games back on the shelf, dimmed, to turn this off again. Set here, it applies the next time the shelf opens; on the shelf's own sheet, when the sheet closes." },
   ]},
   { title: "Shelf", global: true, items: [
-    { key: "PS5SX2/ShowHiddenGames", label: "Show hidden games", type: "toggle", def: "false", short: "Hidden games %",
+    { key: "Zeruko/ShowHiddenGames", label: "Show hidden games", type: "toggle", def: "false", short: "Hidden games %",
       hint: "Puts the games hidden from the shelf back on it, dimmed, so you can open one and turn Hide from the shelf off. Set here, it applies the next time the shelf opens." },
   ]},
   // vk-285-139: games start from the cheat disc (a GameShark: picked under it, all games), the game's own discs after it.
   { title: "Discs", items: [
-    { key: "PS5SX2/CheatDiscStart", label: "Start from the cheat disc", type: "toggle", def: "false", short: "Cheat disc %", restart: true, later: "the cheat disc",
+    { key: "Zeruko/CheatDiscStart", label: "Start from the cheat disc", type: "toggle", def: "false", short: "Cheat disc %", restart: true, later: "the cheat disc",
       hint: "Starts the game from the cheat disc (a GameShark, say: Cheat disc, in the settings for all games), as disc 1, with the game's own discs after it. When it asks for the game's disc, hold the change disc buttons (Controls; L3 + R3 + D-pad right by default) or pick the disc under Now playing. Its codes stay on the memory card." },
   ]},
   { title: "Display", items: [
@@ -357,11 +357,11 @@ const GROUPS = [
     { key: "TVShader", label: "Display filter", type: "seg", def: "0", short: "%",
       options: [["6","FSR"],["7","FSR soft"],["0","Classic"],["5","CRT"]] },
     // 2026-10-08 (AI-assisted): frame generation (GSDeviceVK.cpp), read when the game starts.
-    { key: "PS5SX2/FrameGeneration", label: "Frame generation", type: "toggle", def: "false", short: "Frame gen %", restart: true,
+    { key: "Zeruko/FrameGeneration", label: "Frame generation", type: "toggle", def: "false", short: "Frame gen %", restart: true,
       hint: "Shows a frame made between two of the game's: a 60 fps game at 120 on a TV that takes 120 Hz (the TV switches to 120 Hz for the game), a 30 fps game at 60. Only while the game holds its frame rate (an uneven one shows the game's own frames); the FPS box then counts what the TV gets. A little more input lag, and small smears at the edges of fast movement. Experimental. Takes effect when the game starts." },
   ]},
   { title: "Graphics", items: [
-    { key: "PS5SX2/Renderer", label: "Renderer", type: "seg", def: "Hardware", short: "%", restart: true,
+    { key: "Zeruko/Renderer", label: "Renderer", type: "seg", def: "Hardware", short: "%", restart: true,
       options: [["Hardware","Hardware"],["Software","Software"]],
       hint: "Software draws the game on the CPU, as a PS2 does it: slower, but right in games whose effects the hardware renderer gets wrong. Set it for one game in that game's settings. Takes effect when the game starts." },
     { key: "filter", label: "Texture filtering", type: "seg", def: "2", short: "% filtering",
@@ -373,8 +373,8 @@ const GROUPS = [
       hint: "Higher fixes more effects and costs speed. Full and Max are left out for now: Max hung the GPU in Ratchet & Clank." },
     { key: "hw_mipmap", label: "Mipmapping", type: "toggle", def: "true", short: "Mipmaps %" },
     { key: "LoadTextureReplacements", label: "Texture replacements", type: "toggle", def: "false", short: "Replacements %",
-      hint: "Loads a texture pack's PNG and DDS files from <game serial>/replacements/ in a USB drive's PS5SX2/textures (or textures) folder, else in /data/PCSX2/textures. DDS (DXT1 to DXT5, BC7 or uncompressed) is unpacked by the CPU as a game asks for it." },
-    { key: "PS5SX2/TexturesDir", label: "Textures folder", type: "text", def: "", restart: true, later: "the textures folder",
+      hint: "Loads a texture pack's PNG and DDS files from <game serial>/replacements/ in a USB drive's zeruko/textures (or textures) folder, else in /data/zeruko/textures. DDS (DXT1 to DXT5, BC7 or uncompressed) is unpacked by the CPU as a game asks for it." },
+    { key: "Zeruko/TexturesDir", label: "Textures folder", type: "text", def: "", restart: true, later: "the textures folder",
       placeholder: "/mnt/usb0/PS2/textures",
       hint: "Optional: a folder that holds <game serial>/replacements/, when the pack isn't in one of the places above." },
   ]},
@@ -395,7 +395,7 @@ const GROUPS = [
   ]},
   // vk-285-110: the PS2 system language games are told (main-boot.cpp, pcsx2/CDVD/CDVD.cpp). Read when the game starts.
   { title: "Game", items: [
-    { key: "PS5SX2/GameLanguage", label: "Game language", type: "seg", def: "-1", restart: true, later: "the language", cols: 3,
+    { key: "Zeruko/GameLanguage", label: "Game language", type: "seg", def: "-1", restart: true, later: "the language", cols: 3,
       short: "Language %",
       options: [["-1","Auto (PS5)"],["0","Japanese"],["1","English"],["2","French"],["3","Spanish"],["4","German"],["5","Italian"],
                 ["6","Dutch"],["7","Portuguese"]],
@@ -413,16 +413,16 @@ const GROUPS = [
   ]},
   // vk-285-113: the box in the top right corner and its frame-rate graph (main-boot.cpp orbis_ps5opts_from, GSRenderer.cpp).
   { title: "On screen", items: [
-    { key: "PS5SX2/Overlay", label: "Info box", type: "seg", def: "2", short: "Info box %", cols: 3,
+    { key: "Zeruko/Overlay", label: "Info box", type: "seg", def: "2", short: "Info box %", cols: 3,
       options: [["0","Off"],["1","FPS"],["2","FPS + load"]],
       hint: "The box in the top right corner. Load is how busy the EE, GS and VU threads are." },
-    { key: "PS5SX2/FpsGraph", label: "FPS graph", type: "toggle", def: "false", short: "FPS graph %",
+    { key: "Zeruko/FpsGraph", label: "FPS graph", type: "toggle", def: "false", short: "FPS graph %",
       hint: "A blue graph of the last minute's frame rate in the top right corner. It shows with the info box off too." },
     // 2026-10-08 (AI-assisted; testers: "PNG overlays/bezels"): the overlay picture (GSRenderer.cpp OrbisDrawBezel), live.
-    { key: "PS5SX2/Bezel", label: "Overlay picture", type: "toggle", def: "false", short: "Overlay %",
-      hint: "A bezel or frame drawn over the screen around the game: overlays/<game serial>.png (SLUS-21147.png), else overlays/default.png, in /data/PCSX2 or the Overlays folder below (All games). A 1920x1080 PNG (at most; it is stretched to the screen) with a see-through middle where the game shows; the game keeps its own size (Aspect ratio)." },
+    { key: "Zeruko/Bezel", label: "Overlay picture", type: "toggle", def: "false", short: "Overlay %",
+      hint: "A bezel or frame drawn over the screen around the game: overlays/<game serial>.png (SLUS-21147.png), else overlays/default.png, in /data/zeruko or the Overlays folder below (All games). A 1920x1080 PNG (at most; it is stretched to the screen) with a see-through middle where the game shows; the game keeps its own size (Aspect ratio)." },
     // 2026-10-08 (AI-assisted): the RetroAchievements challenge icons (GSRenderer.cpp OrbisDrawChallengeIcons), live.
-    { key: "PS5SX2/RAChallengeIcons", label: "Challenge icons", type: "toggle", def: "true", short: "Challenge icons %",
+    { key: "Zeruko/RAChallengeIcons", label: "Challenge icons", type: "toggle", def: "true", short: "Challenge icons %",
       hint: "RetroAchievements: the badge of each challenge going on (an achievement that unlocks if you keep it up, such as no damage taken) in the bottom right corner, while it lasts." },
   ]},
   // 2026-10-08 (AI-assisted; a tester: "Kingdom Hearts needs HW hacks, texture offset X 525, Y 0"): PCSX2's manual hardware
@@ -474,15 +474,15 @@ const GROUPS = [
   // vk-285-116 (AI-assisted): the Controls tab: the remapping, (vk-285-117) the save and load combos and their hold time
   // (main-boot.cpp orbis_ps5opts_from, orbis-shims/OrbisPadMap.h), the sticks, rumble, the keyboard and mouse.
   { title: "Buttons", tab: "controls",
-    hint: "Save and load: hold the two buttons together (slot 1). L3 + R3 is both sticks pressed in; Touchpad left or right is a finger on that side. Fast forward (experimental, for skipping videos): hold its two buttons to speed the game up, and again for full speed; Nothing on both turns it off. Change disc: hold its two buttons for the game's next disc (\"(Disc 2)\" beside it, or an .m3u list); any image goes in from the Disc section while you play. Below: what each button presses in games (Light press: the other buttons press at half strength, for Metal Gear Solid 2 and 3). PS5SX2's own combos always use the real buttons.",
+    hint: "Save and load: hold the two buttons together (slot 1). L3 + R3 is both sticks pressed in; Touchpad left or right is a finger on that side. Fast forward (experimental, for skipping videos): hold its two buttons to speed the game up, and again for full speed; Nothing on both turns it off. Change disc: hold its two buttons for the game's next disc (\"(Disc 2)\" beside it, or an .m3u list); any image goes in from the Disc section while you play. Below: what each button presses in games (Light press: the other buttons press at half strength, for Metal Gear Solid 2 and 3). Zeruko's own combos always use the real buttons.",
     items: [
     combo("SaveButton1", "Save: button 1", "L3R3", "Save state"), combo("SaveButton2", "Save: button 2", "Up"),
     combo("LoadButton1", "Load: button 1", "L3R3", "Load state"), combo("LoadButton2", "Load: button 2", "Down"),
-    { key: "PS5SX2/StateHold", label: "Hold time", type: "seg", def: "0", cols: 6,
+    { key: "Zeruko/StateHold", label: "Hold time", type: "seg", def: "0", cols: 6,
       options: [["0","Instant"],["0.5","0.5 s"],["1","1 s"],["1.5","1.5 s"],["2","2 s"],["3","3 s"]],
       hint: "How long the save or load buttons are held before it happens. Instant: as soon as both are down, and that last press doesn't reach the game. A second or two stops saving or loading by accident." },
     combo("FastButton1", "Fast forward: button 1", "None", "Fast forward (experimental)"), combo("FastButton2", "Fast forward: button 2", "None"),
-    { key: "PS5SX2/FastSpeed", label: "Fast forward speed", type: "seg", def: "0", cols: 4,
+    { key: "Zeruko/FastSpeed", label: "Fast forward speed", type: "seg", def: "0", cols: 4,
       options: [["0","Max"],["2","2x"],["3","3x"],["4","4x"]],
       hint: "How fast fast forward runs. Max: as fast as the console can. Some games' videos skip only at Max." },
     combo("DiscButton1", "Change disc: button 1", "L3R3", "Change disc"), combo("DiscButton2", "Change disc: button 2", "Right"),
@@ -500,40 +500,40 @@ const GROUPS = [
     strength("Up", "D-pad up"), strength("Down", "D-pad down"), strength("Left", "D-pad left"), strength("Right", "D-pad right"),
   ]},
   { title: "Sticks", tab: "controls", items: [
-    { key: "PS5SX2/SwapSticks", label: "Swap sticks", type: "toggle", def: "false",
+    { key: "Zeruko/SwapSticks", label: "Swap sticks", type: "toggle", def: "false",
       hint: "The left stick moves the game's right stick, and the right stick its left one." },
-    { key: "PS5SX2/InvertLeft", label: "Invert left stick", type: "seg", def: "0", options: INVERT,
+    { key: "Zeruko/InvertLeft", label: "Invert left stick", type: "seg", def: "0", options: INVERT,
       hint: "Turns the game's left stick up-down, left-right or both the other way round (the stick the game sees, after Swap sticks)." },
-    { key: "PS5SX2/InvertRight", label: "Invert right stick", type: "seg", def: "0", options: INVERT,
+    { key: "Zeruko/InvertRight", label: "Invert right stick", type: "seg", def: "0", options: INVERT,
       hint: "The same for the game's right stick: the camera in most games." },
-    { key: "PS5SX2/LeftStickDpad", label: "Left stick as D-pad", type: "seg", def: "0", cols: 3,
+    { key: "Zeruko/LeftStickDpad", label: "Left stick as D-pad", type: "seg", def: "0", cols: 3,
       options: [["0","Off"],["1","Also"],["2","Only"]],
       hint: "For games that only read the D-pad. Also: the left stick presses the D-pad as it moves. Only: it presses just the D-pad, and the game's left stick stays still." },
-    { key: "PS5SX2/DeadzoneLeft", label: "Left stick dead zone", type: "pick", def: "0", options: DEADZONES, hint: "Inside this much of the way out, the stick reads as centred; past it, the rest of the way still reaches full. For a stick that drifts, or a game that walks or turns by itself. Off is the stick as it is." },
-    { key: "PS5SX2/DeadzoneRight", label: "Right stick dead zone", type: "pick", def: "0", options: DEADZONES, hint: "Inside this much of the way out, the stick reads as centred; past it, the rest of the way still reaches full. For a stick that drifts, or a game that walks or turns by itself. Off is the stick as it is." },
+    { key: "Zeruko/DeadzoneLeft", label: "Left stick dead zone", type: "pick", def: "0", options: DEADZONES, hint: "Inside this much of the way out, the stick reads as centred; past it, the rest of the way still reaches full. For a stick that drifts, or a game that walks or turns by itself. Off is the stick as it is." },
+    { key: "Zeruko/DeadzoneRight", label: "Right stick dead zone", type: "pick", def: "0", options: DEADZONES, hint: "Inside this much of the way out, the stick reads as centred; past it, the rest of the way still reaches full. For a stick that drifts, or a game that walks or turns by itself. Off is the stick as it is." },
   ]},
   { title: "Controller", tab: "controls", items: [
-    { key: "PS5SX2/Rumble", label: "Rumble", type: "toggle", def: "true", short: "Rumble %",
+    { key: "Zeruko/Rumble", label: "Rumble", type: "toggle", def: "true", short: "Rumble %",
       hint: "The game's vibration on the controller. In a game, hold L2 and D-pad down for 2 seconds to open this page in the PS5's own web browser; the game keeps running behind it." },
-    { key: "PS5SX2/RumbleStrength", label: "Rumble strength", type: "pick", def: "1",
+    { key: "Zeruko/RumbleStrength", label: "Rumble strength", type: "pick", def: "1",
       options: [["0.25","25%"],["0.5","50%"],["0.75","75%"],["1","100%"],["1.25","125%"],["1.5","150%"],["2","200%"]],
       hint: "How strongly the controller vibrates, as a share of what the game asks for. Above 100% lifts weak rumble; it never goes past the motors' full strength." },
-    { key: "PS5SX2/Multitap", label: "Multitap", type: "seg", def: "0", cols: 3, restart: true,
+    { key: "Zeruko/Multitap", label: "Multitap", type: "seg", def: "0", cols: 3, restart: true,
       options: [["0","Off"],["1","Port 1"],["2","Port 2"]],
       hint: "For 4-player games. Players 2 to 4 are the other PS5 users logged in when the game starts, each on their own controller. Port 1 suits most games; a few want the multitap in port 2. Off: player 2 on port 2, as before." },
   ]},
   // vk-285-113: a USB keyboard and mouse plugged into the PS5 (orbis-shims/ProsperoKbdMouse.cpp, main-boot.cpp).
   { title: "Keyboard and mouse", tab: "controls", items: [
-    { key: "PS5SX2/KeyboardMouse", label: "Keyboard and mouse", type: "seg", def: "0", short: "Keyboard and mouse %", cols: 2,
+    { key: "Zeruko/KeyboardMouse", label: "Keyboard and mouse", type: "seg", def: "0", short: "Keyboard and mouse %", cols: 2,
       options: [["0","Auto"],["1","Controller"],["2","USB devices"],["3","Off"]],
       hint: "Controller: the keys and the mouse press the PS2 controller's buttons, as in PCSX2 on a PC. Arrows are the D-pad, W A S D the left stick, T F G H the right stick, Enter is Start, Backspace Select, I J K L are Triangle Square Cross Circle, Q and E the shoulder buttons, 1 and 3 the triggers, 2 and 4 the stick clicks. F1 saves and F3 loads a state; hold Esc for a second to go back to the menu. USB devices: the PS2 sees a USB keyboard and mouse, for games made for them (Half-Life, Unreal Tournament, chat in online games). Auto: the controller, until a game starts reading the PS2's USB keyboard or mouse." },
-    { key: "PS5SX2/MouseAim", label: "Mouse movement", type: "seg", def: "1", short: "Mouse movement %", cols: 3,
+    { key: "Zeruko/MouseAim", label: "Mouse movement", type: "seg", def: "1", short: "Mouse movement %", cols: 3,
       options: [["1","Right stick"],["2","Left stick"],["0","Nothing"]],
       hint: "Which stick the mouse moves in the controller mode. The right stick turns the camera in most games." },
-    { key: "PS5SX2/MouseSpeed", label: "Mouse speed", type: "seg", def: "2", short: "Mouse speed %", cols: 4,
+    { key: "Zeruko/MouseSpeed", label: "Mouse speed", type: "seg", def: "2", short: "Mouse speed %", cols: 4,
       options: [["1","Slow"],["2","Normal"],["3","Fast"],["4","Very fast"]],
       hint: "How far a mouse movement pushes the stick. Faster reaches a full stick with less movement." },
-    { key: "PS5SX2/MouseButtons", label: "Mouse buttons", type: "seg", def: "0", short: "Mouse buttons %", cols: 2,
+    { key: "Zeruko/MouseButtons", label: "Mouse buttons", type: "seg", def: "0", short: "Mouse buttons %", cols: 2,
       options: [["0","R1 and L1"],["1","R2 and L2"]],
       hint: "Left click and right click. Most shooters fire with R1 or R2 and aim with L1 or L2. The wheel click is R3." },
   ]},
@@ -562,7 +562,7 @@ let saveTimer = 0;
 let recArmed = 0;        // the Recommended button's wait for its second tap
 let ctlArmed = 0;        // vk-285-116: the controls' reset button's
 let tab = "settings";    // vk-285-116: the tab shown, "settings" or "controls" (kept in this browser)
-try { const saved = localStorage.getItem("ps5sx2.tab"); if (["controls", "achievements"].includes(saved)) tab = saved; } catch (e) {}
+try { const saved = localStorage.getItem("zeruko.tab"); if (["controls", "achievements"].includes(saved)) tab = saved; } catch (e) {}
 let achievementData = null, achievementLoading = false, achievementPage = 0, achievementFilter = "all";
 let achievementImageGeneration = 0;
 
@@ -572,7 +572,7 @@ let achievementImageGeneration = 0;
   try {
     const u = new URL(location.href);
     if (u.searchParams.has("t")) { u.searchParams.delete("t"); history.replaceState(null, "", u.pathname + u.search); }
-    localStorage.removeItem("ps5sx2.token");
+    localStorage.removeItem("zeruko.token");
   } catch (e) {}
 })();
 
@@ -846,9 +846,9 @@ function render() {
       (inUse ? " disabled" : "") + ">" + (inUse ? "\u2713 In use" : recArmed ? "Tap again" : "Use") + "</button></div>";
   }
   // 2026-10-08 (AI-assisted; testers: "ELF properties: disc path"): an ELF's disc image, one of the shelf's images by its file
-  // name (PS5SX2/ElfDisc; main-boot.cpp finds it in the game folders), as the sheet's Disc image row.
+  // name (Zeruko/ElfDisc; main-boot.cpp finds it in the game folders), as the sheet's Disc image row.
   if (tab === "settings" && !isGlobal && /\.elf$/i.test(data.id)) {
-    const cur = data.values["PS5SX2/ElfDisc"] || "";
+    const cur = data.values["Zeruko/ElfDisc"] || "";
     let opts = '<option value=""' + (cur ? "" : " selected") + ">No disc</option>";
     for (const g of games)
       if (!/\.elf$/i.test(g.id)) opts += '<option value="' + esc(g.id) + '"' + (g.id === cur ? " selected" : "") + ">" + esc(g.title) + "</option>";
@@ -858,9 +858,9 @@ function render() {
       '<div class="hint">The disc image this ELF runs with, as PCSX2\'s ELF properties set it: a patched or translated game\'s executable with its own disc, or homebrew that reads one. No disc: the ELF alone.</div></div>' +
       '<select class="pick' + (cur ? " moved" : " inh") + '" data-elfdisc="1" aria-label="Disc image">' + opts + "</select></div></div></div>";
   }
-  // vk-285-139: the cheat disc (PS5SX2/CheatDisc in gs.ini), one of the shelf's images by its file name, as the sheet's row.
+  // vk-285-139: the cheat disc (Zeruko/CheatDisc in gs.ini), one of the shelf's images by its file name, as the sheet's row.
   if (tab === "settings" && isGlobal) {
-    const cur = data.values["PS5SX2/CheatDisc"] || "";
+    const cur = data.values["Zeruko/CheatDisc"] || "";
     let opts = '<option value=""' + (cur ? "" : " selected") + ">None</option>";
     for (const g of games)
       if (!/\.elf$/i.test(g.id)) opts += '<option value="' + esc(g.id) + '"' + (g.id === cur ? " selected" : "") + ">" + esc(g.title) + "</option>";
@@ -984,8 +984,8 @@ function render() {
     change(el.dataset.textkey, v === "" ? null : v);
   }));
   $("settings").querySelectorAll("[data-pickkey]").forEach((el) => el.addEventListener("change", () => change(el.dataset.pickkey, el.value)));
-  $("settings").querySelectorAll("[data-elfdisc]").forEach((el) => el.addEventListener("change", () => change("PS5SX2/ElfDisc", el.value || null)));
-  $("settings").querySelectorAll("[data-cheatdisc]").forEach((el) => el.addEventListener("change", () => change("PS5SX2/CheatDisc", el.value || null)));
+  $("settings").querySelectorAll("[data-elfdisc]").forEach((el) => el.addEventListener("change", () => change("Zeruko/ElfDisc", el.value || null)));
+  $("settings").querySelectorAll("[data-cheatdisc]").forEach((el) => el.addEventListener("change", () => change("Zeruko/CheatDisc", el.value || null)));
   $("settings").querySelectorAll("[data-mcd]").forEach((el) => el.addEventListener("change", () => mcdChoose(SLOTS[+el.dataset.mcd - 1], el.value)));
   $("settings").querySelectorAll("[data-mcdreset]").forEach((b) => b.addEventListener("click", () => mcdChoose(SLOTS[+b.dataset.mcdreset - 1], "")));
   $("settings").querySelectorAll("[data-mcdsize]").forEach((b) => b.addEventListener("click", () => { mcdSize = +b.dataset.mcdsize; render(); }));
@@ -1220,7 +1220,7 @@ function showTab() { document.querySelectorAll("#tabs button").forEach((b) => b.
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
   if (tab === b.dataset.tab) return;
   tab = b.dataset.tab;
-  try { localStorage.setItem("ps5sx2.tab", tab); } catch (e) {}
+  try { localStorage.setItem("zeruko.tab", tab); } catch (e) {}
   clearTimeout(ctlArmed); ctlArmed = 0;
   showTab();
   if (data) render();

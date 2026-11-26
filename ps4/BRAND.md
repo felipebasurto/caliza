@@ -259,7 +259,7 @@ Zeruko is licensed under the GNU General Public License version 3 or later
 This is free software, and you are welcome to redistribute it under certain
 conditions. See COPYING.GPLv3 or the source repository for details.
 
-Source code: https://github.com/zerukoemu/zeruko
+Source code: https://github.com/felipebasurto/zeruko
 
 PCSX2 is used under the terms of its license. The PCSX2 project does not
 endorse Zeruko. PlayStation, PS2 and PS4 are trademarks of Sony Interactive
@@ -273,7 +273,7 @@ included with Zeruko.
 Use this where only one short paragraph fits:
 ```text
 Zeruko is based on modified PCSX2 code, licensed GPL-3.0-or-later.
-Source: https://github.com/zerukoemu/zeruko — No BIOS, games or keys included.
+Source: https://github.com/felipebasurto/zeruko — No BIOS, games or keys included.
 ```
 ### Exact GitHub README attribution section
 Use this verbatim as the README `Licence and attribution` section:
@@ -308,9 +308,9 @@ included in this repository or its release packages.
 
 ## 5. Repository identity
 ### Canonical repository
-- **Organization/owner:** `zerukoemu`
+- **Organization/owner:** `zerukoemu` — *deferred: GitHub organizations can only be created in the web UI, so the initial canonical home is `github.com/felipebasurto/zeruko`. GitHub redirects transferred repositories automatically, so moving under a future `zerukoemu` organization will not break links baked into packages or the About screen.*
 - **Repository:** `zeruko`
-- **Canonical URL:** `https://github.com/zerukoemu/zeruko`
+- **Canonical URL (initial):** `https://github.com/felipebasurto/zeruko`
 - **Display title:** `Zeruko`
 - **Short description:** `Couch-friendly PlayStation 2 emulator for jailbroken PlayStation 4 consoles, based on PCSX2.`
 - **README badge alt text:** `Zeruko`, not a Sony-like acronym.

@@ -408,7 +408,7 @@ std::optional<TextureName> GSTextureReplacements::ParseReplacementName(const std
 }
 
 #ifdef ORBIS_VULKAN
-// vk-285-113: a game's texture pack outside /data/PCSX2/textures: on a USB drive, or where the PS5SX2/TexturesDir
+// vk-285-113: a game's texture pack outside /data/zeruko/textures: on a USB drive, or where the Zeruko/TexturesDir
 // setting says (main-boot.cpp, orbis-shims/OrbisTextureRoots.h). Found again at each ReloadReplacementMap; empty: the
 // pack, if there is one, is in the textures folder.
 extern std::string OrbisTexturesGameDir(const std::string& serial, std::string& how);

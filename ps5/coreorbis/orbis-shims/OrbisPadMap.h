@@ -2,18 +2,18 @@
 // so tests/padmap/test_pad_map.cpp checks it on a PC. main-boot.cpp's orbis_pad_apply uses it for both PS2 ports.
 //
 // The settings (the Controls tab of the settings page and of the shelf's sheet; gs.ini or the game's own file):
-//   PS5SX2/Button<Cross|Circle|Square|Triangle|L1|R1|L2|R2|L3|R3|Options|Touchpad|Up|Down|Left|Right> = the PS2 input that
+//   Zeruko/Button<Cross|Circle|Square|Triangle|L1|R1|L2|R2|L3|R3|Options|Touchpad|Up|Down|Left|Right> = the PS2 input that
 //     controller button presses: Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 Start Select Up Down Left Right Analog
 //     (the DualShock 2's analog mode button) Pressure (PCSX2's pressure modifier: while held, buttons press at half
 //     strength) or None. Unset: the same button (Options: Start, the touchpad's click: Select).
-//   PS5SX2/SwapSticks = true: the left stick moves the PS2's right stick and the right stick its left one.
-//   PS5SX2/InvertLeft, InvertRight = 0 no, 1 up-down, 2 left-right, 3 both: the PS2 stick's axes (after the swap).
-//   PS5SX2/LeftStickDpad = 0 no, 1 the PS2's left stick also presses the D-pad, 2 it presses only the D-pad (the stick
+//   Zeruko/SwapSticks = true: the left stick moves the PS2's right stick and the right stick its left one.
+//   Zeruko/InvertLeft, InvertRight = 0 no, 1 up-down, 2 left-right, 3 both: the PS2 stick's axes (after the swap).
+//   Zeruko/LeftStickDpad = 0 no, 1 the PS2's left stick also presses the D-pad, 2 it presses only the D-pad (the stick
 //     itself stays in the middle).
-//   PS5SX2/SaveButton1, SaveButton2, LoadButton1, LoadButton2 = the two buttons held together to save or load the state
+//   Zeruko/SaveButton1, SaveButton2, LoadButton1, LoadButton2 = the two buttons held together to save or load the state
 //     (slot 1): L3R3 (both stick clicks) Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 Options Touchpad (its click)
 //     TouchLeft TouchRight (a finger on the touchpad's left or right third) Up Down Left Right, or None. Unset: L3R3 + Up
-//     saves, L3R3 + Down loads. PS5SX2/StateHold = how long (seconds, 0 to 10) they're held first; 0, the default: at once.
+//     saves, L3R3 + Down loads. Zeruko/StateHold = how long (seconds, 0 to 10) they're held first; 0, the default: at once.
 // PS5SX2's own button combos (save states, the menu, the settings page) read the controller's real buttons before this.
 #pragma once
 
@@ -75,7 +75,7 @@ enum Source : uint8_t
 
 struct SourceInfo
 {
-	const char* key;  // the setting, in [PS5SX2]
+	const char* key;  // the setting, in [Zeruko]
 	const char* name; // for the log
 	uint32_t bits;    // ScePad's button bits (L2 and R2 are read from their triggers)
 	Target def;       // what it presses when the setting is unset
@@ -237,14 +237,14 @@ inline uint32_t ComboBits(ComboButton b)
 struct Config
 {
 	Target target[S_COUNT];
-	// vk-285-118: how hard each button presses what it presses, 0.05..1 (PS5SX2/Button<Name>Pressure; 1, a full press, by
+	// vk-285-118: how hard each button presses what it presses, 0.05..1 (Zeruko/Button<Name>Pressure; 1, a full press, by
 	// default). A DualShock 2's face buttons, D-pad and shoulders read pressure, and some games act on a partial press: SOCOM
 	// II crouches at about 0.20 on Triangle, Combined Assault at 0.30 (a full press goes prone). The triggers press at most
 	// this hard. Targets that only read on or off (Start, Select, L3, R3, Analog, Light press) press the same at any strength.
 	float pressure[S_COUNT];
 	bool swap_sticks = false;
 	uint8_t left_dpad = 0;    // 0 no, 1 the D-pad too, 2 the D-pad only
-	// vk-285-118: each stick's dead zone, percent of the way out (0..50; PS5SX2/DeadzoneLeft, DeadzoneRight): inside it the
+	// vk-285-118: each stick's dead zone, percent of the way out (0..50; Zeruko/DeadzoneLeft, DeadzoneRight): inside it the
 	// stick reads as centred, past it the rest of the way is stretched over the whole range (no jump at its edge). For
 	// sticks that drift, or games that read a resting stick as a push. Of the controller's sticks, before Swap sticks.
 	uint8_t deadzone_left = 0;
@@ -255,10 +255,10 @@ struct Config
 	ComboButton save[2] = {CB_L3R3, CB_UP};
 	ComboButton load[2] = {CB_L3R3, CB_DOWN};
 	int hold_ms = 0;
-	// vk-285-118: the fast forward combo (PS5SX2/FastButton1/2, experimental, to skip videos): it turns fast forward on and
+	// vk-285-118: the fast forward combo (Zeruko/FastButton1/2, experimental, to skip videos): it turns fast forward on and
 	// off, after the same hold time. Nothing on both (the default): no combo.
 	ComboButton fast[2] = {CB_NONE, CB_NONE};
-	// vk-285-139: the change disc combo (PS5SX2/DiscButton1/2): the next disc of the game's set ("(Disc 2)" beside it).
+	// vk-285-139: the change disc combo (Zeruko/DiscButton1/2): the next disc of the game's set ("(Disc 2)" beside it).
 	ComboButton disc[2] = {CB_L3R3, CB_RIGHT};
 
 	Config()
@@ -311,7 +311,7 @@ inline float ParsePressure(const std::string& v)
 	return (p >= 0.05 && p <= 1.0) ? static_cast<float>(p) : 1.0f;
 }
 
-// The settings, read with `get(key, value)` (the key within [PS5SX2]; true when it is set). An unknown value leaves that
+// The settings, read with `get(key, value)` (the key within [Zeruko]; true when it is set). An unknown value leaves that
 // button or stick option as it is by default.
 template <typename Get>
 inline Config FromSettings(Get get)

@@ -140,7 +140,7 @@ private:
 		{
 			Use,    // "Use this folder" (the folder shown)
 			Folder, // a folder in it: Cross goes in
-			Place,  // a drive, /data/PCSX2, the NFS shares: Cross goes in
+			Place,  // a drive, /data/zeruko, the NFS shares: Cross goes in
 			Listed, // a game folder added already (Triangle removes it)
 			Add,    // "Add a share" (the PS5's keyboard)
 			Share,  // an NFS share's address (Triangle removes it)

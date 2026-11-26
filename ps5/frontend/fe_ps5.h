@@ -12,8 +12,8 @@
 
 struct OrbisFrontendPaths
 {
-	std::string games_dir;    // /data/PCSX2/games
-	std::string top_dir;      // /data/PCSX2 (older setups keep images here; lastgame.txt lives here)
+	std::string games_dir;    // /data/zeruko/games
+	std::string top_dir;      // /data/zeruko (older setups keep images here; lastgame.txt lives here)
 	std::string settings_dir; // per-game settings, <image name>.ini
 	std::string gs_ini;       // the shared settings
 	std::string patches_dir;  // *.pnach, for the 16:9 badge
@@ -57,9 +57,9 @@ struct OrbisFrontendPaths
 // BIOS with no disc (the PS2's own menu: memory card browser, clock, language).
 inline constexpr const char kOrbisSystemMenuPath[] = "@ps2-system-menu";
 
-// Test build 1 (vk-285-55): the folders on USB drives PS5SX2 lists games from: each drive's root
+// Test build 1 (vk-285-55): the folders on USB drives Zeruko lists games from: each drive's root
 // (/mnt/usb0 to /mnt/usb7) and, when present, its DVD/ and CD/ (Open PS2 Loader's layout) and
-// PS5SX2/ folders, matched without regard to case. `when` ("before the jailbreak", ...) labels the
+// Zeruko/ folders, matched without regard to case. `when` ("before the jailbreak", ...) labels the
 // [usb] lines it prints (null: silent).
 std::vector<std::string> orbis_usb_game_dirs(const char* when);
 
@@ -79,7 +79,7 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 
 // vk-285-50: the settings page's web server (fe_web.cpp), for phones and PCs on the LAN. Start it
 // once, after the jailbreak; it runs until the app ends, through the shelf and the game. The shelf
-// shows its address as a QR code. The access token is kept in /data/PCSX2/webui_token.txt.
+// shows its address as a QR code. The access token is kept in /data/zeruko/webui_token.txt.
 bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag);
 // The disc image PCSX2 runs, for the page's "now playing".
 void orbis_web_now_playing(const std::string& image_path);

@@ -22,22 +22,22 @@ enum class Str : int
 	HintBrowse,         // "Browse"
 	HintJump,           // "Jump"
 	NoNetwork,          // "Game settings: no network"
-	NoGames,            // "No games in /data/PCSX2/games"
+	NoGames,            // "No games in /data/zeruko/games"
 	DownloadingCovers,  // "Downloading covers  %d / %d"
 	SizeGB,             // "%s GB"
 	SizeMB,             // "%s MB"
 	Decimal,            // "."
-	NotifyStarting,     // "PS5SX2: starting"
-	NotifyStartingTest, // "PS5SX2 (testing build): starting"
-	NotifyCoversOne,    // "PS5SX2: downloading %d cover"
-	NotifyCoversMany,   // "PS5SX2: downloading %d covers"
+	NotifyStarting,     // "Zeruko: starting"
+	NotifyStartingTest, // "Zeruko (testing build): starting"
+	NotifyCoversOne,    // "Zeruko: downloading %d cover"
+	NotifyCoversMany,   // "Zeruko: downloading %d covers"
 	NotifyNowPlaying,   // "Now playing: %s\n%s · have fun!" (the title, then how it runs)
 	HowNative,          // "native %s" (%s: Vulkan)
 	HowSoftware,        // "software renderer"
-	NotifyNoGame,       // "PS5SX2: no game to start. ..."
-	NotifyNotStarted,   // "PS5SX2: the game didn't start.\n%s" (%s: PCSX2's reason, in English)
-	NotifyMenuFailed,   // "PS5SX2: couldn't open the menu, back to the game"
-	NotifyStopped,      // "PS5SX2: the game stopped"
+	NotifyNoGame,       // "Zeruko: no game to start. ..."
+	NotifyNotStarted,   // "Zeruko: the game didn't start.\n%s" (%s: PCSX2's reason, in English)
+	NotifyMenuFailed,   // "Zeruko: couldn't open the menu, back to the game"
+	NotifyStopped,      // "Zeruko: the game stopped"
 	// vk-285-114: the options sheet (Square on the shelf).
 	HintSettings,       // "Settings"
 	HintMove,           // "Move"
@@ -47,8 +47,8 @@ enum class Str : int
 	SheetThisGame,      // "This game"
 	SheetAllGames,      // "All games"
 	// vk-285-115: the two commonest failed starts, said briefly (PCSX2's own BIOS text is four paragraphs).
-	NotifyNoBios,       // "PS5SX2: no PS2 BIOS found. Copy your BIOS file ... to %s ..." (%s: the BIOS folder)
-	NotifyGsFailed,     // "PS5SX2: the game's graphics didn't start. ..."
+	NotifyNoBios,       // "Zeruko: no PS2 BIOS found. Copy your BIOS file ... to %s ..." (%s: the BIOS folder)
+	NotifyGsFailed,     // "Zeruko: the game's graphics didn't start. ..."
 	// vk-285-116: the sheet's second tab (L2 and R2 switch: "Settings" is HintSettings).
 	SheetControls,      // "Controls"
 	// vk-285-118: Triangle on the shelf shows the QR code large.

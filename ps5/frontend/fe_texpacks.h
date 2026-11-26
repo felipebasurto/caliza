@@ -9,7 +9,7 @@
 // On the sheet's "HD texture pack" row (Square on a game): Cross downloads the game's pack while the shelf is up, in
 // 32 MB ranges that pick up where they stopped (a game starts the app over, so a download goes on at the next shelf),
 // checks it against archive.org's MD5, unpacks it with libarchive (ps5/third_party/libarchive) into
-// textures/.ps5sx2-unpack, moves <serial>/ into the textures folder, writes a marker file there and turns on Texture
+// textures/.zeruko-unpack, moves <serial>/ into the textures folder, writes a marker file there and turns on Texture
 // replacements in the game's settings file. Triangle twice cancels a download or removes a pack this app installed.
 // The platform (HTTP, free space, the popup) is behind TexturePackPlatform: fe_ps5.cpp on the console, fe_host.cpp
 // and host/texpacks_test.cpp on a PC. Needs proper testing on the console.
@@ -164,8 +164,8 @@ public:
 
 	TexturePackService Service();
 
-	// The marker file in a pack's folder ("ps5sx2-pack.txt"): which pack, from where, when.
-	static constexpr const char* kMarker = "ps5sx2-pack.txt";
+	// The marker file in a pack's folder ("zeruko-pack.txt"): which pack, from where, when.
+	static constexpr const char* kMarker = "zeruko-pack.txt";
 	static constexpr uint64_t kChunk = 32ull << 20;
 
 private:
@@ -192,7 +192,7 @@ private:
 
 	void Run();
 	void MoveFromParent();
-	// pr9l: a folder to delete is renamed out of the way first (.ps5sx2-old-...), and the worker deletes what was set
+	// pr9l: a folder to delete is renamed out of the way first (.zeruko-old-...), and the worker deletes what was set
 	// aside when it has nothing else to do: a folder of thousands of files takes the console minutes to delete.
 	bool SetAside(const std::string& path);
 	void EmptySetAside();

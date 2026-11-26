@@ -637,10 +637,10 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	const float margin = 110.0f * k;
 	std::vector<UiVertex>& ui = f.ui;
 
-	// Wordmark (vk-285-50: PS5SX2, "SX2" in the glow's colour) and the author's handles under it.
-	float x = margin;
-	x += m_fonts->AddText(ui, "PS5", x, 150.0f * k, 60.0f * k, white, 0.8f);
-	m_fonts->AddText(ui, "SX2", x + 2.0f * k, 150.0f * k, 60.0f * k, accent, 0.8f);
+	// Wordmark (vk-285-50) and the author's handles under it. "Zeruko" is wider than the old wordmark's
+	// second half, but even at 60k it is narrower than the two halves together were (about 186k against
+	// 214k in Roboto); 54k keeps it close to the old height with margin to spare. Needs proper testing.
+	m_fonts->AddText(ui, "Zeruko", margin, 150.0f * k, 54.0f * k, accent, 0.8f);
 	{
 		const float hpx = 32.0f * k, hy2 = 214.0f * k;
 		float hx2 = margin + 2.0f * k;
@@ -1398,7 +1398,7 @@ void App::UpdateSheet(double dt, const Input& in)
 				CloseSheet();
 				if (BiosReady())
 				{
-					FILE* f = std::fopen("/data/PCSX2/flags/smarttune", "w");
+					FILE* f = std::fopen("/data/zeruko/flags/smarttune", "w");
 					if (f)
 					{
 						std::fputs("experimental: measure graphics configs while playing\n", f);
@@ -2108,8 +2108,8 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 // ---- vk-285-135: the sheet's folder picker and NFS share list (AI-assisted) ------------------------------------------
 // swordpdf: "also where is the option to select what dir is set for games and bios?", "i also want to pick a folder though the
 // browser in the shelf". The sheet for all games' Folders rows open it in the sheet's place: the places first (the folders
-// added already, /data/PCSX2, the drives, the NFS shares), then a folder's folders, "Use this folder" at the top with the
-// games found there. The choice goes into gs.ini (the sheet's own file), which main-boot.cpp reads when PS5SX2 starts.
+// added already, /data/zeruko, the drives, the NFS shares), then a folder's folders, "Use this folder" at the top with the
+// games found there. The choice goes into gs.ini (the sheet's own file), which main-boot.cpp reads when Zeruko starts.
 
 namespace
 {
@@ -2262,7 +2262,7 @@ void App::FinishShareText(int r, std::string text)
 			list.push_back(text);
 		const bool changed = text != editing;
 		if (changed && m_sheet.SetOwn(kNfsSharesKey, JoinFolderList(list), (editing.empty() ? "NFS share added: " : "NFS share changed: ") + text))
-			status((editing.empty() ? "Added " : "Changed to ") + text + ": restart PS5SX2 to mount it");
+			status((editing.empty() ? "Added " : "Changed to ") + text + ": restart Zeruko to mount it");
 		else if (!changed)
 			status("Unchanged");
 		PickerList("", text);
@@ -2431,7 +2431,7 @@ void App::UpdatePicker(double dt, const Input& in)
 				if (p.kind == K::BiosFolder)
 				{
 					m_sheet.SetOwn(kBiosFolderKey, item.path, "BIOS folder picked");
-					status("BIOS folder: " + item.path + " (restart PS5SX2)");
+					status("BIOS folder: " + item.path + " (restart Zeruko)");
 				}
 				else
 				{
@@ -2442,7 +2442,7 @@ void App::UpdatePicker(double dt, const Input& in)
 					{
 						list.push_back(item.path);
 						if (m_sheet.SetOwn(kGameFoldersKey, JoinFolderList(list), "game folder added"))
-							status("Added " + item.path + ": restart PS5SX2 to list its games");
+							status("Added " + item.path + ": restart Zeruko to list its games");
 					}
 				}
 				std::printf("[options] %s picked: %s\n", p.kind == K::BiosFolder ? "BIOS folder" : "game folder", item.path.c_str());
@@ -2480,7 +2480,7 @@ void App::UpdatePicker(double dt, const Input& in)
 		std::vector<std::string> list = SplitFolderList(m_sheet.OwnValue(key));
 		list.erase(std::remove(list.begin(), list.end(), item.path), list.end());
 		if (m_sheet.SetOwn(key, JoinFolderList(list), std::string(item.type == T::Share ? "NFS share" : "game folder") + " removed: " + item.path))
-			status("Removed " + item.path + " (restart PS5SX2)");
+			status("Removed " + item.path + " (restart Zeruko)");
 		const int keep = p.row;
 		PickerList(p.dir);
 		p.row = std::min(keep, std::max(0, static_cast<int>(p.items.size()) - 1));
@@ -2573,7 +2573,7 @@ void App::BuildPicker(std::vector<UiVertex>& ui, float x, float sw, float y, flo
 	else
 		help = std::string("Cross: open the folder. ") + (p.dir.empty() ? "Circle: back to the sheet." : "Circle: up a folder.");
 	if (!p.typing && p.kind != K::NfsShares)
-		help += " Changes take effect when PS5SX2 starts.";
+		help += " Changes take effect when Zeruko starts.";
 	float hy = list_bottom + 110 * k;
 	for (const std::string& line : Wrap(*m_fonts, help, 32 * k, inner, 4))
 	{

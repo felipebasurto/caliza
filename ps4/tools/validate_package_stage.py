@@ -65,7 +65,7 @@ def main() -> int:
     source = stage / "SOURCE.txt"
     if source.is_file():
         text = source.read_text(errors="replace")
-        if "https://github.com/felipebasurto/PS4SX2" not in text:
+        if "https://github.com/felipebasurto/zeruko" not in text:
             fail(errors, "SOURCE.txt lacks the PS4SX2 corresponding-source URL")
         if "https://github.com/PCSX2/pcsx2" not in text:
             fail(errors, "SOURCE.txt lacks the upstream PCSX2 source URL")
@@ -106,7 +106,7 @@ def main() -> int:
             fail(errors, f"PKG not found: {args.pkg}")
         elif args.pkg.stat().st_size < 1024 * 1024:
             fail(errors, f"PKG is implausibly small: {args.pkg}")
-        if args.pkg.name != "IV0000-PCSX00002_00-PCSX2PS400000000.pkg":
+        if args.pkg.name != "IV0000-ZERU00001_00-ZERUKO0000000000.pkg":
             warnings.append(f"nonstandard PKG name: {args.pkg.name}")
 
     for warning in warnings:

@@ -2,14 +2,14 @@
 # PCSX2 PS4 port (AI-assisted): compile (Makefile.ps4), link (link/CMakeLists.txt) and package PCSX2 for the PS4.
 #   ps4/build-ps4.sh [imports|package|upload]
 #     imports: after the link, list the imported names no PS4 system library provides (PS5-only calls)
-#     package: also make the pkg (PCSX00002) in ~/pcsx2ps4-build/out
+#     package: also make the pkg (ZERU00001) in ~/pcsx2ps4-build/out
 #     upload:  package, then put the pkg in the console's /data/pkg over FTP (PS4_HOST, PS4_FTP_PORT)
 # Uses CEMUPS4's toolchain and runtime (~/cemups4) and its sysroot and Mesa build (~/cemups4-build), read only.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PCSX2="$(cd "$HERE/.." && pwd)"
 PORT="${PS4_PORT_DIR:-$HOME/cemups4}"
-PSB="${PCSX2PS4_BUILD:-$HOME/pcsx2ps4-build}"
+PSB="${ZERUKO_PS4_BUILD:-$HOME/pcsx2ps4-build}"
 mkdir -p "$PSB"
 export PS4_SYSROOT="${PS4_SYSROOT:-$HOME/cemups4-build/sysroot}"
 OPENORBIS="${OPENORBIS:-/opt/pacbrew/ps4/openorbis}"
@@ -104,7 +104,7 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
     rm -rf "$stage"
     mkdir -p "$stage/sce_sys"
     cp "$eboot" "$stage/"
-    cp "$PCSX2/ps4/sce_sys/icon0.png" "$stage/sce_sys/" # PS4SX2 icon, 512x512 RGB, as the PS4 wants
+    cp "$PCSX2/ps4/sce_sys/icon0.png" "$stage/sce_sys/" # Zeruko icon, 512x512 RGB, as the PS4 wants
     cp -r "$PCSX2/bin/resources" "$stage/resources"    # /app0/resources (main-boot.cpp, ORBIS_PS4)
     # GPL conveyance and bundled-asset notices travel in the package itself.
     cp "$PCSX2/COPYING.GPLv3" "$stage/COPYING.GPLv3"
@@ -125,20 +125,20 @@ if [ "$mode" = package ] || [ "$mode" = upload ]; then
         build_commit="$build_commit + uncommitted changes"
     fi
     {
-        echo "PS4SX2 is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
-        echo "Corresponding source: https://github.com/felipebasurto/PS4SX2"
+        echo "Zeruko is a GPL-3.0-or-later derivative of PCSX2, built on PS5SX2."
+        echo "Corresponding source: https://github.com/felipebasurto/zeruko"
         echo "Upstream PCSX2 source: https://github.com/PCSX2/pcsx2"
         echo "Build commit: $build_commit"
     } > "$stage/SOURCE.txt"
-    # BIOS files are never bundled by default. Setting PCSX2_PS4_BIOS_DIR is an explicit personal-build
+    # BIOS files are never bundled by default. Setting ZERUKO_PS4_BIOS_DIR is an explicit personal-build
     # opt-in; the implicit ~/pcsx2ps4-build/bios fallback was too easy to include accidentally.
-    bios="${PCSX2_PS4_BIOS_DIR:-}"
+    bios="${ZERUKO_PS4_BIOS_DIR:-}"
     if [ -n "$bios" ] && [ -d "$bios" ] && [ -n "$(ls -A "$bios")" ]; then
         mkdir -p "$stage/bios"
         cp "$bios"/* "$stage/bios/"
         cat > "$stage/PERSONAL-BUILD.txt" <<'EOF'
 This package contains console BIOS files explicitly added by its builder for personal use.
-Do not redistribute it. Public PS4SX2 packages never include BIOS files.
+Do not redistribute it. Public Zeruko packages never include BIOS files.
 EOF
         echo "[build-ps4] BIOS files in the package: $(ls "$stage/bios" | wc -l) from $bios (personal build: don't share it)"
     else
@@ -147,28 +147,30 @@ EOF
     # Plain homebrew launch values (CEMUPS4's), plus PS4 Pro mode and the seventh CPU core. No Sony modules: no Piglet.
     out="$PSB/out"
     mkdir -p "$out"
-    rm -f "$out"/IV0000-PCSX*.pkg # only the newest package is kept
+    rm -f "$out"/IV0000-ZERU*.pkg "$out"/IV0000-PCSX*.pkg # only the newest package is kept (PCSX*: the development identity's, drop once no build root has them)
+    # ZERUKO00 is the content label: make-pkg.sh keeps A-Z0-9 only and zero-pads it to 16, so the content id
+    # comes out IV0000-ZERU00001_00-ZERUKO0000000000 and the pkg IV0000-ZERU00001_00-ZERUKO0000000000.pkg.
     pkg="$(SFO_STYLE=plain NO_RIGHT_SPRX=1 SFO_ATTRIBUTE="${SFO_ATTRIBUTE:-0x00810000}" \
-        DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" PCSX00002 "PS4SX2" \
-        "${PCSX2_PS4_VERSION:-00.01}" PCSX2PS4 "$out" | tail -1)"
+        DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" ZERU00001 "Zeruko" \
+        "${ZERUKO_PS4_VERSION:-00.01}" ZERUKO00 "$out" | tail -1)"
     python3 "$HERE/tools/validate_package_stage.py" "$stage" --pkg "$pkg" --expect-commit "$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     echo "[build-ps4] package: $pkg ($(du -h "$pkg" | cut -f1))"
-    # Optionally a copy elsewhere (PCSX2_PS4_PKG_DIR, e.g. a Windows folder): the current package, and the one it replaces
+    # Optionally a copy elsewhere (ZERUKO_PS4_PKG_DIR, e.g. a Windows folder): the current package, and the one it replaces
     # moved into backups/ with its date, keeping the last 5. Personal builds carry your BIOS: keep them to yourself.
-    keep="${PCSX2_PS4_PKG_DIR:-}"
+    keep="${ZERUKO_PS4_PKG_DIR:-}"
     if [ -n "$keep" ] && mkdir -p "$keep/backups" 2>/dev/null; then
-        for prev in "$keep"/IV0000-PCSX*.pkg; do
+        for prev in "$keep"/IV0000-ZERU*.pkg "$keep"/IV0000-PCSX*.pkg; do
             [ -f "$prev" ] || continue
             mv "$prev" "$keep/backups/$(basename "$prev" .pkg)_$(date -r "$prev" +%Y-%m-%d_%H%M).pkg"
         done
-        ls -1t "$keep"/backups/IV0000-PCSX*.pkg 2>/dev/null | tail -n +6 | while read -r old; do rm -f "$old"; done
+        ls -1t "$keep"/backups/IV0000-ZERU*.pkg "$keep"/backups/IV0000-PCSX*.pkg 2>/dev/null | tail -n +6 | while read -r old; do rm -f "$old"; done
         cp "$pkg" "$keep/" && echo "[build-ps4] copied to $keep (older ones in backups/, last 5 kept)"
     fi
     if [ "$mode" = upload ]; then
         [ -n "${PS4_HOST:-}" ] || { echo "[build-ps4] set PS4_HOST to the console's IP address (FTP on PS4_FTP_PORT, default 2121)" >&2; exit 1; }
         ftp="ftp://${PS4_HOST}:${PS4_FTP_PORT:-2121}"
-        # This port's older packages (other PCSX titles and versions) leave the console's /data/pkg first.
-        for old in $(curl -sS --connect-timeout 10 --list-only "$ftp/data/pkg/" | tr -d '\r' | grep '^IV0000-PCSX.*\.pkg$' || true); do
+        # This port's older packages (other versions, and the development identity's PCSX ones) leave /data/pkg first.
+        for old in $(curl -sS --connect-timeout 10 --list-only "$ftp/data/pkg/" | tr -d '\r' | grep -E '^IV0000-(ZERU|PCSX).*\.pkg$' || true); do
             if [ "$old" != "$(basename "$pkg")" ]; then
                 curl -sS --connect-timeout 10 -Q "DELE /data/pkg/$old" "$ftp/data/pkg/" -o /dev/null && echo "[build-ps4] removed old $old"
             fi

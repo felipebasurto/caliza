@@ -515,7 +515,7 @@ size_t OrbisMVUUsed(int vu, size_t* size)
 // vk-285-74: the VU1 recompiler's state, for studying offline which x86 code the hot VU1 programs get
 // (tools/vu1dump.py, with a vuprof profile of the same launch). Raised by the vudump flag (GSRenderer.cpp)
 // and run on the MTVU thread between two programs (MTVU.cpp), where nothing compiles or frees. The buffer
-// goes to /data/PCSX2/logs/vu1dump-<n>.bin from a thread of its own. Little-endian layout:
+// goes to /data/zeruko/logs/vu1dump-<n>.bin from a thread of its own. Little-endian layout:
 //   "VU1DUMP1", u32 version (1), u32 0, u64 VU1 cycles run so far, u64 program runs so far
 //   VU1 micro memory (16 KiB), VU1 data memory (16 KiB)
 //   u64 code base (the rec cache, dispatchers first), u64 bytes in use, the bytes
@@ -605,7 +605,7 @@ void OrbisVU1Dump()
 	const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 
 	char path[96];
-	std::snprintf(path, sizeof(path), "/data/PCSX2/logs/vu1dump-%d.bin", n);
+	std::snprintf(path, sizeof(path), "/data/zeruko/logs/vu1dump-%d.bin", n);
 	printf("[vudump] %d: %u programs, %u blocks, code %p + %#llx, %zu bytes, built in %.1f ms on the MTVU thread -> %s\n", n,
 		nprog, nblocks, static_cast<const void*>(base), static_cast<unsigned long long>(used), out.size(), ms, path);
 	fflush(stdout);

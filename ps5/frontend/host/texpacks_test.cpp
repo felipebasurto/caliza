@@ -86,14 +86,14 @@ static bool ReadPak(const std::string& path, std::map<std::string, std::string>&
 	return ok;
 }
 
-// Folders set aside for deleting (.ps5sx2-old-*) still in `textures`.
+// Folders set aside for deleting (.zeruko-old-*) still in `textures`.
 static int SetAsideLeft(const std::string& textures)
 {
 	int n = 0;
 	if (DIR* d = opendir(textures.c_str()))
 	{
 		while (dirent* e = readdir(d))
-			n += std::strncmp(e->d_name, ".ps5sx2-old-", 12) == 0;
+			n += std::strncmp(e->d_name, ".zeruko-old-", 12) == 0;
 		closedir(d);
 	}
 	return n;
@@ -156,7 +156,7 @@ static void TestPakFormat(const std::string& dir)
 	CHECK(ReadPak(dir + "/good.pak", pak) && pak["01/c.png"] == "third one" && pak["a.dds"] == "first" && pak.count("01/b.png"));
 	// Not finished (the header still zeros), cut short, a bad name, an entry past the data, another version.
 	write(dir + "/zeros.pak", std::vector<uint8_t>(kHeaderSize, 0), index);
-	CHECK(!read(dir + "/zeros.pak", got, error) && error.find("not a PS5SX2") != std::string::npos);
+	CHECK(!read(dir + "/zeros.pak", got, error) && error.find("not a Zeruko") != std::string::npos);
 	write(dir + "/cut.pak", header, index, 3);
 	CHECK(!read(dir + "/cut.pak", got, error));
 	std::vector<uint8_t> bad_name = index;
@@ -372,7 +372,7 @@ int main(int argc, char** argv)
 	{
 		std::ofstream(fixtures + "/Broken (USA) [SLUS-99999] HD Remaster.zip", std::ios::binary) << ReadAll(fixtures + "/" + good);
 	}
-	const std::string textures = work + "/textures", downloads = textures + "/.ps5sx2-downloads", cache = work + "/cache/texture-packs.json";
+	const std::string textures = work + "/textures", downloads = textures + "/.zeruko-downloads", cache = work + "/cache/texture-packs.json";
 	const std::string settings_path = work + "/settings/Spider-Man 2.ini";
 	mkdir((work + "/settings").c_str(), 0777);
 
@@ -403,7 +403,7 @@ int main(int argc, char** argv)
 		CHECK(!Exists(textures + "/SLUS-20776/dumps"));
 		CHECK(!Exists(textures + "/readme.txt"));
 		CHECK(ReadAll(textures + "/SLUS-20776/" + TexturePackManager::kMarker).find("name=" + good) != std::string::npos);
-		CHECK(!Exists(textures + "/.ps5sx2-unpack"));
+		CHECK(!Exists(textures + "/.zeruko-unpack"));
 		CHECK(!Exists(downloads + "/SLUS-20776.job") && !Exists(downloads + "/" + good_md5 + ".zip"));
 		const std::string ini = ReadAll(settings_path);
 		CHECK(ini.find("LoadTextureReplacements=true") != std::string::npos);
@@ -547,33 +547,33 @@ int main(int argc, char** argv)
 		CHECK(m.Begin("SLUS-22222", 0, "", "", "Clash"));
 		CHECK(WaitFor(m, "SLUS-22222", State::Failed, 20));
 		CHECK(m.Status("SLUS-22222").message.find("Couldn't write SLUS-22222/notes") != std::string::npos);
-		CHECK(!Exists(textures + "/SLUS-22222") && !Exists(textures + "/.ps5sx2-unpack"));
+		CHECK(!Exists(textures + "/SLUS-22222") && !Exists(textures + "/.zeruko-unpack"));
 		CHECK(m.Stop(2000));
 	}
 	// 10. pr9h's leftovers in the folder above (no textures folder then): moved into the textures folder at the start.
 	{
 		const std::string root = work + "/legacy", tex = root + "/textures";
 		mkdir(root.c_str(), 0777);
-		mkdir((root + "/.ps5sx2-downloads").c_str(), 0777);
-		std::ofstream(root + "/.ps5sx2-downloads/SLUS-20776.job") << "name=x\n";
-		mkdir((root + "/.ps5sx2-unpack").c_str(), 0777);
+		mkdir((root + "/.zeruko-downloads").c_str(), 0777);
+		std::ofstream(root + "/.zeruko-downloads/SLUS-20776.job") << "name=x\n";
+		mkdir((root + "/.zeruko-unpack").c_str(), 0777);
 		mkdir((root + "/SLUS-20776").c_str(), 0777);
 		std::ofstream(root + "/SLUS-20776/" + TexturePackManager::kMarker) << "name=" + good + "\n";
 		mkdir((root + "/SLUS-21180").c_str(), 0777); // not ours (no marker): left alone
 		mkdir((root + "/bios").c_str(), 0777);
 		FakeArchive offline;
 		offline.dir = fixtures;
-		TexturePackManager m(offline.Platform(nullptr, nullptr), tex, tex + "/.ps5sx2-downloads", cache);
+		TexturePackManager m(offline.Platform(nullptr, nullptr), tex, tex + "/.zeruko-downloads", cache);
 		m.Start();
 		CHECK(WaitFor(m, "SLUS-20776", State::Installed, 5));
 		CHECK(Exists(tex + "/SLUS-20776/" + TexturePackManager::kMarker) && !Exists(root + "/SLUS-20776"));
-		CHECK(Exists(tex + "/.ps5sx2-unpack") || !Exists(root + "/.ps5sx2-unpack"));
-		CHECK(!Exists(root + "/.ps5sx2-downloads"));
+		CHECK(Exists(tex + "/.zeruko-unpack") || !Exists(root + "/.zeruko-unpack"));
+		CHECK(!Exists(root + "/.zeruko-downloads"));
 		CHECK(Exists(root + "/SLUS-21180") && Exists(root + "/bios") && !Exists(tex + "/SLUS-21180"));
 		CHECK(m.Stop(2000));
 	}
 	// 12. pr9l: a pack this app installed before as a replacements/ folder (pr9k and earlier), and an unpack such a build left
-	// half done in .ps5sx2-unpack: both set aside when the pack goes in again, and deleted once the worker is idle.
+	// half done in .zeruko-unpack: both set aside when the pack goes in again, and deleted once the worker is idle.
 	{
 		const std::string tex = work + "/old-install";
 		mkdir(tex.c_str(), 0777);
@@ -581,13 +581,13 @@ int main(int argc, char** argv)
 		mkdir((tex + "/SLUS-20776/replacements").c_str(), 0777);
 		std::ofstream(tex + "/SLUS-20776/" + TexturePackManager::kMarker) << "name=" + good + "\n";
 		std::ofstream(tex + "/SLUS-20776/replacements/old.dds") << "old";
-		mkdir((tex + "/.ps5sx2-unpack").c_str(), 0777);
-		mkdir((tex + "/.ps5sx2-unpack/SLUS-20776").c_str(), 0777);
-		mkdir((tex + "/.ps5sx2-unpack/SLUS-20776/replacements").c_str(), 0777);
+		mkdir((tex + "/.zeruko-unpack").c_str(), 0777);
+		mkdir((tex + "/.zeruko-unpack/SLUS-20776").c_str(), 0777);
+		mkdir((tex + "/.zeruko-unpack/SLUS-20776/replacements").c_str(), 0777);
 		for (int i = 0; i < 300; i++)
-			std::ofstream(tex + "/.ps5sx2-unpack/SLUS-20776/replacements/f" + std::to_string(i) + ".dds") << i;
+			std::ofstream(tex + "/.zeruko-unpack/SLUS-20776/replacements/f" + std::to_string(i) + ".dds") << i;
 		std::vector<std::string> log;
-		TexturePackManager m(server.Platform(&log, nullptr), tex, tex + "/.ps5sx2-downloads", work + "/cache/old-install.json");
+		TexturePackManager m(server.Platform(&log, nullptr), tex, tex + "/.zeruko-downloads", work + "/cache/old-install.json");
 		m.Start();
 		CHECK(WaitFor(m, "SLUS-20776", State::Installed, 5)); // the old one, by its marker
 		for (const double until = Now() + 5; Now() < until && m.Status("SLUS-20776").packs.empty();) // the list
@@ -599,7 +599,7 @@ int main(int argc, char** argv)
 		CHECK(ReadPak(tex + "/SLUS-20776/replacements.pak", pak) && pak["01/b.png"] == "the second texture, again");
 		CHECK(!Exists(tex + "/SLUS-20776/replacements"));
 		CHECK(WaitNoSetAside(tex, 10));
-		CHECK(!Exists(tex + "/.ps5sx2-unpack"));
+		CHECK(!Exists(tex + "/.zeruko-unpack"));
 		int set_aside = 0, deleted = 0;
 		for (const std::string& l : log)
 		{

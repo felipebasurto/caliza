@@ -557,7 +557,7 @@ struct Display
 		}
 		const char* inst_ext[2] = {"VK_KHR_surface", "VK_KHR_display"};
 		VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
-		ai.pApplicationName = "PS5SX2 frontend";
+		ai.pApplicationName = "Zeruko";
 		ai.apiVersion = VK_API_VERSION_1_1;
 		VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
 		ici.pApplicationInfo = &ai;
@@ -1134,11 +1134,11 @@ std::vector<std::string> orbis_usb_game_dirs(const char* when)
 			entries++;
 			isos += IsDiscImageName(e->d_name) ? 1 : 0;
 			const std::string lower = LowerAscii(e->d_name);
-			if (lower == "dvd" || lower == "cd" || lower == "ps5sx2" || lower == "games")
+			if (lower == "dvd" || lower == "cd" || lower == "zeruko" || lower == "games")
 				subs.push_back(e->d_name);
-			// vk-285-118 (AI-assisted): a drive laid out like /data/PCSX2 (testers: "games in the games/ folder on the external
-			// drive are NOT detected", while PCSX2/textures there works): PCSX2/games/, and PS5SX2/games/, also DVD/ and CD/ in them.
-			if (lower == "pcsx2" || lower == "ps5sx2")
+			// vk-285-118 (AI-assisted): a drive laid out like /data/zeruko (testers: "games in the games/ folder on the external
+			// drive are NOT detected", while PCSX2/textures there works): PCSX2/games/, and zeruko/games/, also DVD/ and CD/ in them.
+			if (lower == "pcsx2" || lower == "zeruko")
 			{
 				const std::string parent = std::string(root) + "/" + e->d_name;
 				if (DIR* pd = opendir(parent.c_str()))
@@ -1708,7 +1708,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		};
 		tp.now = [] { return Now(); };
 		const std::string textures = paths.textures_dir;
-		texpacks = new TexturePackManager(tp, textures, textures + "/.ps5sx2-downloads", paths.texture_pack_list);
+		texpacks = new TexturePackManager(tp, textures, textures + "/.zeruko-downloads", paths.texture_pack_list);
 		texpacks->Start();
 		acfg.texture_packs = texpacks->Service();
 	}
@@ -1738,7 +1738,7 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	}
 	acfg.system_menu = true; // 2026-10-08: the sheet for all games offers the PS2 system menu (main-boot.cpp boots it)
 	// vk-285-135: the places the sheet's folder picker starts from (those that are folders when it opens).
-	acfg.folder_places = {{"PS5SX2's folder", "/data/PCSX2"}};
+	acfg.folder_places = {{"Zeruko's folder", "/data/zeruko"}};
 	for (int i = 0; i < 8; i++)
 		acfg.folder_places.push_back({"USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i)});
 	acfg.folder_places.push_back({"Extended storage", "/mnt/ext0"});

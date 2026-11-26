@@ -86,7 +86,7 @@ namespace fe
 		void Abort();
 
 		// The User-Agent header (Get's and Request's).
-		std::string user_agent = "PS5SX2/1.0";
+		std::string user_agent = "Zeruko/1.0";
 
 		// The time limits for each connect and each wait for data (milliseconds).
 		int connect_timeout_ms = 10000;

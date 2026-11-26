@@ -56,12 +56,12 @@ struct WebConfig
 	std::string change_log;             // "" for none
 	// Test build 1 (vk-285-55): the logs download (/api/report) and the tester's notes (/api/note).
 	std::string logs_dir;               // logs/: boot.log, emulog.txt, stderr.log and their earlier sessions
-	std::string top_dir;                // /data/PCSX2: gs.ini, live.ini, flags/, settings/, patches/, cheats/
+	std::string top_dir;                // /data/zeruko: gs.ini, live.ini, flags/, settings/, patches/, cheats/
 	std::string memcards_dir;           // vk-285-113: memcards/, the cards PCSX2 uses ("" for none: no cards page)
 	std::string report_header;          // the report's first lines: build, sources, console
 	std::function<GameAchievementsState()> achievements; // Runtime snapshot, no client pointers (AI-assisted).
 	std::function<std::vector<uint8_t>(uint32_t)> achievement_badge;
-	int test_build = 0;                 // names the report file "PS5SX2-test<N>-..."
+	int test_build = 0;                 // names the report file "Zeruko-test<N>-..."
 	// vk-285-139: changing discs while a game runs (/api/discs, /api/disc). The disc in now and the game's set ("" and empty
 	// in the menu); change_disc asks for one (any image the page lists), false when no game runs.
 	std::function<std::string()> current_disc;

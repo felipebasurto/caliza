@@ -129,22 +129,22 @@ std::vector<OptionDef> ButtonRows()
 		const char* name;
 		const char* def;
 	} rows[] = {
-		{"PS5SX2/ButtonCross", icon::Cross, "Cross", "Cross"},
-		{"PS5SX2/ButtonCircle", icon::Circle, "Circle", "Circle"},
-		{"PS5SX2/ButtonSquare", icon::Square, "Square", "Square"},
-		{"PS5SX2/ButtonTriangle", icon::Triangle, "Triangle", "Triangle"},
-		{"PS5SX2/ButtonL1", icon::Blank, "L1", "L1"},
-		{"PS5SX2/ButtonR1", icon::Blank, "R1", "R1"},
-		{"PS5SX2/ButtonL2", icon::Blank, "L2", "L2"},
-		{"PS5SX2/ButtonR2", icon::Blank, "R2", "R2"},
-		{"PS5SX2/ButtonL3", icon::Blank, "L3", "L3"},
-		{"PS5SX2/ButtonR3", icon::Blank, "R3", "R3"},
-		{"PS5SX2/ButtonOptions", icon::Blank, "Options", "Start"},
-		{"PS5SX2/ButtonTouchpad", icon::Blank, "Touchpad click", "Select"},
-		{"PS5SX2/ButtonUp", icon::DpadUp, "D-pad up", "Up"},
-		{"PS5SX2/ButtonDown", icon::DpadDown, "D-pad down", "Down"},
-		{"PS5SX2/ButtonLeft", icon::DpadLeft, "D-pad left", "Left"},
-		{"PS5SX2/ButtonRight", icon::DpadRight, "D-pad right", "Right"},
+		{"Zeruko/ButtonCross", icon::Cross, "Cross", "Cross"},
+		{"Zeruko/ButtonCircle", icon::Circle, "Circle", "Circle"},
+		{"Zeruko/ButtonSquare", icon::Square, "Square", "Square"},
+		{"Zeruko/ButtonTriangle", icon::Triangle, "Triangle", "Triangle"},
+		{"Zeruko/ButtonL1", icon::Blank, "L1", "L1"},
+		{"Zeruko/ButtonR1", icon::Blank, "R1", "R1"},
+		{"Zeruko/ButtonL2", icon::Blank, "L2", "L2"},
+		{"Zeruko/ButtonR2", icon::Blank, "R2", "R2"},
+		{"Zeruko/ButtonL3", icon::Blank, "L3", "L3"},
+		{"Zeruko/ButtonR3", icon::Blank, "R3", "R3"},
+		{"Zeruko/ButtonOptions", icon::Blank, "Options", "Start"},
+		{"Zeruko/ButtonTouchpad", icon::Blank, "Touchpad click", "Select"},
+		{"Zeruko/ButtonUp", icon::DpadUp, "D-pad up", "Up"},
+		{"Zeruko/ButtonDown", icon::DpadDown, "D-pad down", "Down"},
+		{"Zeruko/ButtonLeft", icon::DpadLeft, "D-pad left", "Left"},
+		{"Zeruko/ButtonRight", icon::DpadRight, "D-pad right", "Right"},
 	};
 	std::vector<OptionDef> out;
 	for (const auto& r : rows)
@@ -156,13 +156,13 @@ std::vector<OptionDef> ButtonRows()
 		d.choices = ButtonChoices();
 		d.hint = std::string("What the controller's ") + r.name +
 		         " presses in games. Several can press the same one; Nothing turns it off. Light press: while it's held, buttons "
-		         "press at half strength (Metal Gear Solid 2 and 3). PS5SX2's combos use the real buttons.";
+		         "press at half strength (Metal Gear Solid 2 and 3). Zeruko's combos use the real buttons.";
 		out.push_back(std::move(d));
 	}
 	return out;
 }
 
-// vk-285-118: how hard each button presses (OrbisPadMap.h Config::pressure, PS5SX2/Button<Name>Pressure), as the page's
+// vk-285-118: how hard each button presses (OrbisPadMap.h Config::pressure, Zeruko/Button<Name>Pressure), as the page's
 // STRENGTHS and its Button strength group.
 std::vector<OptionChoice> StrengthChoices()
 {
@@ -178,19 +178,19 @@ std::vector<OptionDef> StrengthGroup()
 		const char* glyph;
 		const char* name;
 	} rows[] = {
-		{"PS5SX2/ButtonCrossPressure", icon::Cross, "Cross"},
-		{"PS5SX2/ButtonCirclePressure", icon::Circle, "Circle"},
-		{"PS5SX2/ButtonSquarePressure", icon::Square, "Square"},
-		{"PS5SX2/ButtonTrianglePressure", icon::Triangle, "Triangle"},
-		{"PS5SX2/ButtonL1Pressure", icon::Blank, "L1"},
-		{"PS5SX2/ButtonR1Pressure", icon::Blank, "R1"},
-		{"PS5SX2/ButtonL2Pressure", icon::Blank, "L2"},
-		{"PS5SX2/ButtonR2Pressure", icon::Blank, "R2"},
-		{"PS5SX2/ButtonTouchpadPressure", icon::Blank, "Touchpad click"},
-		{"PS5SX2/ButtonUpPressure", icon::DpadUp, "D-pad up"},
-		{"PS5SX2/ButtonDownPressure", icon::DpadDown, "D-pad down"},
-		{"PS5SX2/ButtonLeftPressure", icon::DpadLeft, "D-pad left"},
-		{"PS5SX2/ButtonRightPressure", icon::DpadRight, "D-pad right"},
+		{"Zeruko/ButtonCrossPressure", icon::Cross, "Cross"},
+		{"Zeruko/ButtonCirclePressure", icon::Circle, "Circle"},
+		{"Zeruko/ButtonSquarePressure", icon::Square, "Square"},
+		{"Zeruko/ButtonTrianglePressure", icon::Triangle, "Triangle"},
+		{"Zeruko/ButtonL1Pressure", icon::Blank, "L1"},
+		{"Zeruko/ButtonR1Pressure", icon::Blank, "R1"},
+		{"Zeruko/ButtonL2Pressure", icon::Blank, "L2"},
+		{"Zeruko/ButtonR2Pressure", icon::Blank, "R2"},
+		{"Zeruko/ButtonTouchpadPressure", icon::Blank, "Touchpad click"},
+		{"Zeruko/ButtonUpPressure", icon::DpadUp, "D-pad up"},
+		{"Zeruko/ButtonDownPressure", icon::DpadDown, "D-pad down"},
+		{"Zeruko/ButtonLeftPressure", icon::DpadLeft, "D-pad left"},
+		{"Zeruko/ButtonRightPressure", icon::DpadRight, "D-pad right"},
 	};
 	std::vector<OptionDef> out;
 	for (const auto& r : rows)
@@ -236,20 +236,20 @@ std::vector<OptionDef> ButtonsGroup()
 	constexpr const char* fast_hint = "Experimental, for skipping videos: hold both fast forward buttons together (for the hold time above) to run the game as fast as it goes, and again to go back to full speed. Nothing on both: no fast forward button. Sound may skip while it's on.";
 	constexpr const char* disc_hint = "Hold both change disc buttons together to put in the game's next disc: images named \"(Disc 1)\", \"(Disc 2)\"... in the same folder, or listed in an .m3u file, are one game's discs. Any image (a GameShark disc's game, say) goes in from the settings page's Disc section while you play. Nothing on both: no change disc button.";
 	std::vector<OptionDef> out = {
-		Seg("PS5SX2/SaveButton1", "Save: button 1", "L3R3", "", ComboChoices(), save_hint),
-		Seg("PS5SX2/SaveButton2", "Save: button 2", "Up", "", ComboChoices(), save_hint),
-		Seg("PS5SX2/LoadButton1", "Load: button 1", "L3R3", "", ComboChoices(), load_hint),
-		Seg("PS5SX2/LoadButton2", "Load: button 2", "Down", "", ComboChoices(), load_hint),
-		Seg("PS5SX2/StateHold", "Hold time", "0", "", {{"0", "Instant"}, {"0.5", "0.5 s"}, {"1", "1 s"}, {"1.5", "1.5 s"}, {"2", "2 s"}, {"3", "3 s"}},
+		Seg("Zeruko/SaveButton1", "Save: button 1", "L3R3", "", ComboChoices(), save_hint),
+		Seg("Zeruko/SaveButton2", "Save: button 2", "Up", "", ComboChoices(), save_hint),
+		Seg("Zeruko/LoadButton1", "Load: button 1", "L3R3", "", ComboChoices(), load_hint),
+		Seg("Zeruko/LoadButton2", "Load: button 2", "Down", "", ComboChoices(), load_hint),
+		Seg("Zeruko/StateHold", "Hold time", "0", "", {{"0", "Instant"}, {"0.5", "0.5 s"}, {"1", "1 s"}, {"1.5", "1.5 s"}, {"2", "2 s"}, {"3", "3 s"}},
 			"How long the save or load buttons are held before it happens. Instant: as soon as both are down, and that last press doesn't "
 			"reach the game. A second or two stops saving or loading by accident."),
 		// vk-285-118: fast forward (experimental), after the same hold time.
-		Seg("PS5SX2/FastButton1", "Fast forward: button 1", "None", "", ComboChoices(), fast_hint),
-		Seg("PS5SX2/FastButton2", "Fast forward: button 2", "None", "", ComboChoices(), fast_hint),
-		Seg("PS5SX2/FastSpeed", "Fast forward speed", "0", "", {{"0", "Max"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}}, "How fast fast forward runs. Max: as fast as the console can. Some games' videos skip only at Max."),
+		Seg("Zeruko/FastButton1", "Fast forward: button 1", "None", "", ComboChoices(), fast_hint),
+		Seg("Zeruko/FastButton2", "Fast forward: button 2", "None", "", ComboChoices(), fast_hint),
+		Seg("Zeruko/FastSpeed", "Fast forward speed", "0", "", {{"0", "Max"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}}, "How fast fast forward runs. Max: as fast as the console can. Some games' videos skip only at Max."),
 		// vk-285-139: change disc, for games on more than one disc.
-		Seg("PS5SX2/DiscButton1", "Change disc: button 1", "L3R3", "", ComboChoices(), disc_hint),
-		Seg("PS5SX2/DiscButton2", "Change disc: button 2", "Right", "", ComboChoices(), disc_hint),
+		Seg("Zeruko/DiscButton1", "Change disc: button 1", "L3R3", "", ComboChoices(), disc_hint),
+		Seg("Zeruko/DiscButton2", "Change disc: button 2", "Right", "", ComboChoices(), disc_hint),
 	};
 	for (OptionDef& d : ButtonRows())
 		out.push_back(std::move(d));
@@ -324,7 +324,7 @@ std::string CardSize(uint64_t bytes)
 } // namespace
 
 // The settings page's GROUPS (assets/web/index.html), in its order, with its labels, defaults and hints. The text field
-// (PS5SX2/TexturesDir) stays on the page: the console has no keyboard for a path.
+// (Zeruko/TexturesDir) stays on the page: the console has no keyboard for a path.
 std::vector<std::string> SplitFolderList(const std::string& list)
 {
 	std::vector<std::string> items;
@@ -362,13 +362,13 @@ const std::vector<OptionGroup>& OptionGroups()
 		// First, so neither is far down the sheet (the Folders rows come before them on the sheet for all games).
 		{"Shelf",
 			{
-				Toggle("PS5SX2/HideGame", "Hide from the shelf", "false", "Hidden %",
+				Toggle("Zeruko/HideGame", "Hide from the shelf", "false", "Hidden %",
 					"Takes this game off the shelf when the sheet closes. Show hidden games, on the sheet for all games (R1), puts hidden games back on the shelf, dimmed, to turn this off again."),
 			},
 			kTabSettings, true},
 		{"Shelf",
 			{
-				Toggle("PS5SX2/ShowHiddenGames", "Show hidden games", "false", "Hidden games %",
+				Toggle("Zeruko/ShowHiddenGames", "Show hidden games", "false", "Hidden games %",
 					"Puts the games hidden from the shelf back on it, dimmed, so you can open one's sheet and turn Hide from the shelf off."),
 			},
 			kTabSettings, false, true},
@@ -377,7 +377,7 @@ const std::vector<OptionGroup>& OptionGroups()
 		// or the settings page puts the game's disc in when the cheat disc asks for it.
 		{"Discs",
 			{
-				Toggle("PS5SX2/CheatDiscStart", "Start from the cheat disc", "false", "Cheat disc %",
+				Toggle("Zeruko/CheatDiscStart", "Start from the cheat disc", "false", "Cheat disc %",
 					"Starts the game from the cheat disc (a GameShark, say: Cheat disc, on the sheet for all games), as disc 1, with the game's own discs after it. When it asks for the game's disc, hold the change disc buttons (Controls; L3 + R3 + D-pad right by default) or pick the disc on the settings page. Its codes stay on the memory card.", true),
 			},
 			kTabSettings},
@@ -392,7 +392,7 @@ const std::vector<OptionGroup>& OptionGroups()
 					"Uses the game's 16:9 patch when there is one."),
 				Seg("TVShader", "Display filter", "0", "%", {{"6", "FSR"}, {"7", "FSR soft"}, {"0", "Classic"}, {"5", "CRT"}}),
 				// 2026-10-08 (AI-assisted): frame generation (GSDeviceVK.cpp), read when the game starts (main-boot.cpp).
-				Toggle("PS5SX2/FrameGeneration", "Frame generation", "false", "Frame gen %",
+				Toggle("Zeruko/FrameGeneration", "Frame generation", "false", "Frame gen %",
 					"Shows a frame made between two of the game's: a 60 fps game at 120 on a TV that takes 120 Hz (the TV switches to "
 					"120 Hz for the game), a 30 fps game at 60. Only while the game holds its frame rate (an uneven one shows the game's own "
 					"frames); the FPS box then counts what the TV gets. A little more input lag, and small smears at the edges of fast "
@@ -401,15 +401,15 @@ const std::vector<OptionGroup>& OptionGroups()
 			}},
 		{"Graphics",
 			{
-				Seg("PS5SX2/Renderer", "Renderer", "Hardware", "%", {{"Hardware", "Hardware"}, {"Software", "Software"}}, "Software draws the game on the CPU, as a PS2 does it: slower, but right in games whose effects the hardware renderer gets wrong. Set it for one game in that game's settings. Takes effect when the game starts.", true), // vk-285-118
+				Seg("Zeruko/Renderer", "Renderer", "Hardware", "%", {{"Hardware", "Hardware"}, {"Software", "Software"}}, "Software draws the game on the CPU, as a PS2 does it: slower, but right in games whose effects the hardware renderer gets wrong. Set it for one game in that game's settings. Takes effect when the game starts.", true), // vk-285-118
 				Seg("filter", "Texture filtering", "2", "% filtering", {{"0", "Nearest"}, {"2", "PS2"}, {"1", "Bilinear"}, {"3", "Not sprites"}}),
 				Seg("MaxAnisotropy", "Anisotropic filtering", "0", "AF %", {{"0", "Off"}, {"2", "2x"}, {"4", "4x"}, {"8", "8x"}, {"16", "16x"}}),
 				Seg("accurate_blending_unit", "Blending accuracy", "1", "Blending %", {{"0", "Min"}, {"1", "Basic"}, {"2", "Med"}, {"3", "High"}},
 					"Higher fixes more effects and costs speed. Full and Max are left out for now: Max hung the GPU in Ratchet & Clank."),
 				Toggle("hw_mipmap", "Mipmapping", "true", "Mipmaps %"),
 				Toggle("LoadTextureReplacements", "Texture replacements", "false", "Replacements %",
-					"Loads a texture pack's PNG and DDS files from <game serial>/replacements/ in a USB drive's PS5SX2/textures (or textures) "
-					"folder, else in /data/PCSX2/textures. Another folder can be named on the settings page (Textures folder)."),
+					"Loads a texture pack's PNG and DDS files from <game serial>/replacements/ in a USB drive's zeruko/textures (or textures) "
+					"folder, else in /data/zeruko/textures. Another folder can be named on the settings page (Textures folder)."),
 			}},
 		{"Performance",
 			{
@@ -427,7 +427,7 @@ const std::vector<OptionGroup>& OptionGroups()
 			}},
 		{"Game",
 			{
-				Seg("PS5SX2/GameLanguage", "Game language", "-1", "Language %",
+				Seg("Zeruko/GameLanguage", "Game language", "-1", "Language %",
 					{{"-1", "Auto (PS5)"}, {"0", "Japanese"}, {"1", "English"}, {"2", "French"}, {"3", "Spanish"}, {"4", "German"}, {"5", "Italian"},
 						{"6", "Dutch"}, {"7", "Portuguese"}},
 					"The language the PS2 tells games. PAL games with several languages start in it; most US games are English only. Auto "
@@ -452,16 +452,16 @@ const std::vector<OptionGroup>& OptionGroups()
 			}},
 		{"On screen",
 			{
-				Seg("PS5SX2/Overlay", "Info box", "2", "Info box %", {{"0", "Off"}, {"1", "FPS"}, {"2", "FPS + load"}},
+				Seg("Zeruko/Overlay", "Info box", "2", "Info box %", {{"0", "Off"}, {"1", "FPS"}, {"2", "FPS + load"}},
 					"The box in the top right corner. Load is how busy the EE, GS and VU threads are."),
-				Toggle("PS5SX2/FpsGraph", "FPS graph", "false", "FPS graph %",
+				Toggle("Zeruko/FpsGraph", "FPS graph", "false", "FPS graph %",
 					"A blue graph of the last minute's frame rate in the top right corner. It shows with the info box off too."),
 				// 2026-10-08 (AI-assisted): GSRenderer.cpp OrbisDrawBezel; the folder is on the settings page (no keyboard here).
-				Toggle("PS5SX2/Bezel", "Overlay picture", "false", "Overlay %",
+				Toggle("Zeruko/Bezel", "Overlay picture", "false", "Overlay %",
 					"A bezel or frame drawn over the screen around the game: overlays/<game serial>.png, else overlays/default.png, in "
-					"/data/PCSX2 (or the folder named on the settings page): a 1920x1080 PNG with a see-through middle."),
+					"/data/zeruko (or the folder named on the settings page): a 1920x1080 PNG with a see-through middle."),
 				// 2026-10-08 (AI-assisted): GSRenderer.cpp OrbisDrawChallengeIcons.
-				Toggle("PS5SX2/RAChallengeIcons", "Challenge icons", "true", "Challenge icons %",
+				Toggle("Zeruko/RAChallengeIcons", "Challenge icons", "true", "Challenge icons %",
 					"RetroAchievements: the badge of each challenge going on (an achievement that unlocks if you keep it up, such as "
 					"no damage taken) in the bottom right corner, while it lasts."),
 			}},
@@ -486,42 +486,42 @@ const std::vector<OptionGroup>& OptionGroups()
 		{"Button strength", StrengthGroup(), kTabControls}, // vk-285-118
 		{"Sticks",
 			{
-				Toggle("PS5SX2/SwapSticks", "Swap sticks", "false", "", "The left stick moves the game's right stick, and the right stick its left one."),
-				Seg("PS5SX2/InvertLeft", "Invert left stick", "0", "", InvertChoices(),
+				Toggle("Zeruko/SwapSticks", "Swap sticks", "false", "", "The left stick moves the game's right stick, and the right stick its left one."),
+				Seg("Zeruko/InvertLeft", "Invert left stick", "0", "", InvertChoices(),
 					"Turns the game's left stick up-down, left-right or both the other way round (the stick the game sees, after Swap sticks)."),
-				Seg("PS5SX2/InvertRight", "Invert right stick", "0", "", InvertChoices(),
+				Seg("Zeruko/InvertRight", "Invert right stick", "0", "", InvertChoices(),
 					"Turns the game's right stick up-down, left-right or both the other way round: the camera in most games (the stick the "
 					"game sees, after Swap sticks)."),
-				Seg("PS5SX2/LeftStickDpad", "Left stick as D-pad", "0", "", {{"0", "Off"}, {"1", "Also"}, {"2", "Only"}},
+				Seg("Zeruko/LeftStickDpad", "Left stick as D-pad", "0", "", {{"0", "Off"}, {"1", "Also"}, {"2", "Only"}},
 					"For games that only read the D-pad. Also: the left stick presses the D-pad as it moves. Only: it presses just the D-pad, "
 					"and the game's left stick stays still."),
-				Seg("PS5SX2/DeadzoneLeft", "Left stick dead zone", "0", "", DeadzoneChoices(), kDeadzoneHint),
-				Seg("PS5SX2/DeadzoneRight", "Right stick dead zone", "0", "", DeadzoneChoices(), kDeadzoneHint),
+				Seg("Zeruko/DeadzoneLeft", "Left stick dead zone", "0", "", DeadzoneChoices(), kDeadzoneHint),
+				Seg("Zeruko/DeadzoneRight", "Right stick dead zone", "0", "", DeadzoneChoices(), kDeadzoneHint),
 			},
 			kTabControls},
 		{"Controller",
 			{
-				Toggle("PS5SX2/Rumble", "Rumble", "true", "Rumble %",
+				Toggle("Zeruko/Rumble", "Rumble", "true", "Rumble %",
 					"The game's vibration on the controller. In a game, hold L2 and D-pad down for 2 seconds to open the settings page in the "
 					"PS5's own web browser; the game keeps running behind it."),
-				Seg("PS5SX2/RumbleStrength", "Rumble strength", "1", "",
+				Seg("Zeruko/RumbleStrength", "Rumble strength", "1", "",
 					{{"0.25", "25%"}, {"0.5", "50%"}, {"0.75", "75%"}, {"1", "100%"}, {"1.25", "125%"}, {"1.5", "150%"}, {"2", "200%"}},
 					"How strongly the controller vibrates, as a share of what the game asks for. Above 100% lifts weak rumble; it never goes past the motors' full strength."),
-				Seg("PS5SX2/Multitap", "Multitap", "0", "", {{"0", "Off"}, {"1", "Port 1"}, {"2", "Port 2"}}, "For 4-player games. Players 2 to 4 are the other PS5 users logged in when the game starts, each on their own controller. Port 1 suits most games; a few want the multitap in port 2. Off: player 2 on port 2, as before.", true),
+				Seg("Zeruko/Multitap", "Multitap", "0", "", {{"0", "Off"}, {"1", "Port 1"}, {"2", "Port 2"}}, "For 4-player games. Players 2 to 4 are the other PS5 users logged in when the game starts, each on their own controller. Port 1 suits most games; a few want the multitap in port 2. Off: player 2 on port 2, as before.", true),
 			},
 			kTabControls},
 		{"Keyboard and mouse",
 			{
-				Seg("PS5SX2/KeyboardMouse", "Keyboard and mouse", "0", "Keyboard and mouse %",
+				Seg("Zeruko/KeyboardMouse", "Keyboard and mouse", "0", "Keyboard and mouse %",
 					{{"0", "Auto"}, {"1", "Controller"}, {"2", "USB devices"}, {"3", "Off"}},
 					"Controller: the keys and the mouse press the PS2 controller's buttons, as in PCSX2 on a PC (arrows are the D-pad, W A S D "
 					"the left stick, Enter Start; F1 saves and F3 loads a state; hold Esc to go back to the menu). USB devices: the PS2 sees a "
 					"USB keyboard and mouse, for games made for them. Auto: the controller, until a game reads the PS2's USB keyboard or mouse."),
-				Seg("PS5SX2/MouseAim", "Mouse movement", "1", "Mouse movement %", {{"1", "Right stick"}, {"2", "Left stick"}, {"0", "Nothing"}},
+				Seg("Zeruko/MouseAim", "Mouse movement", "1", "Mouse movement %", {{"1", "Right stick"}, {"2", "Left stick"}, {"0", "Nothing"}},
 					"Which stick the mouse moves in the controller mode. The right stick turns the camera in most games."),
-				Seg("PS5SX2/MouseSpeed", "Mouse speed", "2", "Mouse speed %", {{"1", "Slow"}, {"2", "Normal"}, {"3", "Fast"}, {"4", "Very fast"}},
+				Seg("Zeruko/MouseSpeed", "Mouse speed", "2", "Mouse speed %", {{"1", "Slow"}, {"2", "Normal"}, {"3", "Fast"}, {"4", "Very fast"}},
 					"How far a mouse movement pushes the stick. Faster reaches a full stick with less movement."),
-				Seg("PS5SX2/MouseButtons", "Mouse buttons", "0", "Mouse buttons %", {{"0", "R1 and L1"}, {"1", "R2 and L2"}},
+				Seg("Zeruko/MouseButtons", "Mouse buttons", "0", "Mouse buttons %", {{"0", "R1 and L1"}, {"1", "R2 and L2"}},
 					"Left click and right click. Most shooters fire with R1 or R2 and aim with L1 or L2. The wheel click is R3."),
 			},
 			kTabControls},
@@ -892,7 +892,7 @@ std::string OptionsSheet::Help(const Row& r) const
 				from = m_global ? "Set for all games." : "Set for this game.";
 			else if (e.from == From::Global)
 				from = "Follows the setting for all games.";
-			else if (r.def->key.compare(0, 7, "PS5SX2/") == 0) // vk-285-116: PS5SX2's own options have PS5SX2's defaults
+			else if (r.def->key.compare(0, 7, "Zeruko/") == 0) // vk-285-116: Zeruko's own options have Zeruko's defaults
 				from = "The default.";
 			else
 				from = "PCSX2's default.";
@@ -936,16 +936,16 @@ std::string OptionsSheet::Help(const Row& r) const
 		case Kind::GameFolders: // vk-285-135
 		{
 			std::string h = "Cross: pick a folder on any drive or NFS share to list games from (and the folders in it); the ones added "
-			                "are at the top there, Triangle removes one. Without them PS5SX2 looks in /data/PCSX2/games, /data/PCSX2 and "
-			                "every USB, extended storage and M.2 drive. Read when PS5SX2 starts.";
+			                "are at the top there, Triangle removes one. Without them Zeruko looks in /data/zeruko/games, /data/zeruko and "
+			                "every USB, extended storage and M.2 drive. Read when Zeruko starts.";
 			const std::vector<std::string> list = SplitFolderList(OwnValue(kGameFoldersKey));
 			if (!list.empty())
 				h += " Now: " + JoinFolderList(list) + ".";
 			return h;
 		}
 		case Kind::BiosFolder:
-			return "Cross: pick the folder where the BIOS is looked for first. Triangle: back to /data/PCSX2/bios (then /data/PCSX2 and "
-			       "the drives' bios folders). Read when PS5SX2 starts.";
+			return "Cross: pick the folder where the BIOS is looked for first. Triangle: back to /data/zeruko/bios (then /data/zeruko and "
+			       "the drives' bios folders). Read when Zeruko starts.";
 		case Kind::NfsShares:
 		{
 #ifdef ORBIS_PS4
@@ -955,7 +955,7 @@ std::string OptionsSheet::Help(const Row& r) const
 #else
 			std::string h = "Cross: the NFS shares, and Add a share with the PS5's keyboard: nfs://<server>/<shared folder> (NFS v3, else "
 			                "v4; Windows: WinNFSd or haneWIN). Their games are listed like a drive's, from /nfs/<server>/. Read-only. "
-			                "Mounted when PS5SX2 starts; boot.log says how it went.";
+			                "Mounted when Zeruko starts; boot.log says how it went.";
 #endif
 			const std::vector<std::string> list = SplitFolderList(OwnValue(kNfsSharesKey));
 			if (!list.empty())
@@ -1017,7 +1017,7 @@ std::string OptionsSheet::Help(const Row& r) const
 bool OptionsSheet::Save(const std::vector<Change>& changes, const std::string& note)
 {
 	std::string what, error;
-	if (!EditSettingsFile(m_path, m_global ? m_header : m_header + ": written from the PS5SX2 shelf", changes, what, error))
+	if (!EditSettingsFile(m_path, m_global ? m_header : m_header + ": written from the Zeruko shelf", changes, what, error))
 	{
 		m_status = "Couldn't save: " + error;
 		std::printf("[options] %s: %s\n", m_file_label.c_str(), m_status.c_str());
@@ -1235,7 +1235,7 @@ bool OptionsSheet::Reset(const Row& r)
 		case Kind::BiosFolder: // vk-285-135
 			if (OwnValue(kBiosFolderKey).empty())
 				return false;
-			return SetOwn(kBiosFolderKey, "", "BIOS folder back to /data/PCSX2/bios");
+			return SetOwn(kBiosFolderKey, "", "BIOS folder back to /data/zeruko/bios");
 		case Kind::GameFolders:
 		case Kind::NfsShares:
 			m_status = "Cross: the list (Triangle there removes one)";

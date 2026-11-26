@@ -851,7 +851,7 @@ void WebServer::ApiState(Response& res)
 		else
 			game = "{\"id\":" + Json(playing) + ",\"title\":" + Json(playing) + ",\"serial\":\"\"}";
 	}
-	res.body = "{\"app\":\"PS5SX2\",\"build\":" + Json(m_cfg.build_tag) + ",\"test\":" + std::to_string(m_cfg.test_build) +
+	res.body = "{\"app\":\"Zeruko\",\"build\":" + Json(m_cfg.build_tag) + ",\"test\":" + std::to_string(m_cfg.test_build) +
 		       ",\"language\":" + Json(LanguageCode()) + ",\"strings\":" + strings + ",\"mode\":" + Json(playing.empty() ? "menu" : "game") + ",\"playing\":" + game + "}";
 }
 
@@ -1104,7 +1104,7 @@ void WebServer::ApiSave(const Request& req, Response& res)
 	if (!existed && g)
 	{
 		IniLine header;
-		header.raw = "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") + ": written by the PS5SX2 settings page";
+		header.raw = "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") + ": written by the Zeruko settings page";
 		lines.push_back(header);
 	}
 	int changes = 0;
@@ -1245,14 +1245,14 @@ void WebServer::ApiRecommended(const Request& req, const GameInfo* g, const std:
 	}
 	preset = FilterPresetForPlatform(preset);
 	std::string header = g ? "# " + g->title + (g->serial.empty() ? std::string() : " (" + g->serial + ")") : std::string("# All games");
-	header += has ? ": PS5SX2's recommended settings, restored by the settings page" :
+	header += has ? ": Zeruko's recommended settings, restored by the settings page" :
 	                ": no settings of its own, so it follows the settings for all games (restored by the settings page)";
 	std::string old;
 	const bool existed = ReadFile(path, old);
 	if (existed && !WriteFileAtomic(path + ".before-recommended", old))
 		std::printf("[web] could not keep a copy of %s (errno %d)\n", path.c_str(), errno);
 	std::string text = header + "\n" + preset;
-	// vk-285-110: the player's own choices (PS5SX2/, MemoryCards/ and the PS4 MTVU knobs) stay.
+	// vk-285-110: the player's own choices (Zeruko/, MemoryCards/ and the PS4 MTVU knobs) stay.
 	if (existed)
 	{
 		std::string keep;
@@ -1298,7 +1298,7 @@ void WebServer::ApiReport(const Request& req, Response& res)
 	}
 	std::string out;
 	out.reserve(1 << 20);
-	out += "PS5SX2 logs report\n";
+	out += "Zeruko logs report\n";
 	out += m_cfg.report_header;
 	out += "Made: " + Stamp() + " (the console's clock)\n";
 	out += "Now: " + (playing.empty() ? std::string("on the shelf") : "playing " + playing) + "\n";
@@ -1394,14 +1394,14 @@ void WebServer::ApiReport(const Request& req, Response& res)
 	}
 	out += "\n===== end of the report =====\n";
 
-	// The file's name: the build and the console's time, e.g. PS5SX2-test1-2026-09-27_1403.txt.
+	// The file's name: the build and the console's time, e.g. Zeruko-test1-2026-09-27_1403.txt.
 	std::string when = Stamp(); // "2026-09-27 14:03:22"
 	when = when.substr(0, 10) + "_" + when.substr(11, 2) + when.substr(14, 2);
 	char name[96];
 	if (m_cfg.test_build > 0)
-		std::snprintf(name, sizeof(name), "PS5SX2-test%d-%s.txt", m_cfg.test_build, when.c_str());
+		std::snprintf(name, sizeof(name), "Zeruko-test%d-%s.txt", m_cfg.test_build, when.c_str());
 	else
-		std::snprintf(name, sizeof(name), "PS5SX2-logs-%s.txt", when.c_str());
+		std::snprintf(name, sizeof(name), "Zeruko-logs-%s.txt", when.c_str());
 	res.type = "text/plain; charset=utf-8";
 	res.disposition = std::string("attachment; filename=\"") + name + "\"";
 	res.send_timeout_s = 60;
