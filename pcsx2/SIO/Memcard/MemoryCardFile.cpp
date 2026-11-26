@@ -711,7 +711,10 @@ s32 FileMemoryCard::Save(uint slot, const u8* src, u32 adr, int size)
 
 		const size_t read_result = std::fread(m_currentdata.data(), size, 1, mcfp);
 		if (read_result == 0)
+		{
 			Host::ReportErrorAsync("Memory Card Read Failed", "Error reading memory card.");
+			return 0;
+		}
 
 		for (int i = 0; i < size; i++)
 		{
