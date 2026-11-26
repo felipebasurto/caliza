@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after hostile-savestate hardening, file-card erase bounds, and folder-card close-error propagation; binary artifact validated at `cd5da76`.
+Last updated: 2026-11-26 after complete hostile-savestate handle hardening and package reproducibility validation; binary artifact validated at `2bb0446`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **132 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **134 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -146,6 +146,8 @@ Last updated: 2026-11-26 after hostile-savestate hardening, file-card erase boun
 130. `46be528` — record metadata and CDVD hardening evidence.
 131. `0913698` — harden hostile savestate and memory-card inputs.
 132. `cd5da76` — propagate folder-card close failure evidence.
+133. `04125e1` — record hostile-input hardening artifact evidence.
+134. `2bb0446` — bound remaining hostile savestate handles.
 
 ## Completed work
 
@@ -176,13 +178,13 @@ Last updated: 2026-11-26 after hostile-savestate hardening, file-card erase boun
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `cd5da76` (includes the prior storage/input/WSI/memory hardening wave plus exact fixed-memory savestate entry reads, negative/overflowing memory-state size rejection, VIF staging-size bounds, GIF queue-geometry validation, stream-bounded state string/container lengths, uncached file-card erase bounds, and folder-card close-error propagation):
+Built in the Linux x86_64 OpenOrbis container at exactly `2bb0446` (includes the prior storage/input/WSI/memory hardening wave plus exact fixed-memory savestate entry reads, negative/overflowing memory-state size rejection, VIF staging-size bounds, GIF queue-geometry validation, stream-bounded state string/container lengths, uncached file-card erase bounds, folder-card close-error propagation, HostFS handle-count bounds, and USB packet target/state/staging validation):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,227,032 bytes**, SHA-256 `3080278763c25d0a377f28fc7fbededbf1357d3129ccfc1ef3c17da97d17ad34` (`readelf`: `.bss` **23,921,664 bytes**, down **75,812,160 bytes** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `e2dcb1cde90b4da073989fe21f16a2ec15dc274f5f3168661d5e27ff6dbbfbd6`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `fb8b9d8509398389670179d5729990ec3a6f20fc5cd1eef6d9b283b8cecbe6e2`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,227,800 bytes**, SHA-256 `6d2cb335d3d567d848352e50a12d2296ea0b0b4aa9ace0040043aeebee7a0981` (`readelf`: `.bss` **23,921,664 bytes**, down **75,812,160 bytes** from the original 99,733,824-byte reference).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `a15144b128004e5d6871c3c3d5ba53a7c4136d371e5754e498e9981eb19809bd`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `c921a7f149319068dedc40c5fd4f07bfe870ca38bc263230560910e8cc155f48`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
-- Embedded package provenance: `Build commit: cd5da769c035`.
+- Embedded package provenance: `Build commit: 2bb044673e5d`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
@@ -193,11 +195,11 @@ Built in the Linux x86_64 OpenOrbis container at exactly `cd5da76` (includes the
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidatecd5da76.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate2bb0446.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current folder-DAG candidate also reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log` |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`, and hostile-savestate/memory-card close hardening in `ps4/logs/host-tests-cd5da76.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `c921a7f1...155f48` in `ps4/logs/pkg-repro-2bb0446.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`, and hostile-savestate/memory-card close hardening in `ps4/logs/host-tests-cd5da76.log`, and final hostile-handle hardening in `ps4/logs/host-tests-2bb0446.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -248,7 +250,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `cd5da76` (includes the
 
 - **SPU2 reset correctness:** resetting SPU2 RAM now invalidates every validated ADPCM decode-cache entry. This closes a stale-audio edge case where a freshly reset game could hit decode cache left by the previous session; the compacted cache layout itself was independently reviewed as lossless. Wrapped DMA writes that pass the dynamic/register region now invalidate the wrapped cacheable prefix too.
 
-- **Hostile-savestate hardening:** fixed-size memory entries now fail the load when truncated rather than silently preserving stale tail bytes; memory-state reads reject negative and overflowing sizes; VIF partial-transfer sizes are bounded to their 4 KiB staging buffers; GIF path geometry is validated against the fixed runtime allocation before packet bytes are copied; StateWrapper and memory-state string/container lengths cannot exceed bytes actually remaining in their backing stream. This is a fail-closed corrupted-state policy and needs hardware validation with legitimate states.
+- **Hostile-savestate hardening:** fixed-size memory entries now fail the load when truncated rather than silently preserving stale tail bytes; memory-state reads reject negative and overflowing sizes; VIF partial-transfer sizes are bounded to their 4 KiB staging buffers; GIF path geometry is validated against the fixed runtime allocation before packet bytes are copied; StateWrapper and memory-state string/container lengths cannot exceed bytes actually remaining in their backing stream; HostFS handle counts are capped at the real descriptor-table limit; USB packet port indexes, packet state/token relationships, queue membership, and fixed staging-buffer sizes are validated before endpoint pointers are reconstructed. This is a fail-closed corrupted-state policy and needs hardware validation with legitimate states.
 - **File/folder memory-card follow-up:** uncached file-card erase operations now use the same fixed-card-size bound as writes, closing the remaining host-image extension path found by adversarial review. Folder-card close failures are logged and analyzed as storage-risk failures, and metadata-write state is cleared whenever quick-access metadata is discarded.
 
 - **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.
