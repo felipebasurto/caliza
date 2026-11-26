@@ -505,7 +505,7 @@ bool SysMemory::Allocate()
 	return true;
 }
 
-void SysMemory::Reset()
+bool SysMemory::Reset()
 {
 	DevCon.WriteLn(Color_StrongBlue, "Resetting host memory for virtual systems...");
 
@@ -518,9 +518,15 @@ void SysMemory::Reset()
 	{
 		Console.WriteLn("[dbg] sysmem: pre-allocating memory map + VTLB core");
 		if (!AllocateMemoryMap())
+		{
 			Console.Error("[dbg] sysmem: AllocateMemoryMap failed");
+			return false;
+		}
 		if (!vtlb_Core_Alloc())
+		{
 			Console.Error("[dbg] sysmem: vtlb_Core_Alloc failed");
+			return false;
+		}
 		// Orbis: the CPU thread's Allocate() (which normally sets eeMem/iopMem/vuMem)
 		// runs on the CPU thread during CPUThreadInitialize, i.e. AFTER
 		// VMManager::Initialize. Set the memory pointers now so memReset() has a
@@ -538,6 +544,7 @@ void SysMemory::Reset()
 	Console.WriteLn("[dbg] sysmem: vuMemReset");
 	vuMemReset();
 	Console.WriteLn("[dbg] sysmem: done");
+	return true;
 
 	// Note: newVif is reset as part of other VIF structures.
 	// Software is reset on the GS thread.

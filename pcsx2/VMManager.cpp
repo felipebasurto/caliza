@@ -1553,7 +1553,11 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	memBindConditionalHandlers();
 	Console.WriteLn("[dbg] stage: SysMemory::Reset");
 	if (orbis_stage) orbis_stage("SysMemory::Reset");
-	SysMemory::Reset();
+	if (!SysMemory::Reset())
+	{
+		Error::SetString(error, TRANSLATE_STR("VMManager", "Failed to initialize VM memory."));
+		return VMBootResult::StartupFailure;
+	}
 	Console.WriteLn("[dbg] stage: cpuReset");
 	if (orbis_stage) orbis_stage("cpuReset");
 	cpuReset();
@@ -1835,7 +1839,9 @@ void VMManager::Reset()
 	memSetExtraMemMode(EmuConfig.Cpu.ExtraMemory);
 	Internal::ClearCPUExecutionCaches();
 	memBindConditionalHandlers();
-	SysMemory::Reset();
+	const bool memory_reset = SysMemory::Reset();
+	pxAssert(memory_reset);
+	(void)memory_reset;
 	cpuReset();
 	hwReset();
 

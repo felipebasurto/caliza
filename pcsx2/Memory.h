@@ -99,7 +99,7 @@ namespace HostMemoryMap
 namespace SysMemory
 {
 	bool Allocate();
-	void Reset();
+	bool Reset();
 	void Release();
 
 	/// Returns data memory (Main in Memory Map).
