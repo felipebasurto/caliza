@@ -26,10 +26,6 @@
 #include <chrono>
 #include <new>
 
-static constexpr u32 MaxImplementedFatClusters =
-	static_cast<u32>(FolderMemoryCard::IndirectFatClusterCount) *
-	static_cast<u32>(FolderMemoryCard::ClusterSize / 4) *
-	static_cast<u32>(FolderMemoryCard::ClusterSize / 4);
 static constexpr u32 MaxFolderDirectoryDepth = 64;
 
 // A helper function to parse the YAML file
@@ -1198,6 +1194,7 @@ void FolderMemoryCard::Flush()
 	std::vector<MemoryCardFileEntryTreeNode> oldFileEntryTree;
 	if (IsFormatted())
 	{
+		m_directoryTraversalMarks.reset();
 		CopyEntryDictIntoTree(&oldFileEntryTree, m_superBlock.data.rootdir_cluster, m_fileEntryDict[m_superBlock.data.rootdir_cluster].entries[0].entry.data.length);
 	}
 
@@ -1337,6 +1334,7 @@ void FolderMemoryCard::FlushSuperBlock()
 void FolderMemoryCard::FlushFileEntries()
 {
 	// Flush all file entry data from the cache into m_fileEntryDict.
+	m_directoryTraversalMarks.reset();
 	const u32 rootDirCluster = m_superBlock.data.rootdir_cluster;
 	FlushCluster(rootDirCluster + m_superBlock.data.alloc_offset);
 	MemoryCardFileEntryCluster* rootEntries = &m_fileEntryDict[rootDirCluster];
@@ -1360,6 +1358,9 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 	u32 chainSteps = 0;
 	while (currentCluster < MaxImplementedFatClusters && chainSteps < MaxImplementedFatClusters)
 	{
+		if (m_directoryTraversalMarks.test(currentCluster))
+			return;
+		m_directoryTraversalMarks.set(currentCluster);
 		++chainSteps;
 		// flush the current cluster
 		FlushCluster(currentCluster + m_superBlock.data.alloc_offset);
@@ -1761,11 +1762,13 @@ const std::string& FolderMemoryCard::GetFolderName()
 
 void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTreeNode>* fileEntryTree, const u32 cluster, const u32 fileCount, const u32 directoryDepth)
 {
-	if (directoryDepth >= MaxFolderDirectoryDepth)
+	if (directoryDepth >= MaxFolderDirectoryDepth || cluster >= MaxImplementedFatClusters ||
+		m_directoryTraversalMarks.test(cluster))
 		return;
 
 	const MemoryCardFileEntryCluster* entryCluster = &m_fileEntryDict[cluster];
 	u32 fileCluster = cluster;
+	m_directoryTraversalMarks.set(fileCluster);
 	const size_t iterations = std::min<size_t>(fileCount, static_cast<size_t>(MaxImplementedFatClusters) * 2);
 
 	for (size_t i = 0; i < iterations; ++i)
@@ -1788,10 +1791,12 @@ void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTree
 			if (fileCluster >= MaxImplementedFatClusters)
 				return;
 			fileCluster = m_fat.data[0][0][fileCluster] & 0x7FFFFFFFu;
-			if (fileCluster == 0x7FFFFFFFu || fileCluster >= MaxImplementedFatClusters)
+			if (fileCluster == 0x7FFFFFFFu || fileCluster >= MaxImplementedFatClusters ||
+				m_directoryTraversalMarks.test(fileCluster))
 			{
 				return;
 			}
+			m_directoryTraversalMarks.set(fileCluster);
 			entryCluster = &m_fileEntryDict[fileCluster];
 		}
 	}
@@ -1799,6 +1804,9 @@ void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTree
 
 const MemoryCardFileEntry* FolderMemoryCard::FindEquivalent(const MemoryCardFileEntry* searchEntry, const u32 cluster, const u32 fileCount)
 {
+	if (cluster >= MaxImplementedFatClusters)
+		return nullptr;
+
 	const MemoryCardFileEntryCluster* entryCluster = &m_fileEntryDict[cluster];
 	u32 fileCluster = cluster;
 	const size_t iterations = std::min<size_t>(fileCount, static_cast<size_t>(MaxImplementedFatClusters) * 2);

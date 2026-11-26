@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <bitset>
 #include <map>
 #include <memory>
 #include <string>
@@ -245,6 +246,10 @@ public:
 	static const u32 LastDataCluster = 0x7FFFFFFFu;
 	static const u32 NextDataClusterMask = 0x7FFFFFFFu;
 	static const u32 DataClusterInUseMask = 0x80000000u;
+	static constexpr u32 MaxImplementedFatClusters =
+		static_cast<u32>(IndirectFatClusterCount) *
+		static_cast<u32>(ClusterSize / 4) *
+		static_cast<u32>(ClusterSize / 4);
 
 	static const int FramesAfterWriteUntilFlush = 2;
 	static const int FramesAfterWriteFailureUntilFlush = 300;
@@ -302,6 +307,11 @@ protected:
 
 	// if set to false, nothing is actually written to the file system while flushing, and data is discarded instead
 	bool m_performFileWrites;
+
+	// Bounded per-flush directory traversal marks. Legitimate memory-card
+	// directories never share metadata clusters; marking them prevents malformed
+	// shared-cluster DAGs from expanding exponentially without changing valid cards.
+	std::bitset<MaxImplementedFatClusters> m_directoryTraversalMarks;
 
 	// host write failure state for the page currently being flushed
 	bool m_fileWriteFailed = false;
