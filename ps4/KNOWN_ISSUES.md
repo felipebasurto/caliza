@@ -25,14 +25,14 @@
 ## Memory/robustness
 
 1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract.
-2. Compiler warning count is 148 in baseline and not triaged.
+2. Baseline compiler warnings have been triaged and the highest-confidence correctness issues integrated; remaining warning-volume reduction is non-critical cleanup, not evidence of a clean runtime.
 3. The non-executable-memory interpreter fallback is compile-validated only. It should allow boot/UI diagnostics, but its real speed and correctness on Jaguar are unknown.
 4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
 5. JIT shared-memory ownership remains incomplete on the PS5-only opt-in path because the kernel handle is lost; do not reintroduce those imports on PS4.
 
 ## User-data layout
 
-1. `OrbisDir()` still uses a flat `/data/PCSX2` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files.
+1. `OrbisDir()` still uses a flat `/data/PCSX2` fallback when a subdirectory does not exist. Existing flat installs must not be migrated blindly: memory cards, savestates, BIOS/NVRAM, and custom filenames need a validated one-time migration plan on real hardware. Do not create `memcards/`, `savestates/`, or `bios/` casually on a console with flat user data, or the layout can switch and orphan existing files. The audited design is rename-only, per-category transactional, idempotent after power loss, creates a target directory only when it will receive files, classifies BIOS before `.bin` memory cards, moves BIOS sidecars as families, honors configured custom card names, skips destination collisions, and leaves ambiguous patches/covers/disc images flat. It should be implemented flag-gated off and console-validated before becoming default.
 2. Forced interpreter configuration is a runtime execution gate, not a durable user-visible configuration policy. `CHECK_*JITMEM` prevents generated code execution even if settings are later edited, but some non-fatal decisions may still read raw config values; audit them before adding new JIT consumers.
 
 ## Documentation/evidence gaps
