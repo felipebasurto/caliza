@@ -770,6 +770,7 @@ static void orbis_rumble_send(int index, int32_t handle, OrbisRumbleOut &out)
   {
     out.handle = handle;
     out.sent = OrbisRumbleOut::FORCE_SEND;
+    out.retry_countdown = 0;
   }
   if (handle < 0)
     return;
