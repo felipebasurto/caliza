@@ -287,7 +287,8 @@ static s32 DISCreadSubQ(u32 lsn, cdvdSubQ* subq)
 
 	lsn_to_msf(&subq->trackM, &subq->trackS, &subq->trackF, lsn);
 
-	subq->ctrl = tracks[i].type;
+	subq->ctrl = (tracks[i].type >> 4) & 0x0f;
+	subq->adr = tracks[i].type & 0x0f;
 
 	// It's important to note that we do _not_ use the current MSF values
 	// from the host's device. We use the MSF values from the lsn.
@@ -299,8 +300,8 @@ static s32 DISCreadSubQ(u32 lsn, cdvdSubQ* subq)
 	if (!src->ReadTrackSubQ(subq))
 	{
 		subq->adr = 1;
-		subq->trackNum = i;
-		subq->trackIndex = 1;
+		subq->trackNum = itob(i);
+		subq->trackIndex = itob(1);
 	}
 
 	return 0;
