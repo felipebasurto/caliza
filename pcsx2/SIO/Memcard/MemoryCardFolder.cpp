@@ -2483,7 +2483,11 @@ bool FileAccessHelper::CloseFileHandle(std::FILE*& file)
 	if (!file)
 		return true;
 
-	const bool success = std::fclose(file) == 0;
+	bool success = std::fflush(file) == 0;
+	if (!SyncFileData(file))
+		success = false;
+	if (std::fclose(file) != 0)
+		success = false;
 	file = nullptr;
 	return success;
 }
@@ -2524,7 +2528,7 @@ u32 FileAccessHelper::FlushAll()
 	u32 failures = 0;
 	for (auto it = m_files.begin(); it != m_files.end(); ++it)
 	{
-		if (std::fflush(it->second.fileHandle) != 0)
+		if (std::fflush(it->second.fileHandle) != 0 || !SyncFileData(it->second.fileHandle))
 			++failures;
 	}
 	return failures;
