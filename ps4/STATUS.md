@@ -181,13 +181,13 @@ Last updated: 2026-11-26 after synthesizing format-correct CDDA mode-2368 P/Q su
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `f58cbf1` (includes exact GIF packet-span validation, impossible non-AD tag rejection, complete OHCI async-tuple validation, collision-safe binary/YAML metadata temp names, warning-free rapidyaml metadata generation, defensive rumble backoff reset, hostile-savestate hardening with element-size-scaled container bounds, legitimate-DMA-rewind-preserving GIF validation, USB control-transfer/packet-queue hardening, bounded folder-card shared file chains, atomic file/directory/superblock metadata writes, CDVD/ISO read-failure propagation, bounded mode-2368 transfers, retry-exhaustion error completion, partial asynchronous ISO-read rejection, bounded rumble retry, full input republication after pad recreation, pause-race audio silence, audio-init failure handling, SDL-config compatibility, and large-stack bounded network workers):
+Built in the Linux x86_64 OpenOrbis container at exactly `c64e8c7` (includes exact GIF packet-span validation, impossible non-AD tag rejection, complete OHCI async-tuple validation, collision-safe binary/YAML metadata temp names, warning-free rapidyaml metadata generation, defensive rumble backoff reset, hostile-savestate hardening with element-size-scaled container bounds, legitimate-DMA-rewind-preserving GIF validation, USB control-transfer/packet-queue hardening, bounded folder-card shared file chains, atomic file/directory/superblock metadata writes, CDVD/ISO read-failure propagation, bounded mode-2368 transfers, retry-exhaustion error completion, partial asynchronous ISO-read rejection, bounded rumble retry, full input republication after pad recreation, pause-race audio silence, audio-init failure handling, SDL-config compatibility, and large-stack bounded network workers):
 
 - ELF `/root/pcsx2ps4-build/build/link/pcsx2`: **148,267,984 bytes**, SHA-256 `a4709e8920fd111236999ef0b51298e208797fe1ffd5904d0744fcc38c0dd6d3` (`.bss` remains approximately **23.9 MiB**, down about **75.8 MiB** from the original 99,733,824-byte reference).
 - eboot `/root/pcsx2ps4-build/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `0f852e4ea32b667e60d4b5db47b35082ca26adeda16676704ce7e16eed22f64e`.
 - PKG `/root/pcsx2ps4-build/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `d4032db7c5ade2bbf833f89bfcb7a66bffc5d8f03cdee707bc875e09e66125ce`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
-- Embedded package provenance in staged `SOURCE.txt`: `Build commit: f58cbf18a52b`.
+- Embedded package provenance in staged `SOURCE.txt`: `Build commit: c64e8c7d12bd`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
@@ -198,7 +198,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `f58cbf1` (includes exa
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | container log `/tmp/ps4-package-f58.log` |
+| Candidate compile/link/package at final documented commit | PASS | container log `/tmp/ps4-package-c64.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the folder-DAG candidate reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log`, and the current candidate reproduced identical PKG SHA-256 `d4032db7...25ce` in the container reproducibility check |
