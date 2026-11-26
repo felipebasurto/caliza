@@ -762,8 +762,10 @@ MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAc
 {
 	const u32 firstFileCluster = entry->entry.data.cluster;
 
-	// zero-length files have no file clusters
-	if (firstFileCluster == 0xFFFFFFFFu)
+	// Zero-length files own no data clusters. Besides the canonical empty-file marker,
+	// do not let malformed entries with a stale cluster field claim another file's chain
+	// during the bounded flush rebuild. needs proper testing with crafted shared chains.
+	if (firstFileCluster == 0xFFFFFFFFu || entry->entry.data.length == 0)
 		return nullptr;
 
 	u32 clusterIndex = firstFileCluster & NextDataClusterMask;

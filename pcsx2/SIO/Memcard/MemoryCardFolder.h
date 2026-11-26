@@ -306,9 +306,10 @@ protected:
 	// if set to false, nothing is actually written to the file system while flushing, and data is discarded instead
 	bool m_performFileWrites;
 
-	// Bounded per-flush directory traversal marks. Legitimate memory-card
-	// directories never share metadata clusters; marking them prevents malformed
-	// shared-cluster DAGs from expanding exponentially without changing valid cards.
+	// Bounded per-flush traversal marks. Legitimate cards keep directory metadata
+	// clusters and file data clusters in disjoint ownership sets; the flush rebuild
+	// marks both kinds so malformed shared/cyclic chains cannot expand repeatedly
+	// without changing valid cards.
 	std::bitset<MaxImplementedFatClusters> m_directoryTraversalMarks;
 
 	// host write failure state for the page currently being flushed
