@@ -1976,10 +1976,11 @@ void VMManager::DoSaveState(const char* filename, s32 slot_for_message, bool zip
 	};
 
 #ifdef __ORBIS__
-	// Orbis' pad/hotkey flow is synchronous (zip_on_thread=false), so the VM remains paused for the
-	// whole write. Use that guarantee to stream entries instead of materializing a second 40 MiB state
-	// in flexible memory. Threaded saves keep the original snapshot-then-write contract because the VM
-	// may resume before the write finishes. Needs proper testing on the console.
+	// Orbis' pad/hotkey flow is synchronous (zip_on_thread=false) and runs inside the CPU thread's
+	// vsync dispatch after the GS/MTVU state has been quiesced for serialization. Use that guarantee
+	// to stream entries instead of materializing a second 40 MiB state in flexible memory. Threaded
+	// saves keep the original snapshot-then-write contract because the VM may resume before the write
+	// finishes. Needs proper testing on the console.
 	if (!zip_on_thread)
 	{
 		Error error;

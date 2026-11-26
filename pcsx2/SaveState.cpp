@@ -1118,6 +1118,7 @@ bool SaveState_WriteStreamingToDisk(const char* filename, bool backup_old_state,
 	bool ok = put(ORBIS_STATE_MAGIC, sizeof(ORBIS_STATE_MAGIC)) && put(&version, sizeof(version)) && put(&count, sizeof(count));
 
 	SaveStateBase::VmStateBuffer buffer;
+	buffer.reserve(4 * 1024 * 1024); // internals/SPU2-sized component state; contiguous guest memory streams directly
 	const auto write_entry = [&](const char* name, const u8* data, u64 size) {
 		if (!ok || size == 0)
 			return ok;
@@ -1187,14 +1188,15 @@ bool SaveState_WriteStreamingToDisk(const char* filename, bool backup_old_state,
 		if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
 		{
 			std::remove(tmp.c_str());
-			Error::SetStringFmt(error, "Cannot back up old save state '{}'.", Path::GetFileName(filename));
+			Error::SetStringFmt(error, TRANSLATE_FS("SaveState", "Cannot back up old save state '{}'."), Path::GetFileName(filename));
 			return false;
 		}
 	}
 	if (!ok || std::rename(tmp.c_str(), filename) != 0)
 	{
 		std::remove(tmp.c_str());
-		Error::SetStringFmt(error, "Failed to write save state '{}'.", filename);
+		if (!error->IsValid())
+			Error::SetStringFmt(error, "Failed to write save state '{}'.", filename);
 		return false;
 	}
 	std::printf("[state] wrote %s: %u entries, %llu bytes (streaming)\n", filename, count, static_cast<unsigned long long>(total));
