@@ -38,7 +38,7 @@ BIOS
 #include "common/AlignedMalloc.h"
 #include "common/Error.h"
 #include <sys/mman.h>
-#ifdef __ORBIS__
+#if defined(__ORBIS__) && defined(ORBIS_PS4)
 #include <setjmp.h>
 #include <signal.h>
 #include <cstring>
@@ -64,6 +64,10 @@ namespace SysMemory
 	static u8* s_data_memory;
 	static void* s_data_memory_file_handle;
 	static u8* s_code_memory;
+	static long long s_orbis_code_phys = -1;
+	static unsigned long long s_orbis_code_map_size = 0;
+	static unsigned long long s_orbis_code_alloc_size = 0;
+	static bool s_orbis_code_direct = false;
 	static std::unique_ptr<SharedMemoryMappingArea> s_memory_mapping_area;
 } // namespace SysMemory
 
@@ -126,7 +130,7 @@ extern "C" int g_orbis_code_direct = 0;
 extern "C" int sceKernelMprotect(const void* addr, unsigned long long len, int prot);
 extern "C" int sceKernelMunmap(void* addr, unsigned long long len);
 
-#ifdef __ORBIS__
+#if defined(__ORBIS__) && defined(ORBIS_PS4)
 namespace
 {
 sigjmp_buf s_orbis_exec_probe_jump;
@@ -167,7 +171,7 @@ void orbis_exec_probe_fault(int sig, siginfo_t* info, void* context)
 // Prove that a mapping executes before committing the recompilers to it. OpenOrbis can create
 // mappings whose permissions look executable but still fault on use on some firmware/loader combinations.
 // Needs proper testing on the console matrix.
-bool orbis_probe_executable_memory(void* mem)
+bool orbis_probe_executable_memory(void* mem, size_t size)
 {
 	static const unsigned char ret_instruction[] = {0xC3};
 	pthread_mutex_lock(&s_orbis_exec_probe_mutex);
@@ -191,22 +195,30 @@ bool orbis_probe_executable_memory(void* mem)
 		fflush(stdout);
 		return true;
 	}
-	bool ok = false;
+	volatile sig_atomic_t ok = 0;
 	if (sigsetjmp(s_orbis_exec_probe_jump, 1) == 0)
 	{
 		// Arm the jump target only after sigsetjmp has initialized it; a fault between handler
-		// installation and arming still chains to the process's real crash handler.
+		// installation and arming still chains to the process's real crash handler. Probe the
+		// first, middle, and last pages rather than assuming offset zero represents the whole
+		// multi-megabyte direct-memory mapping.
 		s_orbis_exec_probe_active = 1;
-		std::memcpy(mem, ret_instruction, sizeof(ret_instruction));
-		__builtin___clear_cache(static_cast<char*>(mem), static_cast<char*>(mem) + sizeof(ret_instruction));
-		reinterpret_cast<void (*)()>(mem)();
-		ok = true;
+		const size_t page = 0x1000;
+		size_t offsets[3] = {0, (size / 2) & ~(page - 1), size >= page ? size - page : 0};
+		for (size_t offset : offsets)
+		{
+			unsigned char* at = static_cast<unsigned char*>(mem) + offset;
+			std::memcpy(at, ret_instruction, sizeof(ret_instruction));
+			__builtin___clear_cache(reinterpret_cast<char*>(at), reinterpret_cast<char*>(at) + sizeof(ret_instruction));
+			reinterpret_cast<void (*)()>(at)();
+		}
+		ok = 1;
 	}
 	sigaction(SIGSEGV, &s_orbis_exec_probe_old_segv, nullptr);
 	sigaction(SIGBUS, &s_orbis_exec_probe_old_bus, nullptr);
 	s_orbis_exec_probe_active = 0;
 	pthread_mutex_unlock(&s_orbis_exec_probe_mutex);
-	return ok;
+	return ok != 0;
 }
 } // namespace
 #endif
@@ -245,9 +257,12 @@ bool SysMemory::AllocateMemoryMap()
 
 		if (rc == 0 && rc2 == 0)
 		{
-			g_orbis_data_phys = phys;
 			u8* code = nullptr;
 			int rcc = -1, rcc2 = -1;
+			long long used_code_phys = -1;
+			unsigned long long used_code_map_size = 0;
+			unsigned long long used_code_alloc_size = 0;
+			bool used_code_direct = false;
 			// vk-285-64: direct memory made executable (g_orbis_code_direct), at the address the JIT
 			// shared memory had, rounded to 2 MiB so the kernel can use large pages.
 			if (g_orbis_code_direct)
@@ -262,10 +277,19 @@ bool SysMemory::AllocateMemoryMap()
 				printf("[dbg] memmap: code direct %llu MiB: alloc rc=%d phys=%lld map rc=0x%x addr=%p mprotect rc=0x%x\n",
 					code_bytes >> 20, ra, code_phys, (unsigned)rm, want, (unsigned)rp);
 				fflush(stdout);
-				if (rp == 0 && orbis_probe_executable_memory(want))
+				bool exec_ok = rp == 0;
+#ifdef ORBIS_PS4
+				if (exec_ok)
+					exec_ok = orbis_probe_executable_memory(want, code_bytes);
+#endif
+				if (exec_ok)
 				{
 					code = want;
 					rcc = rcc2 = 0;
+					used_code_phys = code_phys;
+					used_code_map_size = code_bytes;
+					used_code_alloc_size = code_bytes;
+					used_code_direct = true;
 				}
 				else if (rp == 0)
 				{
@@ -302,17 +326,36 @@ bool SysMemory::AllocateMemoryMap()
 				rcc2 = -1;
 				bool phys2_owned = rcc == 0;
 #ifdef ORBIS_PS4
-				// PS4: never accept a non-executable fallback. Try the other direct-memory permission
-				// transition (initial RWX rather than RW-then-mprotect) and prove execution before use.
+				// PS4: never accept a non-executable fallback. Try both direct-memory permission
+				// transitions (initial RWX, then RW promoted with mprotect) and prove execution before use.
 				if (rcc == 0)
 					rcc2 = sceKernelMapDirectMemory((void**)&code, code_size, 0x07, 0, phys2, align);
-				if (rcc2 == 0 && !orbis_probe_executable_memory(code))
+				if (rcc2 != 0 && rcc == 0)
 				{
-					printf("[dbg] memmap: initial-RWX code direct mapping did not execute; rejecting it\n");
+					const int rw_map = sceKernelMapDirectMemory((void**)&code, code_size, 0x03, 0, phys2, align);
+					const int rw_prot = rw_map == 0 ? sceKernelMprotect(code, code_size, 0x07) : -1;
+					printf("[dbg] memmap: fallback RW->mprotect code direct map rc=0x%x mprotect rc=0x%x\n", (unsigned)rw_map, (unsigned)rw_prot);
+					fflush(stdout);
+					rcc2 = rw_prot;
+				}
+				if (rcc2 == 0 && !orbis_probe_executable_memory(code, code_size))
+				{
+					printf("[dbg] memmap: executable code direct mapping did not execute; rejecting it\n");
+					rcc2 = -1;
+				}
+				if (rcc2 == 0)
+				{
+					used_code_phys = phys2;
+					used_code_map_size = code_size;
+					used_code_alloc_size = code_size;
+					used_code_direct = true;
+				}
+				else if (rcc == 0)
+				{
 					sceKernelMunmap(code, code_size);
 					sceKernelReleaseDirectMemory(phys2, code_size);
 					phys2_owned = false;
-					rcc = rcc2 = -1;
+					rcc = -1;
 					code = nullptr;
 				}
 #else
@@ -328,6 +371,11 @@ bool SysMemory::AllocateMemoryMap()
 			{
 				s_data_memory = data;
 				s_code_memory = (u8*)code;
+				s_orbis_code_phys = used_code_phys;
+				s_orbis_code_map_size = used_code_map_size;
+				s_orbis_code_alloc_size = used_code_alloc_size;
+				s_orbis_code_direct = used_code_direct;
+				g_orbis_data_phys = phys;
 				g_orbis_data_base = (unsigned long long)data;
 				g_orbis_data_size = main_size;
 				g_orbis_code_base = (unsigned long long)code;
@@ -385,6 +433,39 @@ void SysMemory::DumpMemoryMap()
 
 void SysMemory::ReleaseMemoryMap()
 {
+#ifdef ORBIS_VULKAN
+	// Orbis allocations are independent direct-memory mappings, not members of a
+	// SharedMemoryMappingArea. Release exactly what AllocateMemoryMap recorded; the PS5 JIT
+	// shared-memory path still lacks unmap/delete wrappers and is intentionally left in place.
+	if (s_code_memory)
+	{
+		if (s_orbis_code_direct)
+		{
+			sceKernelMunmap(s_code_memory, s_orbis_code_map_size);
+			if (s_orbis_code_phys >= 0)
+				sceKernelReleaseDirectMemory(s_orbis_code_phys, s_orbis_code_alloc_size);
+		}
+		s_code_memory = nullptr;
+	}
+
+	if (s_data_memory)
+	{
+		sceKernelMunmap(s_data_memory, HostMemoryMap::MainSize);
+		if (g_orbis_data_phys >= 0)
+			sceKernelReleaseDirectMemory(g_orbis_data_phys, HostMemoryMap::MainSize);
+		s_data_memory = nullptr;
+	}
+
+	s_orbis_code_phys = -1;
+	s_orbis_code_map_size = 0;
+	s_orbis_code_alloc_size = 0;
+	s_orbis_code_direct = false;
+	g_orbis_data_phys = -1;
+	g_orbis_data_base = 0;
+	g_orbis_data_size = 0;
+	g_orbis_code_base = 0;
+	g_orbis_code_size = 0;
+#else
 	if (s_code_memory)
 	{
 		s_memory_mapping_area->Unmap(s_code_memory, HostMemoryMap::CodeSize, false);
@@ -398,6 +479,7 @@ void SysMemory::ReleaseMemoryMap()
 	}
 
 	s_memory_mapping_area.reset();
+#endif
 
 	if (s_data_memory_file_handle)
 	{
