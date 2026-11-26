@@ -757,6 +757,7 @@ struct OrbisRumbleOut
   u32 sent = FORCE_SEND; // vibration bytes are only 16 bits, so this always forces one send
   int32_t handle = -1;
   unsigned logged = 0;
+  unsigned retry_countdown = 0;
 };
 static void orbis_rumble_send(int index, int32_t handle, OrbisRumbleOut &out)
 {
@@ -777,6 +778,11 @@ static void orbis_rumble_send(int index, int32_t handle, OrbisRumbleOut &out)
   }
   if (want == out.sent)
     return;
+  if (out.retry_countdown != 0)
+  {
+    out.retry_countdown--;
+    return;
+  }
   const uint8_t param[2] = {static_cast<uint8_t>(want >> 8), static_cast<uint8_t>(want & 0xFFu)};
   const int rc = scePadSetVibration(handle, param);
   if (out.logged < 8u || rc != 0)
@@ -788,7 +794,17 @@ static void orbis_rumble_send(int index, int32_t handle, OrbisRumbleOut &out)
       fflush(stdout);
     }
   }
-  out.sent = want;
+  if (rc == 0)
+  {
+    out.sent = want;
+    out.retry_countdown = 0;
+  }
+  else
+  {
+    // A transient failure must not mark unacknowledged rumble as sent. Retry about
+    // four times a second (the pad loop sleeps 4 ms) without spinning libScePad.
+    out.retry_countdown = 64;
+  }
 }
 
 // vk-285-117 (AI-assisted): the DualSense didn't rumble. Every scePadSetVibration answered 0 (4,355 "[pad] rumble" lines in
@@ -1097,7 +1113,7 @@ static void *orbis_pad_thread(void *)
       for (int i = 0; i < g_orbis_extra_count; i++)
         orbis_rumble_send(static_cast<int>(extra[i].port), extra[i].handle, s_rumble_extra[i]);
     }
-    if (++reads == 250u || (rc != 0 && reads % 1000u == 0u))
+    if ((++reads % 250u) == 0u || (rc != 0 && reads % 1000u == 0u))
       printf("[pad] read rc=%x buttons=%08x lx=%u ly=%u\n", rc, d.buttons, d.lx, d.ly);
     for (int i = 0; i < g_orbis_extra_count; i++)
     {
@@ -1141,7 +1157,7 @@ static void *orbis_pad_thread(void *)
         printf("[pad] player %d controller %s (rc=%x)\n", i + 2, on ? "connected" : "not connected", rc2);
         s_on[i] = on ? 1 : 0;
       }
-      if (reads == 250u || (rc2 != 0 && reads % 1000u == 0u))
+      if ((reads % 250u) == 0u || (rc2 != 0 && reads % 1000u == 0u))
         printf("[pad] player %d read rc=%x buttons=%08x lx=%u ly=%u connected=%u\n", i + 2, rc2, d2.buttons, d2.lx, d2.ly,
           static_cast<unsigned>(d2.rest[76 - 12]));
     }
