@@ -35,5 +35,12 @@ else
     echo "FAIL: savestate_validator" >&2
     status=1
 fi
+echo "== console_log_analyzer =="
+if python3 "$here/tools/test_analyze_console_logs.py"; then
+    echo "PASS: console_log_analyzer"
+else
+    echo "FAIL: console_log_analyzer" >&2
+    status=1
+fi
 echo "host test binaries: $out"
 exit "$status"
