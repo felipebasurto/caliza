@@ -347,6 +347,8 @@ void FolderMemoryCard::Close(bool flush)
 		Flush();
 	}
 
+	if (m_fileWriteFailedThisFlush)
+		Console.Error("FolderMcd: closing slot %u with host write failures; pending memory-card data may be lost", m_slot);
 	m_cache.clear();
 	m_oldDataCache.clear();
 	const u32 closeFailures = m_lastAccessedFile.CloseAll();
