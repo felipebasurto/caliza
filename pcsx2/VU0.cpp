@@ -52,7 +52,9 @@ __fi void _vu0run(bool breakOnMbit, bool addCycles, bool sync_only) {
 		return;
 	}
 
-	if(!EmuConfig.Cpu.Recompiler.EnableEE)
+	// Use the effective recompiler decision rather than a hand-edited raw setting: in the
+	// non-executable-memory interpreter fallback an overridden EnableEE must not skip cycle catch-up.
+	if (!CHECK_EEREC)
 		intUpdateCPUCycles();
 
 	u64 startcycle = cpuRegs.cycle;

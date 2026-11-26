@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "pcsx2/Achievements.h"
+#include "pcsx2/CDVD/CDVD.h"
 #include "pcsx2/GS.h"
 #include "pcsx2/GameList.h"
 #include "pcsx2/Host.h"
@@ -13,6 +14,7 @@
 #include "pcsx2/VMManager.h"
 #include "common/Error.h"
 #include <atomic>
+#include <chrono>
 #include <string>
 #include "common/ProgressCallback.h"
 #ifdef PS5SX2_ACHIEVEMENTS
@@ -256,6 +258,17 @@ void OrbisWidescreenTick(); // vk-285-12 (pcsx2/OrbisWidescreen.cpp)
 void OrbisKbdMousePump(); // vk-285-72 (the port's ProsperoKbdMouse.cpp)
 void Host::PumpMessagesOnCPUThread()
 {
+	// Persist NVRAM while the game is still running, but only after guest writes and only on the
+	// CPU thread that owns the emulated CDVD state. Abnormal exits then lose seconds, not a session.
+	static auto s_next_nvram_save = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+	const auto now = std::chrono::steady_clock::now();
+	if (now >= s_next_nvram_save)
+	{
+		s_next_nvram_save = now + std::chrono::seconds(30);
+		if (cdvdNVRAMIsDirty())
+			cdvdSaveNVRAM();
+	}
+
 	OrbisCpuSample(0); // eerec-285: EE thread
 	OrbisKbdMousePump(); // vk-285-72: the PS5's USB keyboard and mouse into the PS2's USB HID devices
 #ifdef ORBIS_VULKAN

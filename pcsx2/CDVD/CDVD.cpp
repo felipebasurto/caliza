@@ -31,6 +31,7 @@
 #ifndef _WIN32
 #include <time.h>
 #endif
+#include <atomic>
 #include <memory>
 
 cdvdStruct cdvd;
@@ -45,6 +46,7 @@ static constexpr u8 cdvdParamLength[16] = { 0, 0, 0, 0, 0, 4, 11, 11, 11, 1, 255
 
 static constexpr size_t NVRAM_SIZE = 1024;
 static u8 s_nvram[NVRAM_SIZE];
+static std::atomic_bool s_nvram_dirty{false};
 
 static constexpr u32 DEFAULT_MECHA_VERSION = 0x00020603;
 static u32 s_mecha_version = 0;
@@ -155,6 +157,12 @@ static void cdvdCreateNewNVM()
 	// Config sections first 16 bytes are generally blank expect the last byte which is PS1 mode stuff
 	// So let's ignore that and just write the PS2 mode stuff
 	std::memcpy(&s_nvram[nvmLayout->config1 + 0x10], biosLangDefaults[BiosRegion], 16);
+	s_nvram_dirty.store(true, std::memory_order_relaxed);
+}
+
+bool cdvdNVRAMIsDirty()
+{
+	return s_nvram_dirty.load(std::memory_order_relaxed);
 }
 
 static std::string cdvdGetNVRAMPath()
@@ -174,6 +182,8 @@ void cdvdLoadNVRAM()
 	}
 	else
 	{
+		s_nvram_dirty.store(false, std::memory_order_relaxed);
+
 		// Verify NVRAM is sane.
 		const NVMLayout* nvmLayout = getNvmLayout();
 		constexpr u8 zero[16] = {0};
@@ -223,6 +233,7 @@ void cdvdSaveNVRAM()
 	if (std::fread(existing_nvram, sizeof(existing_nvram), 1, fp.get()) == 1 &&
 		std::memcmp(existing_nvram, s_nvram, NVRAM_SIZE) == 0)
 	{
+		s_nvram_dirty.store(false, std::memory_order_relaxed);
 		DEV_LOG("NVRAM has not changed, not writing to disk.");
 		return;
 	}
@@ -230,6 +241,7 @@ void cdvdSaveNVRAM()
 	if (FileSystem::FSeek64(fp.get(), 0, SEEK_SET) == 0 &&
 		std::fwrite(s_nvram, NVRAM_SIZE, 1, fp.get()) == 1)
 	{
+		s_nvram_dirty.store(false, std::memory_order_relaxed);
 		INFO_LOG("NVRAM saved to {}.", Path::GetFileName(nvmfile));
 	}
 	else
@@ -263,7 +275,13 @@ static void cdvdWriteNVM(const u8* src, int offset, int bytes)
 	}
 
 	if (to_write > 0) [[likely]]
-		std::memcpy(&s_nvram[offset], src, to_write);
+	{
+		if (std::memcmp(&s_nvram[offset], src, static_cast<size_t>(to_write)) != 0)
+		{
+			std::memcpy(&s_nvram[offset], src, static_cast<size_t>(to_write));
+			s_nvram_dirty.store(true, std::memory_order_relaxed);
+		}
+	}
 }
 
 static void cdvdReadConsoleID(u8* id)

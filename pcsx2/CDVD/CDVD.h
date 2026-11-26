@@ -168,6 +168,7 @@ extern void cdvdReadLanguageParams(u8* config);
 
 extern void cdvdLoadNVRAM();
 extern void cdvdSaveNVRAM();
+extern bool cdvdNVRAMIsDirty();
 extern void cdvdReset();
 extern void cdvdVsync();
 extern void cdvdActionInterrupt();
