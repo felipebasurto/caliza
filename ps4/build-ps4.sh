@@ -39,13 +39,17 @@ link="$PSB/build/link"
 # the previous experiment's values. This does not recompile the port objects; Makefile.ps4 owns those.
 ps4_cmake -S "$HERE/link" -B "$link" -G "Unix Makefiles" \
     -DCMAKE_TOOLCHAIN_FILE="$PORT/toolchain/ps4-cemu.cmake" -DPS4_PORT_DIR="$PORT" \
-    -DPCSX2_OBJECTS_FILE="$HERE/objects.txt" -DPS4_PAID=0x3800000000000035 \
+    -DPCSX2_OBJECTS_FILE="$HERE/objects.txt" -DPGS_LIBS_FILE="$PSB/pgs/libs.txt" -DPS4_PAID=0x3800000000000035 \
     -DPS4_NARROW="$narrow" -DPS4_LTO="$lto" -DORBIS_ORDER_FILE="$order" > "$PSB/link-configure.log" 2>&1 \
     || { tail -30 "$PSB/link-configure.log"; exit 1; }
 elf="$link/pcsx2"
 eboot="$link/pcsx2_eboot/eboot.bin"
-rm -f "$eboot" # a failed link must not leave the last eboot to be packaged
-make -C "$link" -j"${JOBS:-20}" > "$PSB/link.log" 2>&1 || true
+rm -f "$eboot" "$elf" # a failed link must not leave stale artifacts to audit or package
+if ! make -C "$link" -j"${JOBS:-20}" > "$PSB/link.log" 2>&1; then
+    tail -40 "$PSB/link.log" >&2
+    echo "[build-ps4] link failed (log: $PSB/link.log)" >&2
+    exit 1
+fi
 grep -E "error|Failed|missing" "$PSB/link.log" | grep -v "no version information" | head -20 || true
 
 [ -f "$elf" ] || { echo "[build-ps4] no ELF: the link failed (log: $PSB/link.log)" >&2; exit 1; }

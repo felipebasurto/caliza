@@ -270,7 +270,7 @@ SRCS := $(SRCS) $(ST_SRCS)
 FS_SRCS := $(wildcard $(PCSX2)/3rdparty/freesurround/src/*.cpp)
 SRCS := $(SRCS) $(FS_SRCS)
 
-DEV9_SRCS := $(shell find $(PCSX2)/pcsx2/DEV9 -name '*.cpp' -not -path '*/Win32/*' -not -name 'pcap_io.cpp')
+DEV9_SRCS := $(shell find $(PCSX2)/pcsx2/DEV9 -name '*.cpp' -not -path '*/Win32/*' -not -name 'pcap_io.cpp' | sort)
 
 RCHEEVOS := $(PCSX2)/3rdparty/rcheevos
 RCHEEVOS_SRCS := $(filter-out %/rc_libretro.c %/rc_client_raintegration.c %/rhash/hash.c %/rhash/cdreader.c, $(wildcard $(RCHEEVOS)/src/*.c $(RCHEEVOS)/src/rapi/*.c $(RCHEEVOS)/src/rcheevos/*.c $(RCHEEVOS)/src/rhash/*.c))
@@ -509,7 +509,7 @@ endif
 
 # Make does not rebuild objects when only their command-line flags change. This stamp does it for the two compile
 # knobs: another NARROW or LTO value names another stamp, and every object then rebuilds once against it.
-BUILD_STAMP := $(OBJDIR)/.build-flags-n$(NARROW)-lto$(LTO)
+BUILD_STAMP := $(OBJDIR)/.build-flags-n$(NARROW)-lto$(LTO)-pgs$(PGS)
 $(BUILD_STAMP):
 	@mkdir -p $(dir $@)
 	@rm -f $(OBJDIR)/.build-flags-*
@@ -554,6 +554,7 @@ all: $(OBJS)
 	@echo "VK COMPILE OK: $(words $(OBJS)) objects"
 
 # The object list link-vk.sh links (the GL build's conv.sh finds them with find).
+.PHONY: objects.txt
 objects.txt: $(OBJS)
 	@printf '%s\n' $(OBJS) > $@
 
