@@ -318,6 +318,7 @@ protected:
 	// host write failure state for the page currently being flushed
 	bool m_fileWriteFailed = false;
 	bool m_fileWriteFailedThisFlush = false;
+	mutable bool m_depthCapWarned = false;
 	bool m_fileWriteErrorReported = false;
 
 	// currently active filter settings

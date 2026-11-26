@@ -36,6 +36,19 @@
 
 static constexpr u32 MaxFolderDirectoryDepth = 64;
 
+// The depth cap silently drops over-deep host directory branches so save data would
+// otherwise vanish without explanation. Warn once per card instance; a hostile tree
+// can hit the cap on many branches and must not spam the log. needs proper testing.
+static void WarnDepthCapOnce(bool& warned, const char* path)
+{
+	if (!warned)
+	{
+		warned = true;
+		Console.Warning("FolderMemoryCard: directory depth cap (%u) reached under '%s'; deeper host directories are not imported",
+			MaxFolderDirectoryDepth, path ? path : "");
+	}
+}
+
 // A helper function to parse the YAML file
 static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
 {
@@ -655,7 +668,10 @@ static bool FilterMatches(const std::string_view fileName, const std::string_vie
 bool FolderMemoryCard::AddFolder(MemoryCardFileEntry* const dirEntry, const std::string& dirPath, MemoryCardFileMetadataReference* parent /* = nullptr */, const bool enableFiltering /* = false */, const std::string_view filter /* = "" */, const u32 directoryDepth)
 {
 	if (directoryDepth >= MaxFolderDirectoryDepth)
+	{
+		WarnDepthCapOnce(m_depthCapWarned, dirPath.c_str());
 		return false;
+	}
 
 	if (FileSystem::DirectoryExists(dirPath.c_str()))
 	{
@@ -849,7 +865,10 @@ bool FolderMemoryCard::AddFile(MemoryCardFileEntry* const dirEntry, const std::s
 u32 FolderMemoryCard::CalculateRequiredClustersOfDirectory(const std::string& dirPath, const u32 directoryDepth) const
 {
 	if (directoryDepth >= MaxFolderDirectoryDepth)
+	{
+		WarnDepthCapOnce(m_depthCapWarned, dirPath.c_str());
 		return 0;
+	}
 
 	const u32 clusterSize = m_superBlock.data.pages_per_cluster * m_superBlock.data.page_len;
 	u32 requiredFileEntryPages = 2;
@@ -1525,7 +1544,11 @@ void FolderMemoryCard::FlushFileEntries()
 void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainingFiles, const std::string& dirPath, MemoryCardFileMetadataReference* parent, const u32 directoryDepth)
 {
 	if (directoryDepth >= MaxFolderDirectoryDepth || dirCluster >= MaxImplementedFatClusters)
+	{
+		if (directoryDepth >= MaxFolderDirectoryDepth)
+			WarnDepthCapOnce(m_depthCapWarned, dirPath.c_str());
 		return;
+	}
 
 	// Directory chains are sequential, so they do not need recursion. Bound the
 	// chain explicitly; subdirectory recursion is separately depth-capped because
