@@ -54,6 +54,41 @@ struct cdvdSubQ
 	u8 discF; // current frame location on the disc (BCD encoded)
 };
 
+// MSB-first CRC-16/CCITT over raw Q-channel bytes, used by the 16-byte P/Q suffix in 2368-byte CDDA sectors.
+static inline u16 cdvdSubQCrc(const u8* data, size_t length) noexcept
+{
+	u16 crc = 0;
+	for (size_t i = 0; i < length; i++)
+	{
+		crc ^= static_cast<u16>(data[i] << 8);
+		for (int bit = 0; bit < 8; bit++)
+			crc = (crc & 0x8000) ? static_cast<u16>((crc << 1) ^ 0x1021) : static_cast<u16>(crc << 1);
+	}
+	return crc;
+}
+
+// Writes the 16-byte raw P/Q suffix used by CDDA sector format 2368. Bytes 0-9 are the
+// mode-1 Q payload, 10-11 its CRC, 12-14 reserved zero, and bit 7 of byte 15 the P channel.
+// Ordinary in-track data has P clear; pregap/lead-in pauses are not currently modeled.
+static inline void cdvdWriteSubQ16(u8* dst, const cdvdSubQ& subq) noexcept
+{
+	for (int i = 0; i < 16; i++)
+		dst[i] = 0;
+	dst[0] = static_cast<u8>((subq.ctrl << 4) | (subq.adr & 0x0f));
+	dst[1] = subq.trackNum;
+	dst[2] = subq.trackIndex;
+	dst[3] = subq.trackM;
+	dst[4] = subq.trackS;
+	dst[5] = subq.trackF;
+	dst[6] = 0;
+	dst[7] = subq.discM;
+	dst[8] = subq.discS;
+	dst[9] = subq.discF;
+	const u16 crc = cdvdSubQCrc(dst, 10);
+	dst[10] = static_cast<u8>(crc >> 8);
+	dst[11] = static_cast<u8>(crc);
+}
+
 struct cdvdTD
 { // NOT bcd coded
 	u32 lsn;

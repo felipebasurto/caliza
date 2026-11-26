@@ -1276,6 +1276,16 @@ int cdvdReadSector()
 		memcpy(mdest, &cdr.Transfer[0], transfer_bytes);
 		if (static_cast<size_t>(cdvd.BlockSize) > transfer_bytes)
 			std::memset(mdest + transfer_bytes, 0, static_cast<size_t>(cdvd.BlockSize) - transfer_bytes);
+		if (cdvd.BlockSize == 2368)
+		{
+			// Mode 2368 is main-channel data plus the 16-byte raw P/Q suffix. The image
+			// backends do not carry that suffix, so synthesize the mode-1 Q payload and
+			// CRC from the same formatted SubQ source exposed to sceCdReadSUBQ. needs proper
+			// testing with CDDA software; multi-track/pregap fidelity remains format-limited.
+			cdvdSubQ subq = {};
+			if (cdvdReadSubQ(cdvd.CurrentSector, &subq) == 0)
+				cdvdWriteSubQ16(mdest + 2352, subq);
+		}
 	}
 
 	// decrypt sector's bytes
