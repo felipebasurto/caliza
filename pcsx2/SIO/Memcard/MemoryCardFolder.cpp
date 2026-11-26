@@ -1264,6 +1264,8 @@ void FolderMemoryCard::Flush()
 	}
 	else
 	{
+		if (m_fileWriteErrorReported)
+			Console.WriteLn("FolderMcd: host file write succeeded after retry");
 		m_fileWriteErrorReported = false;
 	}
 

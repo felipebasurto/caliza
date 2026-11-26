@@ -151,6 +151,21 @@ def main() -> int:
         ok &= expect("folder memory-card write failure is fatal", folderwritefail, (), 1,
                      "FAIL folder memory-card host write failure")
 
+        folderwriterecover = root / "folderwriterecover.log"
+        folderwriterecover.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                      "FolderMcd: host file write failed; dirty memory-card pages are kept for retry\n"
+                                      "FolderMcd: host file write succeeded after retry\n")
+        ok &= expect("recovered folder memory-card write failure warns", folderwriterecover, (), 0,
+                     "WARN folder memory-card host write failure occurred but a later retry succeeded")
+
+        folderwriterefail = root / "folderwriterefail.log"
+        folderwriterefail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                     "FolderMcd: host file write failed; dirty memory-card pages are kept for retry\n"
+                                     "FolderMcd: host file write succeeded after retry\n"
+                                     "FolderMcd: host file write failed; dirty memory-card pages are kept for retry\n")
+        ok &= expect("post-recovery folder memory-card write failure is fatal", folderwriterefail, (), 1,
+                     "without later recovery")
+
         mdecfail = root / "mdecfail.log"
         mdecfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                             "MDEC backing allocation failed; MDEC DMAs will complete without decoded data\n")
