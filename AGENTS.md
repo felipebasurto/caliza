@@ -26,6 +26,7 @@ Read `REPO-MAP.md` before moving or deleting files. Read `ps4/CALIZA-UI-ARCHITEC
 - The retired product name must not appear as a contiguous string in source or user-visible copy. Run `python3 ps4/tools/audit_brand.py`; it must report zero references. Compatibility with old installations belongs in `caliza/core/legacy_compat.h` and migration tests.
 - Do not change the installed title identifier or public repository slug without an explicit user decision.
 - Do not create issues or pull requests. Do not rewrite git history.
+- Do not add AI/agent attribution or disclosure labels to commits, documentation, user-facing copy, issues or pull requests unless the user explicitly asks for them.
 
 ## Verification
 
