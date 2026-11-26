@@ -492,6 +492,20 @@ bool USB::DoState(StateWrapper& sw)
 		if (!validAsyncTuple)
 		{
 			Console.Error("USB asynchronous packet state is inconsistent, resetting.");
+			// USBreset() cancels through async_td without validating the packet tuple. A hostile
+			// state can therefore make that cancel touch an endpoint-less or unlinked QTAILQ node.
+			// Remove only a packet that really is inflight and targeted, detach the asynchronous
+			// owner first, and then reset with no stale queue linkage. needs proper testing.
+			if (packetInflight && packet.ep != nullptr)
+				usb_cancel_packet(&packet);
+			packet.ep = nullptr;
+			packet.buffer_ptr = nullptr;
+			packet.buffer_size = 0;
+			packet.actual_length = 0;
+			packet.status = USB_RET_SUCCESS;
+			packet.state = USB_PACKET_UNDEFINED;
+			s_qemu_ohci->async_td = 0;
+			s_qemu_ohci->async_complete = 0;
 			USBreset();
 			return true;
 		}
