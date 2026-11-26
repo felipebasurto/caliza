@@ -120,8 +120,10 @@ int InputIsoFile::FinishRead3(u8* dst, uint mode)
 		}
 		m_read_inprogress = false;
 
-		if (ret <= 0)
+		if (ret != static_cast<int>(m_blocksize))
 		{
+			// A partial asynchronous sector read must not DMA a stale tail as if it were
+			// disc data. BeginRead2 always requests exactly one external block.
 			m_read_lsn = -1;
 			return -1;
 		}
