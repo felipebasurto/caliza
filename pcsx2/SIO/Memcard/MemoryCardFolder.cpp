@@ -1497,8 +1497,8 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 								const char initialData[] = "{$ROOT: {timeCreated: 0, timeModified: 0}}";
 								ryml::Tree newYaml = ryml::parse_in_arena(ryml::to_csubstr(initialData));
 								ryml::NodeRef newNode = newYaml.rootref()["$ROOT"];
-								newNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
-								newNode["timeModified"] << entry->entry.data.timeModified.ToTime();
+								newNode["timeCreated"].save(entry->entry.data.timeCreated.ToTime());
+								newNode["timeModified"].save(entry->entry.data.timeModified.ToTime());
 								SaveYAMLToFile(metaFileName.c_str(), newYaml);
 							}
 							else if (!yaml.value().empty())
@@ -1526,8 +1526,8 @@ void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainin
 								if (index.has_child("$ROOT"))
 								{
 									entryNode = index["$ROOT"];
-									entryNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
-									entryNode["timeModified"] << entry->entry.data.timeModified.ToTime();
+									entryNode["timeCreated"].save(entry->entry.data.timeCreated.ToTime());
+									entryNode["timeModified"].save(entry->entry.data.timeModified.ToTime());
 
 									// Write out the changes
 									SaveYAMLToFile(metaFileName.c_str(), index);
@@ -2020,9 +2020,11 @@ void FolderMemoryCard::AttemptToRecreateIndexFile(const std::string& directory) 
 	auto currOrder = 1;
 	ryml::Tree tree;
 	ryml::NodeRef root = tree.rootref();
-	root |= ryml::MAP;
-	root.append_child() << ryml::key("$ROOT") |= ryml::MAP;
-	root["$ROOT"]["timeCreated"] << currTime++;
+	root.set_map();
+	ryml::NodeRef rootNode = root.append_child();
+	rootNode.set_key("$ROOT");
+	rootNode.set_map();
+	root["$ROOT"]["timeCreated"].save(currTime++);
 
 	FileSystem::FindResultsArray results;
 	FileSystem::FindFiles(directory.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_RELATIVE_PATHS | FILESYSTEM_FIND_HIDDEN_FILES, &results);
@@ -2033,14 +2035,16 @@ void FolderMemoryCard::AttemptToRecreateIndexFile(const std::string& directory) 
 			continue;
 		}
 
-		root.append_child() << ryml::key(fd.FileName) |= ryml::MAP;
+		ryml::NodeRef childNode = root.append_child();
+		childNode.set_key(ryml::to_csubstr(fd.FileName));
+		childNode.set_map();
 		ryml::NodeRef newNode = root[ryml::to_csubstr(fd.FileName)];
-		newNode["order"] << currOrder++;
-		newNode["timeCreated"] << currTime++;
-		newNode["timeModified"] << currTime++;
+		newNode["order"].save(currOrder++);
+		newNode["timeCreated"].save(currTime++);
+		newNode["timeModified"].save(currTime++);
 	}
 
-	root["$ROOT"]["timeModified"] << currTime;
+	root["$ROOT"]["timeModified"].save(currTime);
 
 	(void)SaveYAMLToFile(Path::Combine(directory, "_pcsx2_index").c_str(), root);
 }
@@ -2098,15 +2102,15 @@ std::vector<FolderMemoryCard::EnumeratedFileEntry> FolderMemoryCard::GetOrderedF
 						const auto& node = index[ryml::to_csubstr(fd.FileName)];
 						if (node.has_child("timeCreated"))
 						{
-							node["timeCreated"] >> entry.m_timeCreated;
+							node["timeCreated"].load(&entry.m_timeCreated);
 						}
 						if (node.has_child("timeModified"))
 						{
-							node["timeModified"] >> entry.m_timeModified;
+							node["timeModified"].load(&entry.m_timeModified);
 						}
 						if (node.has_child("order"))
 						{
-							node["order"] >> newOrder;
+							node["order"].load(&newOrder);
 						}
 					}
 				}
@@ -2144,11 +2148,11 @@ std::vector<FolderMemoryCard::EnumeratedFileEntry> FolderMemoryCard::GetOrderedF
 						const auto& node = indexForDirectory["%ROOT"];
 						if (node.has_child("timeCreated"))
 						{
-							node["timeCreated"] >> entry.m_timeCreated;
+							node["timeCreated"].load(&entry.m_timeCreated);
 						}
 						if (node.has_child("timeModified"))
 						{
-							node["timeModified"] >> entry.m_timeModified;
+							node["timeModified"].load(&entry.m_timeModified);
 						}
 					}
 					else if (indexForDirectory.has_child("$ROOT"))
@@ -2156,11 +2160,11 @@ std::vector<FolderMemoryCard::EnumeratedFileEntry> FolderMemoryCard::GetOrderedF
 						const auto& node = indexForDirectory["$ROOT"];
 						if (node.has_child("timeCreated"))
 						{
-							node["timeCreated"] >> entry.m_timeCreated;
+							node["timeCreated"].load(&entry.m_timeCreated);
 						}
 						if (node.has_child("timeModified"))
 						{
-							node["timeModified"] >> entry.m_timeModified;
+							node["timeModified"].load(&entry.m_timeModified);
 						}
 					}
 				}
@@ -2392,25 +2396,25 @@ void FileAccessHelper::WriteIndex(const std::string& baseFolderName, MemoryCardF
 		{
 			// Newly added file - figure out the sort order as the entry should be added to the end of the list
 			ryml::NodeRef newNode = index[key];
-			newNode |= ryml::MAP;
+			newNode.set_map();
 			unsigned int maxOrder = 0;
 			for (const auto& n : index.children())
 			{
 				unsigned int currOrder = 0; // NOTE - this limits the usefulness of making the order an int64
 				if (n.is_map() && n.has_child("order"))
 				{
-					n["order"] >> currOrder;
+					n["order"].load(&currOrder);
 				}
 				maxOrder = std::max(maxOrder, currOrder);
 			}
-			newNode["order"] << maxOrder + 1;
+			newNode["order"].save(maxOrder + 1);
 		}
 		ryml::NodeRef entryNode = index[key];
 
 		// Update timestamps basing on internal data
 		const auto* e = &entry->entry.data;
-		entryNode["timeCreated"] << e->timeCreated.ToTime();
-		entryNode["timeModified"] << e->timeModified.ToTime();
+		entryNode["timeCreated"].save(e->timeCreated.ToTime());
+		entryNode["timeModified"].save(e->timeModified.ToTime());
 
 		// Write out the changes
 		SaveYAMLToFile(indexFileName.c_str(), index);
