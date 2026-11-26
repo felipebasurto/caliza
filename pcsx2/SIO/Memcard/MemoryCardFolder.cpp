@@ -21,8 +21,8 @@
 
 #include "fmt/format.h"
 
+#include <bitset>
 #include <optional>
-#include <set>
 #include <chrono>
 #include <new>
 
@@ -148,7 +148,10 @@ bool FolderMemoryCard::HasPlausibleGeometry() const
 		return false;
 	if (sb.alloc_offset == 0 || sb.alloc_offset >= sb.clusters_per_card)
 		return false;
-	if (sb.alloc_end == 0 || sb.alloc_end > maxFatClusters || sb.alloc_end > sb.clusters_per_card - sb.alloc_offset)
+	// GetAmountDataClusters rounds alloc_end down to whole thousands before
+	// subtracting one. Anything below 1000 is therefore not representable
+	// without underflowing the count, and no legitimate PS2 card uses it.
+	if (sb.alloc_end < 1000 || sb.alloc_end > maxFatClusters || sb.alloc_end > sb.clusters_per_card - sb.alloc_offset)
 		return false;
 	if (sb.rootdir_cluster >= sb.alloc_end)
 		return false;
@@ -870,15 +873,17 @@ MemoryCardFileEntryCluster* FolderMemoryCard::GetFileEntryCluster(const u32 curr
 		u32 fileCount;
 	};
 	std::vector<SearchNode> pending;
-	std::set<u32> visited;
+	constexpr u32 visitedClusterCount = IndirectFatClusterCount * (ClusterSize / 4) * (ClusterSize / 4);
+	std::bitset<visitedClusterCount> visited;
 	pending.push_back({currentCluster, fileCount});
 
 	while (!pending.empty())
 	{
 		const SearchNode node = pending.back();
 		pending.pop_back();
-		if (node.cluster >= maxFatClusters || !visited.insert(node.cluster).second)
+		if (node.cluster >= maxFatClusters || visited[node.cluster])
 			continue;
+		visited.set(node.cluster);
 
 		if (node.cluster == searchCluster)
 		{
@@ -905,7 +910,7 @@ MemoryCardFileEntryCluster* FolderMemoryCard::GetFileEntryCluster(const u32 curr
 		}
 
 		if (nextCluster != LastDataCluster)
-			pending.push_back({nextCluster, node.fileCount > 2 ? node.fileCount - 2 : 0});
+			pending.push_back({nextCluster, node.fileCount - 2});
 	}
 
 	return nullptr;
