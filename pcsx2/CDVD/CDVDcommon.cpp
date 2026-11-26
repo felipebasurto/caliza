@@ -454,11 +454,14 @@ s32 DoCDVDreadSector(u8* buffer, u32 lsn, int mode)
 		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW)
 		{
 			// CD block dumps are always 2448 bytes, while most callers provide only the
-			// requested mode size. Re-read into a zeroed raw-sized scratch buffer so the
-			// dump contains real subchannel bytes when present and zero padding otherwise,
-			// never stack garbage or bytes beyond the caller's buffer. needs proper testing.
+			// requested mode size. Re-read into a raw-sized scratch buffer in mode 2448 so
+			// the dump carries the same subchannel bytes the game consumed: real trailing
+			// data for RAWQ images, the deterministic synthesized suffix otherwise. A
+			// 2352-byte re-read would zero the tail, and the flat dump would later be
+			// detected as RAWQ with its zero padding mistaken for real subchannel data.
+			// needs proper testing.
 			u8 blockDumpBuffer[CD_FRAMESIZE_RAW] = {};
-			if (CDVD->readSector(blockDumpBuffer, lsn, CDVD_MODE_2352) == 0)
+			if (CDVD->readSector(blockDumpBuffer, lsn, CDVD_MODE_2448) == 0)
 				blockDumpFile.WriteSector(blockDumpBuffer, lsn);
 		}
 		else
@@ -528,8 +531,10 @@ s32 DoCDVDgetBuffer(u8* buffer)
 
 		if (blockDumpFile.GetBlockSize() == CD_FRAMESIZE_RAW)
 		{
+			// Same mode-2448 rationale as DoCDVDreadSector: preserve real or synthesized
+			// subchannel bytes rather than zero padding that round-trips as fake RAWQ data.
 			u8 blockDumpBuffer[CD_FRAMESIZE_RAW] = {};
-			if (CDVD->readSector(blockDumpBuffer, lastLSN, CDVD_MODE_2352) == 0)
+			if (CDVD->readSector(blockDumpBuffer, lastLSN, CDVD_MODE_2448) == 0)
 				blockDumpFile.WriteSector(blockDumpBuffer, lastLSN);
 		}
 		else
