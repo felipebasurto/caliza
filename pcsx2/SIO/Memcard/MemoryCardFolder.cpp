@@ -60,6 +60,17 @@ static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
 // Metadata writes are small but important for save ordering/timestamps. Write a temporary
 // sibling whose name is skipped by the folder-card scanner, then replace the live file only
 // after flush+close succeeds. needs proper testing with storage failure injection.
+// Metadata files are named after card files, so a plain ".tmp" suffix can collide with
+// the metadata of a real card file called "<name>.tmp". Temp names in _pcsx2_meta use a
+// _pcsx2_ prefix instead: scanner-excluded files never have card metadata, making collision impossible.
+static std::string MetadataTempFileName(const std::string& metaFileName)
+{
+	const size_t slash = metaFileName.find_last_of('/');
+	if (slash == std::string::npos)
+		return "_pcsx2_write_" + metaFileName;
+	return metaFileName.substr(0, slash + 1) + "_pcsx2_write_" + metaFileName.substr(slash + 1);
+}
+
 static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const char* filename, bool ok)
 {
 	if (!ok)
@@ -2303,7 +2314,7 @@ void FileAccessHelper::WriteMetadata(const std::string_view folderName, const Me
 			FileSystem::CreateDirectoryPath(metaDirName.c_str(), false);
 		}
 
-		const std::string tempMetaFileName = metaFileName + ".tmp";
+		const std::string tempMetaFileName = MetadataTempFileName(metaFileName);
 		std::FILE* metaFile = FileSystem::OpenCFile(tempMetaFileName.c_str(), "wb");
 		if (!metaFile)
 		{
