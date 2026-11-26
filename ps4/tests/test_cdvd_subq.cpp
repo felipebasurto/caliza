@@ -33,7 +33,7 @@ int main()
 		return 1;
 	}
 	const u16 crc = cdvdSubQCrc(raw, 10);
-	if (raw[10] != static_cast<u8>(crc >> 8) || raw[11] != static_cast<u8>(crc) || raw[12] || raw[13] || raw[14] || raw[15])
+	if (crc != 0x5c8d || raw[10] != 0x5c || raw[11] != 0x8d || raw[12] || raw[13] || raw[14] || raw[15])
 	{
 		std::printf("bad P/Q CRC or reserved bytes\n");
 		return 1;
