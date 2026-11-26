@@ -72,6 +72,15 @@ static bool flashEnsureLoaded()
 	return true;
 }
 
+// Guest-supplied NAND addresses are not trusted inputs: malformed software can
+// keep writing address bytes or program a page outside the 64Mbit device. Wrap
+// the byte address to the data-area size before scaling it into the ECC backing.
+// Valid in-range addresses produce exactly the same offset as before.
+static u32 flashFileOffset(u32 byte_address)
+{
+	return ((byte_address % CARD_SIZE) / PAGE_SIZE) * PAGE_SIZE_ECC;
+}
+
 static void xfromman_call20_calculateXors(unsigned char buffer[128], unsigned char blah[4]);
 
 static void calculateECC(u8 page[PAGE_SIZE_ECC])
@@ -175,7 +184,7 @@ u32 FLASHread32(u32 addr, int size)
 				address += PAGE_SIZE;
 				address %= CARD_SIZE;
 				if (flashEnsureLoaded())
-					memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+					memcpy(data, file + flashFileOffset(address), PAGE_SIZE);
 				else
 					memset(data, 0xFF, PAGE_SIZE);
 				calculateECC(data); // calculate ECC; should be in the file already
@@ -287,7 +296,7 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 					ctrl &= ~FLASH_PP_READY;
 					calculateECC(data);
 					if (flashEnsureLoaded())
-						memcpy(file + (address / PAGE_SIZE) * PAGE_SIZE_ECC, data, PAGE_SIZE_ECC);
+						memcpy(file + flashFileOffset(address), data, PAGE_SIZE_ECC);
 					/*write2file*/
 					ctrl |= FLASH_PP_READY;
 					break;
@@ -307,8 +316,19 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 
 		case FLASH_R_ADDR:
 			DevCon.WriteLn("DEV9: *FLASH ADDR %dbit write 0x%08lX", size * 8, value);
-			address |= (value & 0xFF) << (addrbyte == 0 ? 0 : (1 + 8 * addrbyte));
-			addrbyte++;
+			{
+				// Four bytes already cover every implemented bit of this 64Mbit
+				// device. Additional continuation bytes are malformed or zero high
+				// bits; do not let addrbyte grow into an oversized/undefined shift.
+				if (addrbyte < 4)
+				{
+					const u32 shift = (addrbyte == 0) ? 0 : (1 + 8 * addrbyte);
+					address |= (value & 0xFF) << shift;
+					addrbyte++;
+				}
+				else
+					DevCon.WriteLn("DEV9: *FLASH ADDR high byte beyond the 64Mbit device IGNORED");
+			}
 			DevCon.WriteLn("DEV9: *FLASH ADDR = 0x%08lX (addrbyte=%d)", address, addrbyte);
 			if (!(value & 0x100))
 			{ // address is complete
@@ -316,7 +336,7 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 				{
 					ctrl &= ~FLASH_PP_READY;
 					if (flashEnsureLoaded())
-						memcpy(data, file + (address >> PAGE_SIZE_BITS) * PAGE_SIZE_ECC, PAGE_SIZE);
+						memcpy(data, file + flashFileOffset(address), PAGE_SIZE);
 					else
 						memset(data, 0xFF, PAGE_SIZE);
 					calculateECC(data); // calculate ECC; should be in the file already
