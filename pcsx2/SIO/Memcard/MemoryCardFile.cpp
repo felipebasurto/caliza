@@ -473,7 +473,7 @@ void FileMemoryCard::FlushCache(uint slot, const char* why, bool force)
 		bytes += len;
 		b = e;
 	}
-	ok = ok && std::fflush(f) == 0;
+	ok = ok && std::fflush(f) == 0 && fsync(fileno(f)) == 0;
 	if (ok)
 	{
 		for (size_t b = 0; b < dirty.size() && b < live_dirty.size(); b++)
@@ -544,6 +544,7 @@ void FileMemoryCard::Close()
 			close_ok = FileSystem::FSeek64(m_file[slot], m_chkaddr, SEEK_SET) == 0 &&
 			           std::fwrite(&m_chksum[slot], sizeof(m_chksum[slot]), 1, m_file[slot]) == 1;
 		}
+		close_ok = std::fflush(m_file[slot]) == 0 && fsync(fileno(m_file[slot])) == 0 && close_ok;
 		close_ok = std::fclose(m_file[slot]) == 0 && close_ok;
 		m_file[slot] = nullptr;
 		if (!close_ok)
