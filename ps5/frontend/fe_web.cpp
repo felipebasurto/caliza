@@ -340,8 +340,8 @@ bool SettingsPageWithPs4Knobs(const WebAsset& asset, std::string& out)
       hint: "The VU thread waits briefly for work before sleeping. On avoids kernel wakeups; off can use less CPU when work is sparse. Only matters with MTVU." },
     { key: "EmuCore/Speedhacks/OrbisMTVUBatch", label: "MTVU kick batching", type: "toggle", def: "false", short: "VU batch %",
       hint: "Wakes the VU thread once at the end of a VIF1 transfer instead of for every packet. Can cut EE overhead; try it per game. Only matters with MTVU." },
-    { key: "EmuCore/Speedhacks/OrbisMTVURingKB", label: "MTVU ring (KB)", type: "number", def: "2048", min: 256, max: 16384, step: 256, short: "VU ring % KB",
-      hint: "The EE-to-VU ring's length, 256 to 16384 KB. Shorter keeps packets in cache; too short can stutter or break a game." },)ps4ui") && ok;
+    { key: "EmuCore/Speedhacks/OrbisMTVURingKB", label: "MTVU ring (KB)", type: "number", def: "2048", min: 256, max: 2048, step: 256, short: "VU ring % KB",
+      hint: "The EE-to-VU ring's length, 256 to 2048 KB on PS4. Shorter keeps packets in cache; too short can stutter or break a game." },)ps4ui") && ok;
 	ok = ReplaceOnce(out,
 		R"ps4ui(function optLabel(item, v) {
   if (item.type === "toggle") return truthy(v) ? "on" : "off";)ps4ui",

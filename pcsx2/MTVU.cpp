@@ -53,9 +53,10 @@ std::atomic<u32> g_orbis_vu1_b0_runs{0}, g_orbis_vu1_b0_odd{0};
 std::atomic<int> g_orbis_mtvu_spin{1};
 std::atomic<int> g_orbis_mtvu_batch{0};
 // vk-285-90: the ring's length in KB (EmuCore/Speedhacks/OrbisMTVURingKB, live, taken at the next wrap):
-// 16384 (the whole 16 MB buffer, as before) by default. A shorter lap keeps the lines the EE thread writes
-// in the caches (a 16 MB lap comes back to lines long gone to memory). 256..16384. Needs proper testing.
-std::atomic<u32> g_orbis_mtvu_ring_kb{16384};
+// the whole backing store by default. A shorter lap keeps the lines the EE thread writes in the caches
+// (a 16 MB lap comes back to lines long gone to memory). 256 KiB through ORBIS_MTVU_RING_MAX_KB.
+// Needs proper testing.
+std::atomic<u32> g_orbis_mtvu_ring_kb{ORBIS_MTVU_RING_MAX_KB};
 // PS4 port (AI-assisted): ring telemetry for the once-a-second GS line. Each counter has one writer;
 // the load+store increments below are deliberate (a locked add per kick would cost more than the event
 // being counted). The writer/reader lines are separate so the telemetry itself does not add sharing.
@@ -100,7 +101,7 @@ void OrbisEEStats(u64 out[8])
 static s32 OrbisRingLimitWords(s32 buffer_words)
 {
 	u32 kb = g_orbis_mtvu_ring_kb.load(std::memory_order_relaxed);
-	kb = std::clamp<u32>(kb, 256u, 16384u);
+	kb = std::clamp<u32>(kb, 256u, ORBIS_MTVU_RING_MAX_KB);
 	return std::min<s32>(buffer_words, static_cast<s32>(kb * 256u)); // KB -> u32s
 }
 namespace

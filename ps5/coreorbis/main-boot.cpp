@@ -1430,20 +1430,22 @@ static bool orbis_vu1_speed_from(const SettingsInterface& si)
     if (old_spin != (spin ? 1 : 0) || old_batch != (batch ? 1 : 0))
       printf("[boot] MTVU: VU thread spin %s, kick batching %s (EmuCore/Speedhacks/OrbisMTVUSpin, OrbisMTVUBatch)\n",
         spin ? "on" : "off", batch ? "on" : "off");
-    // vk-285-90: EmuCore/Speedhacks/OrbisMTVURingKB (256..16384, default 16384 = the whole buffer): the
+    // vk-285-90: EmuCore/Speedhacks/OrbisMTVURingKB (256 KiB through the target maximum, defaulting to the whole buffer): the
     // EE-to-VU ring's length, taken at its next wrap (pcsx2/MTVU.cpp). PS4 port (AI-assisted): 2048 KB
     // there, so Jaguar's small caches still hold the EE's writes when the ring comes around; a setting wins.
-    // Needs proper testing against the whole 16 MB ring.
+    // PS4 also caps the backing store at 2048 KB so the unused upstream maximum is not resident.
     extern std::atomic<u32> g_orbis_mtvu_ring_kb;
 #ifdef ORBIS_PS4
     constexpr int kOrbisMtvuRingDefaultKB = 2048;
+    constexpr int kOrbisMtvuRingMaxKB = 2048;
     const bool ring_user = si.ContainsValue("EmuCore/Speedhacks", "OrbisMTVURingKB");
 #else
     constexpr int kOrbisMtvuRingDefaultKB = 16384;
+    constexpr int kOrbisMtvuRingMaxKB = 16384;
 #endif
     int ring_kb = kOrbisMtvuRingDefaultKB;
     si.GetIntValue("EmuCore/Speedhacks", "OrbisMTVURingKB", &ring_kb);
-    const u32 ring = static_cast<u32>(std::clamp(ring_kb, 256, 16384));
+    const u32 ring = static_cast<u32>(std::clamp(ring_kb, 256, kOrbisMtvuRingMaxKB));
 #ifdef ORBIS_PS4
     static std::atomic<u32> s_ring_logged_value{0};
     static std::atomic<int> s_ring_logged_source{-1};

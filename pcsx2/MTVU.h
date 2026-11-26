@@ -12,12 +12,22 @@
 #define MTVU_LOG(...) do{} while(0)
 //#define MTVU_LOG DevCon.WriteLn
 
+// PS4 port (AI-assisted): the Orbis ring-length setting is already capped by the
+// backing store compiled into the target. PS4 uses a 2 MiB ring because that is its
+// default lap length and the console cannot spare the upstream 16 MiB maximum as
+// always-resident BSS. PS5/other targets keep the upstream maximum.
+#ifdef ORBIS_PS4
+static constexpr u32 ORBIS_MTVU_RING_MAX_KB = 2048;
+#else
+static constexpr u32 ORBIS_MTVU_RING_MAX_KB = 16384;
+#endif
+
 // Notes:
 // - This class should only be accessed from the EE thread...
 // - buffer_size must be power of 2
 // - ring-buffer has no complete pending packets when read_pos==write_pos
 class VU_Thread final {
-	static const s32 buffer_size = (_1mb * 16) / sizeof(s32);
+	static const s32 buffer_size = (ORBIS_MTVU_RING_MAX_KB * 1024) / sizeof(s32);
 
 	u32 buffer[buffer_size];
 	// Note: keep atomic on separate cache line to avoid CPU conflict
