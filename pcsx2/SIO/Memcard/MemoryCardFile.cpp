@@ -148,27 +148,35 @@ static bool ConvertRAWtoNoECC(const char* file_in, const char* file_out)
 	if (!fin)
 		return false;
 
-	auto fout = FileSystem::OpenManagedCFile(file_out, "wb");
-	if (!fout)
-		return false;
-
-	const s64 size = FileSystem::FSize64(fin.get());
-	u8 buffer[512];
-	u8 checksum[16];
-
-	for (s64 i = 0; i < (size / 528); i++)
+	// Never truncate the live card image before the conversion is complete. Write a
+	// sibling temporary and replace the original only after all data reaches storage.
+	const std::string temp_output = std::string(file_out) + ".pcsx2tmp";
+	bool ok = false;
 	{
-		if (std::fread(buffer, sizeof(buffer), 1, fin.get()) != 1 ||
-			std::fwrite(buffer, sizeof(buffer), 1, fout.get()) != 1 ||
-			std::fread(checksum, sizeof(checksum), 1, fin.get()) != 1)
-		{
+		auto fout = FileSystem::OpenManagedCFile(temp_output.c_str(), "wb");
+		if (!fout)
 			return false;
+
+		const s64 size = FileSystem::FSize64(fin.get());
+		u8 buffer[512];
+		u8 checksum[16];
+		ok = size >= 0;
+
+		for (s64 i = 0; ok && i < (size / 528); i++)
+		{
+			ok = std::fread(buffer, sizeof(buffer), 1, fin.get()) == 1 &&
+			     std::fwrite(buffer, sizeof(buffer), 1, fout.get()) == 1 &&
+			     std::fread(checksum, sizeof(checksum), 1, fin.get()) == 1;
 		}
+
+		ok = ok && std::fflush(fout.get()) == 0 && fsync(fileno(fout.get())) == 0;
 	}
 
-	if (std::fflush(fout.get()) != 0)
+	if (!ok || !FileSystem::RenamePath(temp_output.c_str(), file_out))
+	{
+		FileSystem::DeleteFilePath(temp_output.c_str());
 		return false;
-
+	}
 	return true;
 }
 
