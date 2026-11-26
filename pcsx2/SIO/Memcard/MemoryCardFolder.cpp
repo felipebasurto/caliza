@@ -30,6 +30,7 @@
 #include <io.h>
 #else
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 static constexpr u32 MaxFolderDirectoryDepth = 64;
@@ -77,6 +78,25 @@ static std::string MetadataTempFileName(const std::string& metaFileName)
 	return metaFileName.substr(0, slash + 1) + "_pcsx2_write_" + metaFileName.substr(slash + 1);
 }
 
+static void SyncParentDirectoryBestEffort(const char* filename)
+{
+#ifndef _WIN32
+	std::string parent(Path::GetDirectory(filename));
+	if (parent.empty())
+		parent = ".";
+	const int fd = open(parent.c_str(), O_RDONLY);
+	if (fd >= 0)
+	{
+		// Orbis/Linux directory fsync support is filesystem-dependent. This is best-effort:
+		// the write is already complete and must not be reinterpreted as failed here.
+		(void)fsync(fd);
+		close(fd);
+	}
+#else
+	(void)filename;
+#endif
+}
+
 static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const char* filename, bool ok)
 {
 	if (!ok)
@@ -91,6 +111,7 @@ static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const cha
 		Console.ErrorFmt("FolderMcd: metadata write failed; could not replace '{}'", filename);
 		return false;
 	}
+	SyncParentDirectoryBestEffort(filename);
 	return true;
 }
 
