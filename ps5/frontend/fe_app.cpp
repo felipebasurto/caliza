@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cerrno>
 #include <cstdio>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -1375,6 +1376,36 @@ void App::UpdateSheet(double dt, const Input& in)
 				if (BiosReady()) // vk-285-134: the PS2's own menu is the BIOS
 				{
 					m_system_menu = true;
+					m_launching = true;
+					m_launch_time = m_time;
+					Sound(Sfx::Launch, 0.0f);
+				}
+			}
+		}
+		return;
+	}
+
+	// PS4 port (AI-assisted): "Smart tune" (a game's sheet): Cross twice starts the game with the
+	// tuner armed. The flag file is the boot's one-shot signal; it is consumed (deleted) there, so
+	// a write failure simply means no tuning for this launch rather than a stuck later one.
+	if (row.kind == OptionsSheet::Kind::SmartTune)
+	{
+		if (pressed(in.cross, m_prev.cross))
+		{
+			after(m_sheet.Activate(row, now));
+			if (m_sheet.TakeSmartTune())
+			{
+				CloseSheet();
+				if (BiosReady())
+				{
+					FILE* f = std::fopen("/data/PCSX2/flags/smarttune", "w");
+					if (f)
+					{
+						std::fputs("experimental: measure graphics configs while playing\n", f);
+						std::fclose(f);
+					}
+					else
+						std::printf("[frontend] smart tune: can't write flags/smarttune (errno %d); the game starts untuned\n", errno);
 					m_launching = true;
 					m_launch_time = m_time;
 					Sound(Sfx::Launch, 0.0f);

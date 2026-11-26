@@ -370,6 +370,7 @@ SHIM_SRCS := $(CO)/orbis-shims/ProsperoInput.cpp $(CO)/orbis-shims/ProsperoCDVD.
   $(CO)/orbis-shims/ProsperoAchievementBrowser.cpp \
   $(CO)/orbis-shims/orbis_gs_shaders.cpp \
   $(CO)/orbis-shims/ps5_framegen.cpp \
+  $(CO)/orbis-shims/ProsperoSmartTune.cpp \
   $(CO)/orbis-shims/OrbisNfs.cpp
 
 # PS4: OpenOrbis' C library lists folders itself (link-radv.sh leaves dirshim out on the PS5 too).

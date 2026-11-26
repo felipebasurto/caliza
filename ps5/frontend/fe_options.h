@@ -106,6 +106,7 @@ public:
 		NfsShares,   // vk-285-135: NFS shares' addresses (the app's list, the PS5's keyboard)
 		CheatDisc,   // vk-285-139: the sheet for all games: the cheat disc (kCheatDiscKey, one of the shelf's images)
 		Bios,        // PS4 port (AI-assisted): which BIOS file a game starts with (PCSX2's Filenames/BIOS)
+		SmartTune,   // PS4 port (AI-assisted): measure graphics configs while playing, keep the best full-speed one
 	};
 
 	enum class From
@@ -140,6 +141,14 @@ public:
 	{
 		const bool asked = m_system_menu;
 		m_system_menu = false;
+		return asked;
+	}
+	// PS4 port (AI-assisted): same take-once pattern as TakeSystemMenu: the app's launch adds the
+	// smarttune flag file so the boot arms the tuner for exactly this game start.
+	bool TakeSmartTune()
+	{
+		const bool asked = m_smart_tune;
+		m_smart_tune = false;
 		return asked;
 	}
 	// vk-285-135: the sheet for all games gets the Folders rows (game folders, BIOS folder, NFS shares). Cross on one asks
@@ -220,6 +229,7 @@ private:
 	bool m_texture_pack_row = false;
 	bool m_online_patch_row = false; // 2026-10-08
 	bool m_system_menu_row = false, m_system_menu = false; // 2026-10-08
+	bool m_smart_tune = false; // PS4 port (AI-assisted)
 	bool m_folder_rows = false; // vk-285-135
 	Kind m_folder_request = Kind::Header;
 	bool m_elf = false; // 2026-10-08: this sheet's game is an ELF (the Disc image row)

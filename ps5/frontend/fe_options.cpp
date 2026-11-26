@@ -637,6 +637,10 @@ void OptionsSheet::BuildRows()
 		// 2026-10-05 (AI-assisted): the game's HD texture pack, under Texture replacements.
 		if (g.title == "Graphics" && m_texture_pack_row && !m_global && !m_serial.empty())
 			add(Kind::TexturePack, "HD texture pack");
+		// PS4 port (AI-assisted): the experimental auto-tuner, per game only, next to the other
+		// graphics rows. needs proper testing on hardware before trusting its picks.
+		if (g.title == "Graphics" && !m_global && !m_serial.empty())
+			add(Kind::SmartTune, "Smart tune");
 	}
 	// PS4 port (AI-assisted): which BIOS, for all games or for this one (a USA game with an NTSC BIOS, say).
 	if (settings && !m_paths.bios_dir.empty())
@@ -754,6 +758,8 @@ std::string OptionsSheet::Value(const Row& r) const
 		}
 		case Kind::SystemMenu:
 			return "Start";
+		case Kind::SmartTune:
+			return "Test";
 		case Kind::GameFolders: // vk-285-135
 		{
 			const size_t n = SplitFolderList(OwnValue(kGameFoldersKey)).size();
@@ -959,6 +965,12 @@ std::string OptionsSheet::Help(const Row& r) const
 		case Kind::SystemMenu:
 			return "Cross twice: the PS2's own menu with no disc in, as a PS2 with its tray empty: the memory card browser (copy and "
 			       "delete saves), the clock, the language. The memory cards set here are in the slots. Back to the shelf as from a game.";
+		case Kind::SmartTune:
+			return "Cross twice starts the game and tries the graphics options that matter here (resolution first, then the cheaper "
+			       "extras), a few seconds each, while you play. Get into real gameplay before the countdown ends: menus are light and "
+			       "would make every option look fine. The best one that still holds full speed is kept for this game. Experimental: "
+			       "unproven on hardware, and a wrong scene can mislead it (re-run it anywhere). It never changes the settings for all "
+			       "games, and a game too heavy even at 1x gets its old settings back.";
 		case Kind::OnlinePatches:
 			return "Cross: fetch this game's patches from PCSX2's patch list and Gabominated's 50/60 fps and widescreen patches, and its "
 			       "cheats, from GitHub (by the game's serial and CRC). They show up here, each off until you turn it on. Your own files "
@@ -1301,6 +1313,19 @@ bool OptionsSheet::Activate(const Row& r, double now)
 			m_system_menu = true;
 			m_status = "Starting the PS2 system menu";
 			std::printf("[options] the PS2 system menu asked for\n");
+			return true;
+		case Kind::SmartTune: // PS4 port (AI-assisted): same arm pattern; the app adds the launch flag
+			if (!(m_armed_row == index && now < m_armed_until))
+			{
+				m_armed_row = index;
+				m_armed_until = now + 4.0;
+				m_status = "Press again: the game starts and tests itself WHILE YOU PLAY";
+				return false;
+			}
+			m_armed_row = -1;
+			m_smart_tune = true;
+			m_status = "Smart tune set: reach real gameplay before the countdown ends";
+			std::printf("[options] smart tune asked for %s\n", m_serial.c_str());
 			return true;
 		case Kind::Recommended:
 		case Kind::ResetAll:

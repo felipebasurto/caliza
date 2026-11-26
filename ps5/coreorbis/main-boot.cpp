@@ -3559,6 +3559,22 @@ int main()
       s_game_path.substr(s_game_path.rfind('/') + 1).c_str(), from.c_str(), orbis_ini_summary(s_game_ini_path).c_str(),
       orbis_ini_summary("/data/PCSX2/gs.ini").c_str());
   }
+  // Smart tune (AI-assisted): the shelf's smart-tune row leaves flags/smarttune in place for this
+  // launch; consume it exactly once so a crash or a later normal launch never re-arms the tuner.
+  // The thread counts down its lead-in while the user reaches real gameplay. needs proper testing.
+  if (!system_menu && access("/data/PCSX2/flags/smarttune", F_OK) == 0)
+  {
+    if (remove("/data/PCSX2/flags/smarttune") == 0)
+    {
+      void OrbisSmartTuneStart();
+      OrbisSmartTuneStart();
+      printf("[boot] smart tune armed: measuring while you play; stay in game, not in menus\n");
+    }
+    else
+      printf("[boot] smart tune: can't consume flags/smarttune (errno %d); not armed\n", errno);
+    fflush(stdout);
+  }
+
   // 2026-10-05 (AI-assisted): rich toasts (RetroAchievements' login and game summary) wait for the game's first 12 s:
   // sent in its first seconds, they showed without their pictures (orbis-shims/ProsperoNotify.cpp, the pacing).
   OrbisNotifyHold(12);

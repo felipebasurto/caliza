@@ -89,6 +89,11 @@ std::atomic<int> g_orbis_qr_show{0}; // 1: the settings page's QR code and addre
 // The page's address as a QR code (fe_ps5.cpp): its modules, one byte each row by row, the side length, and the
 // "192.168.1.20:8844" it is shown as; false without a web server or a network.
 extern bool orbis_web_qr(std::vector<unsigned char>& modules, int& size, std::string& shown);
+// Smart tune (AI-assisted, ProsperoSmartTune.cpp): while the tuner measures, its two status
+// lines take over the overlay box so the user always knows a test is in progress and why.
+extern std::atomic<int> g_orbis_tune_active;
+extern char g_orbis_tune_line1[64];
+extern char g_orbis_tune_line2[64];
 // ---- eerec-285: live gs.ini reload flags; CPU placement sampling and pinning ----
 #include <pthread.h>
 #include <sys/param.h> // vk-285-87: cpuset_setaffinity (pin_all)
@@ -1893,7 +1898,10 @@ static void OrbisGLOSD(bool generated = false)
 #else
 	const char* const fg_mark = "";
 #endif
-	if (g_orbis_osd_text_frames.load(std::memory_order_acquire) > 0) // eerec-282
+	const bool tune_active = g_orbis_tune_active.load(std::memory_order_acquire) != 0;
+	if (tune_active)
+		snprintf(text, sizeof(text), "%.47s", g_orbis_tune_line1);
+	else if (g_orbis_osd_text_frames.load(std::memory_order_acquire) > 0) // eerec-282
 	{
 		if (!generated)
 			g_orbis_osd_text_frames.fetch_sub(1, std::memory_order_relaxed);
@@ -1933,7 +1941,9 @@ static void OrbisGLOSD(bool generated = false)
 
 	// vk-285-12: second line, the game's frame size and the size it is drawn at on screen.
 	char text2[48] = {};
-	if (have_text && show_fps && s_orbis_res[0] > 0)
+	if (tune_active)
+		snprintf(text2, sizeof(text2), "%.47s", g_orbis_tune_line2);
+	else if (have_text && show_fps && s_orbis_res[0] > 0)
 		snprintf(text2, sizeof(text2), "%dx%d > %dx%d", s_orbis_res[0], s_orbis_res[1], s_orbis_res[2], s_orbis_res[3]);
 
 	// vk-285-113: the box is the text (one line 50 px, two 80) and, when the graph is on, the graph under it.
