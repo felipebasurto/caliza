@@ -153,7 +153,13 @@ u32 FLASHread32(u32 addr, int size)
 	switch (addr)
 	{
 		case FLASH_R_DATA:
-			memcpy(&value, &data[counter], size);
+			value = 0;
+			// Data-register accesses can be mixed widths. Do not let a wide access
+			// crossing the end of the small page staging buffer read outside it;
+			// wrap inside the staging page, while the refill logic below still sees
+			// the unwrapped counter and advances to the next flash page afterwards.
+			for (int i = 0; i < size; i++)
+				value |= static_cast<u32>(data[(counter + static_cast<u32>(i)) % PAGE_SIZE_ECC]) << (8 * i);
 			counter += size;
 			DevCon.WriteLn("DEV9: *FLASH DATA %dbit read 0x%08lX %s", size * 8, value, (ctrl & FLASH_PP_READ) ? "READ_ENABLE" : "READ_DISABLE");
 			if (cmd == SM_CMD_READ3)
@@ -233,7 +239,8 @@ void FLASHwrite32(u32 addr, u32 value, int size)
 		case FLASH_R_DATA:
 
 			DevCon.WriteLn("DEV9: *FLASH DATA %dbit write 0x%08lX %s", size * 8, value, (ctrl & FLASH_PP_WRITE) ? "WRITE_ENABLE" : "WRITE_DISABLE");
-			memcpy(&data[counter], &value, size);
+			for (int i = 0; i < size; i++)
+				data[(counter + static_cast<u32>(i)) % PAGE_SIZE_ECC] = static_cast<u8>(value >> (8 * i));
 			counter += size;
 			counter %= PAGE_SIZE_ECC; //should not get past the last byte, but at the end
 			break;
