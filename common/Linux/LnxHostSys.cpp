@@ -365,17 +365,17 @@ static inline u64 OrbisMcontext(void* ctx, u32 field)
 	return value;
 }
 #endif
-static bool s_pf_crashing = false;
+static bool s_pf_crashing = false; // accessed only through atomic builtins in the signal handler
 
-extern "C" volatile unsigned long long orbis_fault_count;
+extern "C" unsigned long long orbis_fault_count;
 void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 {
-	orbis_fault_count++;
+	const unsigned long long fault_count = __atomic_add_fetch(&orbis_fault_count, 1, __ATOMIC_RELAXED);
 	// Orbis: log EVERY fault at entry (before any handling). Lets us reconstruct
 	// primary->secondary chains when a handler forwards or mishandles.
 	// vk-285-64: fastmem backpatches a code site on its first fault, and a game can fault
 	// thousands of times while it runs its first frames: the first 64 and every 4096th.
-	if (orbis_fault_count <= 64 || (orbis_fault_count & 4095) == 0)
+	if (fault_count <= 64 || (fault_count & 4095) == 0)
 	{
 		FILE* f = fopen(g_orbis_pf_log, "a");
 		if (f)
@@ -464,9 +464,8 @@ void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 	}
 	// Orbis: prevent a fault-storm (fault while the crash dumper runs) from
 	// looping and taking the kernel down. A recursive fault bails immediately.
-	if (s_pf_crashing)
+	if (__atomic_exchange_n(&s_pf_crashing, true, __ATOMIC_SEQ_CST))
 		_exit(1);
-	s_pf_crashing = true;
 	CrashHandler::CrashSignalHandler(sig, info, ctx);
 	_exit(1);
 }

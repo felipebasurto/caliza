@@ -823,6 +823,7 @@ void read_asset_text(const char *path, std::span<char> destination,
             break;
         (void)sceVideoOutWaitVblank(video);
     }
+    halt("Hello World: video flip failed");
 }
 
 // ---- vk-285-30: the game selector's screen ----

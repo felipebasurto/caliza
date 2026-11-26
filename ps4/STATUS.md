@@ -2,7 +2,7 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `be0a489`; binary artifact validated at `8ba9983` (the analyzer-only commit does not change the binary).
+Last updated: 2026-11-26 after the warning-triage fixes; binary artifact validated at the current uncommitted warning-fix state.
 
 ## Current repository state
 
@@ -110,11 +110,11 @@ Last updated: 2026-11-26 after commit `be0a489`; binary artifact validated at `8
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at commit `8ba9983` (includes the RW-only fallback invariant from `3882a5f`; `be0a489` only changes host-side log analysis):
+Built in the Linux x86_64 OpenOrbis container at the current warning-triage state (includes storage durability, input-cache invalidation, and the RW-only fallback invariant):
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,110,480 bytes**, SHA-256 `9e91b5746e051d10227c17f573bd08d374e83255dcd3ece22d13447ab05e9a09`.
-- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `f022ab09c227e7f697b67d18c72385b75c065188687f699fb0274965ce0fff96`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `6d0229b5bd6cc2193646865ac210e7726715e1af8ed96508e0fad8d806656f36`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **148,110,424 bytes**, SHA-256 `b2216fdc373824db5a4e5116793e18bca26f771441e801e852c1c750314734dd`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `8c96edfe3f595cc0eee9488efe3e3443ead2945a5b9799044e0d037768eadd0a`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `74fb85bb91ccc8a7a5b4793fb7f869c176c8803bef512c7e05d6a226f7792a82`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -126,10 +126,10 @@ Built in the Linux x86_64 OpenOrbis container at commit `8ba9983` (includes the 
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate71-mcd-mec.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate72-warning-fixes.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current storage-durability package is `candidate71` evidence |
+| Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current warning-fix package is `candidate72` evidence |
 | Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |

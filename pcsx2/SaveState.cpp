@@ -489,9 +489,9 @@ protected:
 	virtual ~MemorySavestateEntry() = default;
 
 public:
-	virtual bool FreezeIn(zip_file_t* zf) const;
-	virtual bool FreezeOut(SaveStateBase& writer) const;
-	virtual bool IsRequired() const { return true; }
+	bool FreezeIn(zip_file_t* zf) const override;
+	bool FreezeOut(SaveStateBase& writer) const override;
+	bool IsRequired() const override { return true; }
 	bool GetDirectData(const u8*& data, u32& size) const override
 	{
 		data = GetDataPtr();

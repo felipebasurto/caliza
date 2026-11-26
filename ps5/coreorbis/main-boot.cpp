@@ -1135,8 +1135,8 @@ static void *orbis_pad_thread(void *)
 }
 } // namespace
 
-extern "C" volatile unsigned long long orbis_fault_count;
-volatile unsigned long long orbis_fault_count = 0;
+extern "C" unsigned long long orbis_fault_count;
+unsigned long long orbis_fault_count = 0;
 
 extern "C" int g_jailbreak_ok = 0;
 #ifndef ORBIS_VULKAN
@@ -3861,7 +3861,7 @@ int main()
 
   // Memory budget probe: measure what the bigapp actually grants.
   {
-    unsigned long long cfg = 0, avail = 0, dphys = 0, dsize = 0;
+    unsigned long long cfg = 0, avail = 0, dsize = 0;
     sceKernelConfiguredFlexibleMemorySize(&cfg);
     sceKernelAvailableFlexibleMemorySize(&avail);
     long long pa = 0;
@@ -4084,9 +4084,9 @@ int main()
       for (unsigned long long i = 0; i < 10000000ULL; i++)
         sumB += memRead32(0x9FC42BE0ULL + ((u32)i & 0x3FF) * 4);
       auto a2 = std::chrono::steady_clock::now();
-      printf("[boot] bench: 10M phys-rom reads = %.1fms, 10M kseg1-rom reads = %.1fms\n",
+      printf("[boot] bench: 10M phys-rom reads = %.1fms, 10M kseg1-rom reads = %.1fms (sums %x/%x)\n",
         std::chrono::duration<double, std::milli>(a1 - a0).count(),
-        std::chrono::duration<double, std::milli>(a2 - a1).count());
+        std::chrono::duration<double, std::milli>(a2 - a1).count(), sumA, sumB);
       fflush(stdout);
     }
 
