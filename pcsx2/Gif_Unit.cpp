@@ -217,7 +217,7 @@ bool SaveStateBase::gifPathFreeze(u32 path)
 		const bool validPathState = gifPath.buffSize == realBuffSize && gifPath.buffLimit == realBuffLimit &&
 			gifPath.idx == realPathIndex && gifPath.curSize <= realBuffSize &&
 			gifPath.curOffset <= gifPath.curSize && gifPath.gsPack.size <= gifPath.curOffset &&
-			gifPath.gsPack.offset <= realBuffSize && gifPath.dmaRewind <= gifPath.curSize &&
+			gifPath.gsPack.offset <= realBuffSize && gifPath.dmaRewind <= realBuffSize - gifPath.curSize &&
 			gifPath.gifTag.len <= realBuffSize && gifPath.gifTag.nLoop <= 32767 &&
 			gifPath.gifTag.nRegs <= 16 && gifPath.gifTag.nRegIdx <= 16 &&
 			g_orbis_gif_fake.count[path] <= MTGS::RingBufferSize &&
