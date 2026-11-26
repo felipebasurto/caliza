@@ -27,6 +27,8 @@
 1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract.
 2. Compiler warning count is 148 in baseline and not triaged.
 3. No automatic fallback to interpreter if executable memory cannot be validated; allocation now fails clearly instead of accepting non-executable memory.
+4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
+5. JIT shared-memory ownership remains incomplete on the PS5-only opt-in path because the kernel handle is lost; do not reintroduce those imports on PS4.
 
 ## Documentation/evidence gaps
 

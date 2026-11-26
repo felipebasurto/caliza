@@ -9,14 +9,14 @@ PCSX2's recompilers require writable memory that becomes executable. The port cu
 - code memory normally uses direct memory, RW followed by `sceKernelMprotect` to RWX;
 - PS5 JIT shared-memory functions are not used by default and, after tonight's patch, are not dynamically imported in PS4 builds.
 
-CEMUPS4 evidence shows executable-memory behavior is firmware/loader dependent. Its runtime probes write and execute a one-byte `ret` under fault protection before choosing system flexible, regular flexible, or direct memory. PS4SX2 now probes execution before accepting direct code memory, but the complete firmware matrix still requires hardware validation. On hardware, record:
+CEMUPS4 evidence shows executable-memory behavior is firmware/loader dependent. PS4SX2 now writes and executes a one-byte `ret` under fault protection on first/middle/last pages before accepting direct code memory. The probe is PS4-scoped, rejects mappings when its guard cannot be installed, and uses direct byte stores rather than interrupting libc `memcpy`; the complete firmware matrix still requires hardware validation. On hardware, record:
 
 - `[memmap] code memory direct RWX ...` success/failure;
 - `[jitprobe] skipped on PS4 (direct memory runtime)`;
 - any `fastmem` or Memory.cpp failure lines;
 - whether the first recompiled block executes or the process crashes.
 
-A future P1 improvement is a small runtime execution probe before committing recompiler memory, plus a clear user-facing failure if no executable source exists.
+The remaining P1 improvement is an explicit interpreter/non-fastmem fallback policy when no executable source exists. Memory initialization currently fails clearly rather than accepting non-executable memory.
 
 ## GPU/renderer
 

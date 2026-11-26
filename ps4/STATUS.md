@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after commit `ae30f34`.
+Last updated: 2026-11-26 after commit `d5aa34b`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate: **43 local commits** on top of the baseline.
+- Current candidate: **49 local commits** on top of the baseline.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -57,6 +57,12 @@ Last updated: 2026-11-26 after commit `ae30f34`.
 41. `587d2f8` — bound network-share boot checks with parallelism.
 42. `194568a` — record parallel-netfs and libc interposition evidence.
 43. `ae30f34` — persist VM boot stages in boot trace.
+44. `fe5e0ea` — record final boot-trace artifact evidence.
+45. `7bc8f23` — harden parallel network-share workers.
+46. `a7822cb` — harden memory and fastmem initialization failure paths.
+47. `f3e8984` — report persistent boot-trace milestones in log analysis.
+48. `038b24f` — extract and host-test WSI present decisions.
+49. `d5aa34b` — integrate memory probe and fastmem review fixes.
 
 ## Completed work
 
@@ -67,7 +73,10 @@ Last updated: 2026-11-26 after commit `ae30f34`.
 | P0-HOSTTESTS | Repeatable host validation | done/pass | frame pacing 911/911, kbm, padmap, texture roots, package validator all pass |
 | P0-IMPORTS | Correct dynamic import audit | done/pass | current candidate: **257 dynamic imports, 0 unresolved, 0 known PS5-only** |
 | P1-JIT | Remove unsafe PS5-only JIT imports on PS4 | implemented, console-unverified | no `sceKernelJitCreate/MapSharedMemory` dynamic imports remain |
-| P1-MEMPROBE | Runtime executable-memory validation | implemented, console-unverified | PS4-scoped guarded `ret` probes cover first/middle/last pages; both direct-memory permission transitions are tried; release tracking no longer uses the null shared-mapping path |
+| P1-MEMPROBE | Runtime executable-memory validation | implemented, console-unverified | PS4-scoped guarded `ret` probes cover first/middle/last pages; both direct-memory permission transitions are tried; release tracking no longer uses the null shared-mapping path; probe-specific signal state is thread-local |
+| P1-FASTMEM | Fastmem allocation degradation | implemented, console-unverified | `CHECK_FASTMEM` now includes runtime fastmem availability, so Orbis reservation failure degrades to non-fastmem recompiler paths instead of leaving empty lookup state; the page-fault handler is installed unconditionally for slowmem SMC protection, partial setup rolls back, and desktop fatal-on-reservation-failure behavior is preserved |
+| P1-BOOTFAIL | Memory initialization failure behavior | implemented, console-unverified | CPU/memory initialization and pre-reset failure now log persistent boot-trace milestones and terminate the boot cleanly instead of continuing with invalid memory |
+| P1-WSI-DECIDE | WSI decision logic testability | implemented/host-tested | pure acquire/flip decision helpers extracted without behavior change; host tests pin round-robin availability, scanout reuse, fallback, and sign semantics |
 | P0-LEGAL | BIOS/package compliance | done/build-validated | no BIOS bundled; GPL/source/asset/third-party notices staged |
 | P1-INPUT | Controller disconnect/stuck-input robustness | implemented, console-unverified | neutral input on disconnect, pad thread survives missing initial handle, hotplug retry once per second |
 | P1-PADBYTE | PS4 pad connected-byte uncertainty | fail-safe diagnostics added | PS4 fails open until the byte is observed nonzero; first data window is logged for console verification |
@@ -81,11 +90,11 @@ Last updated: 2026-11-26 after commit `ae30f34`.
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container after commit `ae30f34`:
+Built in the Linux x86_64 OpenOrbis container after commit `d5aa34b`:
 
-- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,974,720 bytes**, SHA-256 `77764032caff372e8fff28284106e9a0871fc40b1e7e06cc391e74b525f9bbec`.
-- eboot `/tmp/ps4candidate1/build/stage/eboot.bin`: **41,020,656 bytes**, SHA-256 `34080e800fa7a34bd5a867fcf5db215568ce3da57f7655d3b9099637b5d4da2a`.
-- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `56f6b7885ebcec93253d40420f9dec848c65107d3514dd90ac1444a8de8b7665`.
+- ELF `/tmp/ps4candidate1/build/link/pcsx2`: **147,958,912 bytes**, SHA-256 `ef1778be25c7c474bb1c68593bb05ced87644e98e70f9d7a870e077a49d59257`.
+- eboot `/tmp/ps4candidate1/build/link/pcsx2_eboot/eboot.bin`: **41,020,656 bytes**, SHA-256 `9cd1da5cda22bb8df007dfee4024800102090674ac23a6ee3350aabbf754d835`.
+- PKG `/tmp/ps4candidate1/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,686,336 bytes**, SHA-256 `a526ae8fcc89b85047e0e0e37f9f3ee3dc48856f05c889993fa352928e157284`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
@@ -97,13 +106,14 @@ Built in the Linux x86_64 OpenOrbis container after commit `ae30f34`:
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate36-boottrace.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate45-final-memory.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
-| Host tests | PASS | `ps4/logs/host-tests-boottrace.log` |
+| Host tests | PASS | `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
+| WSI decision host test | PASS | round-robin/image availability, scanout reuse, FIFO/immediate mode, GPU-flip fallback, and final-flip sign semantics |
 | Package validator negative/positive tests | PASS | same |
 | Savestate structural validator negative/positive tests | PASS | same; use `ps4/tools/validate_savestate.py` on states pulled from console |
 | Real console boot | NOT RUN | no confirmed console access in this session |
@@ -134,6 +144,11 @@ Built in the Linux x86_64 OpenOrbis container after commit `ae30f34`:
 9. Analyze the collected logs with `python3 ps4/tools/analyze_console_logs.py --expect-input --expect-wsi --expect-audio --expect-state --expect-gameplay /tmp/ps4-logs/*` and investigate every FAIL before changing performance settings.
 
 ## New audit evidence since the previous checkpoint
+
+- **Memory/fastmem hardening:** repeated Orbis Reset/CPU allocation is now idempotent for the memory map, IOP LUT, and VTLB core; fastmem availability is a runtime predicate rather than a configuration-only assumption; Orbis fastmem reservation failure therefore degrades coherently instead of leaving an empty reservation in use, while the fault handler required by slowmem SMC protection is still installed. This is compile/link/package validated only and still requires hardware fault-injection or real console evidence.
+- **Boot failure contract:** `CPUThreadInitialize` and pre-initialize `SysMemory::Reset` failures now terminate the boot cleanly after persistent boot-trace milestones. The analyzer reports the latest persistent `[pcsx2]` milestone and warns when it is a failure milestone.
+- **Memory-probe review integration:** the production probe no longer faults inside libc `memcpy`, disarms before handler restoration, and the PS4 fallback tracks the exact successful in/out mapping pointer rather than relying on failed kernel calls to preserve hints. The diagnostic memprobe now uses PS4 direct-memory type 0, fails closed if its guard cannot install, confines longjmp to the probing thread, chains unrelated faults, and releases JIT/alias test reservations.
+- **WSI decision extraction:** pure helpers now pin the existing acquire/reuse and flip-fallback semantics. No behavior change is intended; the extraction is host-tested and the PS4 package still builds with 257 dynamic imports, 0 unresolved, and no known PS5-only imports.
 
 - **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.
 - **Hot-order file:** exact symbol coverage in the current non-LTO candidate is 362/397. Most missing entries are stale PS5 recorder symbols (`ps5vk_record_*`) or STL hash-table instantiations whose mangled names changed when Orbis node allocators/libc++ details changed; `V_VolumeSlide::Update` is now `UpdateSlide`, and `__emutls_get_address` is absent. The order file still must not be treated as Jaguar-tuned.
