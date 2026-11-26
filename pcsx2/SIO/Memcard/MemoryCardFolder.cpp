@@ -26,6 +26,12 @@
 #include <chrono>
 #include <new>
 
+static constexpr u32 MaxImplementedFatClusters =
+	static_cast<u32>(FolderMemoryCard::IndirectFatClusterCount) *
+	static_cast<u32>(FolderMemoryCard::ClusterSize / 4) *
+	static_cast<u32>(FolderMemoryCard::ClusterSize / 4);
+static constexpr u32 MaxFolderDirectoryDepth = 64;
+
 // A helper function to parse the YAML file
 static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
 {
@@ -741,23 +747,35 @@ MemoryCardFileMetadataReference* FolderMemoryCard::AddDirEntryToMetadataQuickAcc
 MemoryCardFileMetadataReference* FolderMemoryCard::AddFileEntryToMetadataQuickAccess(MemoryCardFileEntry* const entry, MemoryCardFileMetadataReference* const parent)
 {
 	const u32 firstFileCluster = entry->entry.data.cluster;
-	u32 fileCluster = firstFileCluster;
 
 	// zero-length files have no file clusters
-	if (fileCluster == 0xFFFFFFFFu)
-	{
+	if (firstFileCluster == 0xFFFFFFFFu)
 		return nullptr;
-	}
 
+	u32 clusterIndex = firstFileCluster & NextDataClusterMask;
+	if (clusterIndex >= MaxImplementedFatClusters)
+		return nullptr;
+
+	// FAT contents can be influenced by guest writes. Never index the fixed FAT
+	// backing with an unchecked link, and bound cyclic chains even though valid
+	// file chains terminate at LastDataCluster. Needs proper testing.
 	u32 clusterNumber = 0;
-	do
+	while (clusterNumber < MaxImplementedFatClusters)
 	{
-		MemoryCardFileMetadataReference* ref = &m_fileMetadataQuickAccess[fileCluster & NextDataClusterMask];
+		MemoryCardFileMetadataReference* ref = &m_fileMetadataQuickAccess[clusterIndex];
 		ref->parent = parent;
 		ref->entry = entry;
 		ref->consecutiveCluster = clusterNumber;
 		++clusterNumber;
-	} while ((fileCluster = m_fat.data[0][0][fileCluster & NextDataClusterMask]) != (LastDataCluster | DataClusterInUseMask));
+
+		const u32 nextCluster = m_fat.data[0][0][clusterIndex];
+		if (nextCluster == (LastDataCluster | DataClusterInUseMask))
+			break;
+
+		clusterIndex = nextCluster & NextDataClusterMask;
+		if (clusterIndex >= MaxImplementedFatClusters)
+			break;
+	}
 
 	return &m_fileMetadataQuickAccess[firstFileCluster & NextDataClusterMask];
 }
@@ -1300,148 +1318,162 @@ void FolderMemoryCard::FlushFileEntries()
 	}
 }
 
-void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainingFiles, const std::string& dirPath, MemoryCardFileMetadataReference* parent)
+void FolderMemoryCard::FlushFileEntries(const u32 dirCluster, const u32 remainingFiles, const std::string& dirPath, MemoryCardFileMetadataReference* parent, const u32 directoryDepth)
 {
-	// flush the current cluster
-	FlushCluster(dirCluster + m_superBlock.data.alloc_offset);
+	if (directoryDepth >= MaxFolderDirectoryDepth || dirCluster >= MaxImplementedFatClusters)
+		return;
 
-	// if either of the current entries is a subdir, flush that too
-	MemoryCardFileEntryCluster* entries = &m_fileEntryDict[dirCluster];
-	const u32 filesInThisCluster = std::min(remainingFiles, 2u);
-	for (unsigned int i = 0; i < filesInThisCluster; ++i)
+	// Directory chains are sequential, so they do not need recursion. Bound the
+	// chain explicitly; subdirectory recursion is separately depth-capped because
+	// malformed entries can otherwise form reference cycles. Valid deep directory
+	// chains of more than 64 clusters remain fully supported. Needs proper testing.
+	u32 currentCluster = dirCluster;
+	u32 filesRemaining = remainingFiles;
+	u32 chainSteps = 0;
+	while (currentCluster < MaxImplementedFatClusters && chainSteps < MaxImplementedFatClusters)
 	{
-		MemoryCardFileEntry* entry = &entries->entries[i];
-		if (entry->IsValid() && entry->IsUsed())
+		++chainSteps;
+		// flush the current cluster
+		FlushCluster(currentCluster + m_superBlock.data.alloc_offset);
+
+		// if either of the current entries is a subdir, flush that too
+		MemoryCardFileEntryCluster* entries = &m_fileEntryDict[currentCluster];
+		const u32 filesInThisCluster = std::min(filesRemaining, 2u);
+		for (unsigned int i = 0; i < filesInThisCluster; ++i)
 		{
-			if (entry->IsDir())
+			MemoryCardFileEntry* entry = &entries->entries[i];
+			if (entry->IsValid() && entry->IsUsed())
 			{
-				if (!entry->IsDotDir())
+				if (entry->IsDir())
 				{
-					char cleanName[sizeof(entry->entry.data.name)];
-					memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
-					bool filenameCleaned = FileAccessHelper::CleanMemcardFilename(cleanName);
-					const std::string subDirPath(Path::Combine(dirPath, cleanName));
-
-					if (m_performFileWrites)
-					{
-						// if this directory has nonstandard metadata, write that to the file system
-						const std::string fullSubDirPath(Path::Combine(m_folderName, subDirPath));
-						std::string metaFileName(Path::Combine(fullSubDirPath, "_pcsx2_meta_directory"));
-						if (!FileSystem::DirectoryExists(fullSubDirPath.c_str()))
-						{
-							FileSystem::CreateDirectoryPath(fullSubDirPath.c_str(), false);
-						}
-
-						// TODO: This logic doesn't make sense. If it's not a directory, create it, then open it as a file?!
-						if (filenameCleaned || entry->entry.data.mode != MemoryCardFileEntry::DefaultDirMode || entry->entry.data.attr != 0)
-						{
-							if (auto metaFile = FileSystem::OpenManagedCFile(metaFileName.c_str(), "wb"); metaFile)
-							{
-								std::fwrite(entry->entry.raw, sizeof(entry->entry.raw), 1, metaFile.get());
-							}
-						}
-						else
-						{
-							// if metadata is standard make sure to remove a possibly existing metadata file
-							if (FileSystem::FileExists(metaFileName.c_str()))
-							{
-								FileSystem::DeleteFilePath(metaFileName.c_str());
-							}
-						}
-
-						// write the directory index
-						metaFileName = Path::Combine(fullSubDirPath, "_pcsx2_index");
-						std::optional<ryml::Tree> yaml = loadYamlFile(metaFileName.c_str());
-
-						// if _pcsx2_index hasn't been made yet, start a new file
-						if (!yaml.has_value())
-						{
-							const char initialData[] = "{$ROOT: {timeCreated: 0, timeModified: 0}}";
-							ryml::Tree newYaml = ryml::parse_in_arena(ryml::to_csubstr(initialData));
-							ryml::NodeRef newNode = newYaml.rootref()["$ROOT"];
-							newNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
-							newNode["timeModified"] << entry->entry.data.timeModified.ToTime();
-							SaveYAMLToFile(metaFileName.c_str(), newYaml);
-						}
-						else if (!yaml.value().empty())
-						{
-							ryml::NodeRef index = yaml.value().rootref();
-
-							// Detect broken index files, every index file should have atleast ONE child ('[$%]ROOT')
-							if (!index.has_children())
-							{
-								AttemptToRecreateIndexFile(fullSubDirPath);
-								yaml = loadYamlFile(metaFileName.c_str());
-								index = yaml.value().rootref();
-							}
-
-							ryml::NodeRef entryNode;
-							if (index.has_child("%ROOT"))
-							{
-								// NOTE - working around a rapidyaml issue that needs to get resolved upstream
-								// '%' is a directive in YAML and it's not being quoted, this makes the memcards backwards compatible
-								// switched from '%' to '$'
-								// NOTE - this issue has now been resolved, but should be preserved for backwards compatibility
-								entryNode = index["%ROOT"];
-								entryNode.set_key("$ROOT");
-							}
-							if (index.has_child("$ROOT"))
-							{
-								entryNode = index["$ROOT"];
-								entryNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
-								entryNode["timeModified"] << entry->entry.data.timeModified.ToTime();
-
-								// Write out the changes
-								SaveYAMLToFile(metaFileName.c_str(), index);
-							}
-						}
-					}
-
-					MemoryCardFileMetadataReference* dirRef = AddDirEntryToMetadataQuickAccess(entry, parent);
-
-					FlushFileEntries(entry->entry.data.cluster, entry->entry.data.length, subDirPath, dirRef);
-				}
-			}
-			else if (entry->IsFile())
-			{
-				AddFileEntryToMetadataQuickAccess(entry, parent);
-
-				if (entry->entry.data.length == 0)
-				{
-					// empty files need to be explicitly created, as there will be no data cluster referencing it later
-					if (m_performFileWrites)
+					if (!entry->IsDotDir())
 					{
 						char cleanName[sizeof(entry->entry.data.name)];
 						memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
-						FileAccessHelper::CleanMemcardFilename(cleanName);
-						const std::string fullDirPath(Path::Combine(m_folderName, dirPath));
-						const std::string fn(Path::Combine(fullDirPath, cleanName));
+						bool filenameCleaned = FileAccessHelper::CleanMemcardFilename(cleanName);
+						const std::string subDirPath(Path::Combine(dirPath, cleanName));
 
-						if (!FileSystem::FileExists(fn.c_str()))
+						if (m_performFileWrites)
 						{
-							if (!FileSystem::DirectoryExists(fullDirPath.c_str()))
+							// if this directory has nonstandard metadata, write that to the file system
+							const std::string fullSubDirPath(Path::Combine(m_folderName, subDirPath));
+							std::string metaFileName(Path::Combine(fullSubDirPath, "_pcsx2_meta_directory"));
+							if (!FileSystem::DirectoryExists(fullSubDirPath.c_str()))
 							{
-								FileSystem::CreateDirectoryPath(fullDirPath.c_str(), false);
+								FileSystem::CreateDirectoryPath(fullSubDirPath.c_str(), false);
 							}
 
-							auto createEmptyFile = FileSystem::OpenManagedCFile(fn.c_str(), "wb");
+							// TODO: This logic doesn't make sense. If it's not a directory, create it, then open it as a file?!
+							if (filenameCleaned || entry->entry.data.mode != MemoryCardFileEntry::DefaultDirMode || entry->entry.data.attr != 0)
+							{
+								if (auto metaFile = FileSystem::OpenManagedCFile(metaFileName.c_str(), "wb"); metaFile)
+								{
+									std::fwrite(entry->entry.raw, sizeof(entry->entry.raw), 1, metaFile.get());
+								}
+							}
+							else
+							{
+								// if metadata is standard make sure to remove a possibly existing metadata file
+								if (FileSystem::FileExists(metaFileName.c_str()))
+								{
+									FileSystem::DeleteFilePath(metaFileName.c_str());
+								}
+							}
+
+							// write the directory index
+							metaFileName = Path::Combine(fullSubDirPath, "_pcsx2_index");
+							std::optional<ryml::Tree> yaml = loadYamlFile(metaFileName.c_str());
+
+							// if _pcsx2_index hasn't been made yet, start a new file
+							if (!yaml.has_value())
+							{
+								const char initialData[] = "{$ROOT: {timeCreated: 0, timeModified: 0}}";
+								ryml::Tree newYaml = ryml::parse_in_arena(ryml::to_csubstr(initialData));
+								ryml::NodeRef newNode = newYaml.rootref()["$ROOT"];
+								newNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
+								newNode["timeModified"] << entry->entry.data.timeModified.ToTime();
+								SaveYAMLToFile(metaFileName.c_str(), newYaml);
+							}
+							else if (!yaml.value().empty())
+							{
+								ryml::NodeRef index = yaml.value().rootref();
+
+								// Detect broken index files, every index file should have atleast ONE child ('[$%]ROOT')
+								if (!index.has_children())
+								{
+									AttemptToRecreateIndexFile(fullSubDirPath);
+									yaml = loadYamlFile(metaFileName.c_str());
+									index = yaml.value().rootref();
+								}
+
+								ryml::NodeRef entryNode;
+								if (index.has_child("%ROOT"))
+								{
+									// NOTE - working around a rapidyaml issue that needs to get resolved upstream
+									// '%' is a directive in YAML and it's not being quoted, this makes the memcards backwards compatible
+									// switched from '%' to '$'
+									// NOTE - this issue has now been resolved, but should be preserved for backwards compatibility
+									entryNode = index["%ROOT"];
+									entryNode.set_key("$ROOT");
+								}
+								if (index.has_child("$ROOT"))
+								{
+									entryNode = index["$ROOT"];
+									entryNode["timeCreated"] << entry->entry.data.timeCreated.ToTime();
+									entryNode["timeModified"] << entry->entry.data.timeModified.ToTime();
+
+									// Write out the changes
+									SaveYAMLToFile(metaFileName.c_str(), index);
+								}
+							}
 						}
+
+						MemoryCardFileMetadataReference* dirRef = AddDirEntryToMetadataQuickAccess(entry, parent);
+
+						FlushFileEntries(entry->entry.data.cluster, entry->entry.data.length, subDirPath, dirRef, directoryDepth + 1);
 					}
 				}
-
-				if (m_performFileWrites)
+				else if (entry->IsFile())
 				{
-					FileAccessHelper::WriteIndex(m_folderName, entry, parent);
+					AddFileEntryToMetadataQuickAccess(entry, parent);
+
+					if (entry->entry.data.length == 0)
+					{
+						// empty files need to be explicitly created, as there will be no data cluster referencing it later
+						if (m_performFileWrites)
+						{
+							char cleanName[sizeof(entry->entry.data.name)];
+							memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
+							FileAccessHelper::CleanMemcardFilename(cleanName);
+							const std::string fullDirPath(Path::Combine(m_folderName, dirPath));
+							const std::string fn(Path::Combine(fullDirPath, cleanName));
+
+							if (!FileSystem::FileExists(fn.c_str()))
+							{
+								if (!FileSystem::DirectoryExists(fullDirPath.c_str()))
+								{
+									FileSystem::CreateDirectoryPath(fullDirPath.c_str(), false);
+								}
+
+								auto createEmptyFile = FileSystem::OpenManagedCFile(fn.c_str(), "wb");
+							}
+						}
+					}
+
+					if (m_performFileWrites)
+					{
+						FileAccessHelper::WriteIndex(m_folderName, entry, parent);
+					}
 				}
 			}
 		}
-	}
 
-	// continue to the next cluster of this directory
-	const u32 nextCluster = m_fat.data[0][0][dirCluster];
-	if (nextCluster != (LastDataCluster | DataClusterInUseMask))
-	{
-		FlushFileEntries(nextCluster & NextDataClusterMask, remainingFiles - 2, dirPath, parent);
+
+		const u32 nextCluster = m_fat.data[0][0][currentCluster];
+		if (nextCluster == (LastDataCluster | DataClusterInUseMask))
+			break;
+		currentCluster = nextCluster & NextDataClusterMask;
+		filesRemaining -= 2;
 	}
 }
 
@@ -1452,8 +1484,11 @@ void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const st
 	FlushDeletedFilesAndRemoveUnchangedDataFromCache(oldFileEntries, newRootDirCluster, newFileCount, "");
 }
 
-void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const std::vector<MemoryCardFileEntryTreeNode>& oldFileEntries, const u32 newCluster, const u32 newFileCount, const std::string& dirPath)
+void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const std::vector<MemoryCardFileEntryTreeNode>& oldFileEntries, const u32 newCluster, const u32 newFileCount, const std::string& dirPath, const u32 directoryDepth)
 {
+	if (directoryDepth >= MaxFolderDirectoryDepth)
+		return;
+
 	// go through all file entires of the current directory of the old data
 	for (auto it = oldFileEntries.cbegin(); it != oldFileEntries.cend(); ++it)
 	{
@@ -1487,7 +1522,7 @@ void FolderMemoryCard::FlushDeletedFilesAndRemoveUnchangedDataFromCache(const st
 				memcpy(cleanName, (const char*)entry->entry.data.name, sizeof(cleanName));
 				FileAccessHelper::CleanMemcardFilename(cleanName);
 				const std::string subDirPath(Path::Combine(dirPath, cleanName));
-				FlushDeletedFilesAndRemoveUnchangedDataFromCache(it->subdir, newEntry->entry.data.cluster, newEntry->entry.data.length, subDirPath);
+				FlushDeletedFilesAndRemoveUnchangedDataFromCache(it->subdir, newEntry->entry.data.cluster, newEntry->entry.data.length, subDirPath, directoryDepth + 1);
 			}
 			else if (entry->IsFile())
 			{
@@ -1512,8 +1547,10 @@ void FolderMemoryCard::RemoveUnchangedDataFromCache(const MemoryCardFileEntry* c
 
 	u32 cluster = newEntry->entry.data.cluster & NextDataClusterMask;
 	const u32 alloc_offset = m_superBlock.data.alloc_offset;
-	while (cluster != LastDataCluster)
+	u32 chainSteps = 0;
+	while (cluster != LastDataCluster && cluster < MaxImplementedFatClusters && chainSteps < MaxImplementedFatClusters)
 	{
+		++chainSteps;
 		for (int i = 0; i < 2; ++i)
 		{
 			const u32 page = (cluster + alloc_offset) * 2 + i;
@@ -1651,12 +1688,16 @@ const std::string& FolderMemoryCard::GetFolderName()
 	return m_folderName;
 }
 
-void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTreeNode>* fileEntryTree, const u32 cluster, const u32 fileCount)
+void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTreeNode>* fileEntryTree, const u32 cluster, const u32 fileCount, const u32 directoryDepth)
 {
+	if (directoryDepth >= MaxFolderDirectoryDepth)
+		return;
+
 	const MemoryCardFileEntryCluster* entryCluster = &m_fileEntryDict[cluster];
 	u32 fileCluster = cluster;
+	const size_t iterations = std::min<size_t>(fileCount, static_cast<size_t>(MaxImplementedFatClusters) * 2);
 
-	for (size_t i = 0; i < fileCount; ++i)
+	for (size_t i = 0; i < iterations; ++i)
 	{
 		const MemoryCardFileEntry* entry = &entryCluster->entries[i % 2];
 
@@ -1667,14 +1708,16 @@ void FolderMemoryCard::CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTree
 			if (entry->IsDir() && !entry->IsDotDir())
 			{
 				MemoryCardFileEntryTreeNode* treeEntry = &fileEntryTree->back();
-				CopyEntryDictIntoTree(&treeEntry->subdir, entry->entry.data.cluster, entry->entry.data.length);
+				CopyEntryDictIntoTree(&treeEntry->subdir, entry->entry.data.cluster, entry->entry.data.length, directoryDepth + 1);
 			}
 		}
 
 		if (i % 2 == 1)
 		{
+			if (fileCluster >= MaxImplementedFatClusters)
+				return;
 			fileCluster = m_fat.data[0][0][fileCluster] & 0x7FFFFFFFu;
-			if (fileCluster == 0x7FFFFFFFu)
+			if (fileCluster == 0x7FFFFFFFu || fileCluster >= MaxImplementedFatClusters)
 			{
 				return;
 			}
@@ -1687,8 +1730,9 @@ const MemoryCardFileEntry* FolderMemoryCard::FindEquivalent(const MemoryCardFile
 {
 	const MemoryCardFileEntryCluster* entryCluster = &m_fileEntryDict[cluster];
 	u32 fileCluster = cluster;
+	const size_t iterations = std::min<size_t>(fileCount, static_cast<size_t>(MaxImplementedFatClusters) * 2);
 
-	for (size_t i = 0; i < fileCount; ++i)
+	for (size_t i = 0; i < iterations; ++i)
 	{
 		const MemoryCardFileEntry* entry = &entryCluster->entries[i % 2];
 
@@ -1702,8 +1746,10 @@ const MemoryCardFileEntry* FolderMemoryCard::FindEquivalent(const MemoryCardFile
 
 		if (i % 2 == 1)
 		{
+			if (fileCluster >= MaxImplementedFatClusters)
+				return nullptr;
 			fileCluster = m_fat.data[0][0][fileCluster] & 0x7FFFFFFFu;
-			if (fileCluster == 0x7FFFFFFFu)
+			if (fileCluster == 0x7FFFFFFFu || fileCluster >= MaxImplementedFatClusters)
 			{
 				return nullptr;
 			}

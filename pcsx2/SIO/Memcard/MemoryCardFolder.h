@@ -495,7 +495,7 @@ protected:
 	void FlushFileEntries();
 
 	// flush a directory's file entries and all its subdirectories to the internal data
-	void FlushFileEntries(const u32 dirCluster, const u32 remainingFiles, const std::string& dirPath = {}, MemoryCardFileMetadataReference* parent = nullptr);
+	void FlushFileEntries(const u32 dirCluster, const u32 remainingFiles, const std::string& dirPath = {}, MemoryCardFileMetadataReference* parent = nullptr, const u32 directoryDepth = 0);
 
 	// "delete" (prepend '_pcsx2_deleted_' to) any files that exist in oldFileEntries but no longer exist in m_fileEntryDict
 	// also calls RemoveUnchangedDataFromCache() since both operate on comparing with the old file entires
@@ -505,7 +505,7 @@ protected:
 	// - newCluster: Current directory dotdir cluster of the new entries.
 	// - newFileCount: Number of file entries in the new directory.
 	// - dirPath: Path to the current directory relative to the root of the memcard. Must be identical for both entries.
-	void FlushDeletedFilesAndRemoveUnchangedDataFromCache(const std::vector<MemoryCardFileEntryTreeNode>& oldFileEntries, const u32 newCluster, const u32 newFileCount, const std::string& dirPath);
+	void FlushDeletedFilesAndRemoveUnchangedDataFromCache(const std::vector<MemoryCardFileEntryTreeNode>& oldFileEntries, const u32 newCluster, const u32 newFileCount, const std::string& dirPath, const u32 directoryDepth = 0);
 
 	// try and remove unchanged data from m_cache
 	// oldEntry and newEntry should be equivalent entries found by FindEquivalent()
@@ -515,7 +515,7 @@ protected:
 	s32 WriteWithoutCache(const u8* src, u32 adr, int size);
 
 	// copies the contents of m_fileEntryDict into the tree structure fileEntryTree
-	void CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTreeNode>* fileEntryTree, const u32 cluster, const u32 fileCount);
+	void CopyEntryDictIntoTree(std::vector<MemoryCardFileEntryTreeNode>* fileEntryTree, const u32 cluster, const u32 fileCount, const u32 directoryDepth = 0);
 
 	// find equivalent (same name and type) of searchEntry in m_fileEntryDict in the directory indicated by cluster
 	const MemoryCardFileEntry* FindEquivalent(const MemoryCardFileEntry* searchEntry, const u32 cluster, const u32 fileCount);
