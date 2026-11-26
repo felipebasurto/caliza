@@ -1149,7 +1149,7 @@ static void *orbis_pad_thread(void *)
       for (int i = 0; i < g_orbis_extra_count; i++)
         orbis_rumble_send(static_cast<int>(extra[i].port), extra[i].handle, s_rumble_extra[i]);
     }
-    if ((++reads % 250u) == 0u || (rc != 0 && reads % 100u == 0u))
+    if ((++reads % 250u) == 0u || (handle >= 0 && rc != 0 && reads % 100u == 0u))
       printf("[pad] read rc=%x buttons=%08x lx=%u ly=%u\n", rc, d.buttons, d.lx, d.ly);
     for (int i = 0; i < g_orbis_extra_count; i++)
     {
@@ -1193,7 +1193,7 @@ static void *orbis_pad_thread(void *)
         printf("[pad] player %d controller %s (rc=%x)\n", i + 2, on ? "connected" : "not connected", rc2);
         s_on[i] = on ? 1 : 0;
       }
-      if ((reads % 250u) == 0u || (rc2 != 0 && reads % 100u == 0u))
+      if ((reads % 250u) == 0u || (px.handle >= 0 && rc2 != 0 && reads % 100u == 0u))
         printf("[pad] player %d read rc=%x buttons=%08x lx=%u ly=%u connected=%u\n", i + 2, rc2, d2.buttons, d2.lx, d2.ly,
           static_cast<unsigned>(d2.rest[76 - 12]));
     }
@@ -2132,6 +2132,10 @@ static void orbis_back_to_menu()
   FileMcd_EmuOpen();
   SPU2::SetOutputPaused(false);
   g_orbis_menu_request.store(false);
+  // Requests queued while the VM was stopping belong to the menu transition, not to the
+  // resumed game. Drop them so a stale save/load/disc/fast-forward cannot fire unexpectedly
+  // on the next pump after the failed re-exec. needs proper testing.
+  g_orbis_state_request.store(0, std::memory_order_release);
   VMManager::SetState(VMState::Running);
 }
 
