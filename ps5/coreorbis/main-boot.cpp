@@ -1307,9 +1307,27 @@ static void orbis_try_jailbreak()
 }
 #endif // !ORBIS_PS4
 
+#ifdef ORBIS_PS4
+extern "C" void ps4_boot_trace(const char* stage);
+#endif
+
 extern "C" void orbis_stage(const char* stage)
 {
     ps5::debug::set_line(5, "stage: %s", stage);
+#ifdef ORBIS_PS4
+    // VMManager already reports concise initialization stages here. Mirror only changes into the
+    // persistent boot trace so a console that dies before stdout is flushed still exposes the last stage.
+    static std::mutex s_stage_trace_lock;
+    static char s_last_stage[128];
+    std::lock_guard<std::mutex> lock(s_stage_trace_lock);
+    if (stage && strncmp(s_last_stage, stage, sizeof(s_last_stage)) != 0)
+    {
+        snprintf(s_last_stage, sizeof(s_last_stage), "%s", stage);
+        char line[192];
+        snprintf(line, sizeof(line), "[pcsx2] VM stage: %s", stage);
+        ps4_boot_trace(line);
+    }
+#endif
 }
 
 static u8 g_worker_stack[16 * 1024 * 1024];
@@ -3773,6 +3791,7 @@ int main()
   {
     printf("[boot] CPUThreadInitialize (pre-init)\n");
     fflush(stdout);
+    ORBIS_PS4_STEP("CPUThreadInitialize begin");
     if (VMManager::Internal::CPUThreadInitialize())
       printf("[boot] CPUThreadInitialize OK\n");
     else
@@ -3810,12 +3829,18 @@ int main()
   // (vtlb init + RAM/ROM mappings + handlers) up front, before any recompile.
   printf("[boot] SysMemory::Reset (pre-initialize)\n");
   fflush(stdout);
+  ORBIS_PS4_STEP("SysMemory::Reset begin");
   const bool pre_memory_reset = SysMemory::Reset();
   printf("[boot] SysMemory::Reset %s\n", pre_memory_reset ? "done" : "FAILED");
   fflush(stdout);
   orbis_wait_for_game_file(params.filename); // vk-285-134
+  ORBIS_PS4_STEP("VMManager::Initialize begin");
   const VMBootResult res = VMManager::Initialize(params, &err);
   init_done = true;
+  if (res == VMBootResult::StartupSuccess)
+    ORBIS_PS4_STEP("VMManager::Initialize success");
+  else
+    ORBIS_PS4_STEP("VMManager::Initialize failed");
   printf("[boot] Initialize=%d err=%s\n", (int)res, err.GetDescription().c_str());
   fflush(stdout);
   // vk-285-47: the game's name and how it runs, instead of "VM init OK".
@@ -4213,6 +4238,12 @@ int main()
       const VMState st = VMManager::GetState();
       if (st == VMState::Running)
       {
+        static bool execute_traced = false;
+        if (!execute_traced)
+        {
+          execute_traced = true;
+          ORBIS_PS4_STEP("first VMManager::Execute begin");
+        }
         VMManager::Execute();
         exits++;
         if (exits < 200 || (exits % 1000) == 0)
