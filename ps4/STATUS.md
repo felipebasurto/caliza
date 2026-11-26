@@ -2,13 +2,13 @@
 
 Living board for the PS4 port effort. All work is AI-assisted.
 
-Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backing, and SPU2 reset cache invalidation; binary artifact validated at `9b5707d`.
+Last updated: 2026-11-26 after hostile-savestate hardening, file-card erase bounds, and folder-card close-error propagation; binary artifact validated at `cd5da76`.
 
 ## Current repository state
 
 - Workspace: `/Users/felipe/PS4SX2`, branch `ps4-perf`.
 - Original frozen baseline: `d082d64139cad10a3faaec2afaa23f0063208808`.
-- Current candidate code: **129 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
+- Current candidate code: **132 local commits** on top of the baseline; subsequent documentation-only checkpoint commits do not change the binary.
 - No push, PR, or issue was created.
 - Raw evidence is local under `ps4/logs/`; logs are intentionally not committed blindly.
 
@@ -143,6 +143,9 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 127. `23cd341` — avoid shared folder metadata aliasing.
 128. `16cfd6d` — rebuild folder metadata targets each flush.
 129. `9b5707d` — make CDVD cache failure fallback direct-only.
+130. `46be528` — record metadata and CDVD hardening evidence.
+131. `0913698` — harden hostile savestate and memory-card inputs.
+132. `cd5da76` — propagate folder-card close failure evidence.
 
 ## Completed work
 
@@ -173,12 +176,13 @@ Last updated: 2026-11-26 after cycle-safe folder-card traversal, lazy PGIF backi
 
 ## Current candidate artifact
 
-Built in the Linux x86_64 OpenOrbis container at exactly `9b5707d` (includes storage durability, input-cache invalidation, the RW-only fallback invariant, lazy legacy-overlay allocation, lazy MDEC/CDVD backing, lazy DEV9 flash backing, lazy CPU/GPU profiler backing, lazy folder-card/OSD backing, DEV9 flash bounds fixes, SPU2 PCM cache compaction, the PS4 2048 KiB MTVU backing cap, folder memory-card geometry/bounds hardening, cycle-safe metadata traversal, lazy PGIF backing, SPU2 reset cache invalidation, wrapped-DMA cache invalidation, bounded folder-card FAT/directory traversal, folder-card host-write failure retention, bounded sector/file-card writes, upstream PS1 protocol state bounds, effective folder-card write retries, recovery-aware storage diagnostics, bounded directory DAG expansion, atomic metadata-target rebuilds, and a direct-only CDVD cache-failure fallback):
+Built in the Linux x86_64 OpenOrbis container at exactly `cd5da76` (includes the prior storage/input/WSI/memory hardening wave plus exact fixed-memory savestate entry reads, negative/overflowing memory-state size rejection, VIF staging-size bounds, GIF queue-geometry validation, stream-bounded state string/container lengths, uncached file-card erase bounds, and folder-card close-error propagation):
 
-- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,152,680 bytes**, SHA-256 `02eeb3d8dae056d2e9e575194cfb5830d9e087a628f2dcffa7a51a3ecff4e42a` (`readelf`: `.bss` **23,921,664 bytes**, down **524,288 bytes** from the prior artifact and **75,812,160 bytes** from the original 99,733,824-byte reference).
-- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,037,120 bytes**, SHA-256 `879966e98542ee2bc54cda85f37960af7ecc02908f0a679d333cf56cb8d85202`.
-- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `8fb6869f207ebb8feaa4ff15c685734612a3022873445e74698b667e9cd6fb30`.
+- ELF `/tmp/ps4build-current/build/link/pcsx2`: **148,227,032 bytes**, SHA-256 `3080278763c25d0a377f28fc7fbededbf1357d3129ccfc1ef3c17da97d17ad34` (`readelf`: `.bss` **23,921,664 bytes**, down **75,812,160 bytes** from the original 99,733,824-byte reference).
+- eboot `/tmp/ps4build-current/build/link/pcsx2_eboot/eboot.bin`: **41,053,632 bytes**, SHA-256 `e2dcb1cde90b4da073989fe21f16a2ec15dc274f5f3168661d5e27ff6dbbfbd6`.
+- PKG `/tmp/ps4build-current/out/IV0000-PCSX00002_00-PCSX2PS400000000.pkg`: **60,751,872 bytes**, SHA-256 `fb8b9d8509398389670179d5729990ec3a6f20fc5cd1eef6d9b283b8cecbe6e2`.
 - macOS copy: `/Users/felipe/ps4-build-work/ps4sx2-candidate-final.pkg`, same PKG SHA-256.
+- Embedded package provenance: `Build commit: cd5da769c035`.
 - Import audit: **257 dynamic imports, 0 unresolved, 0 known PS5-only imports**.
 - BIOS files: none; redistributable build.
 - Package notices: `COPYING.GPLv3`, `SOURCE.txt`, `ASSET-SOURCES.txt`, `FontAwesome-LICENSE.txt`, `ThirdPartyLicenses.html`, `PORT-THIRD-PARTY.txt`, `licenses/`.
@@ -189,11 +193,11 @@ Built in the Linux x86_64 OpenOrbis container at exactly `9b5707d` (includes sto
 | Validation | Result | Evidence |
 |---|---|---|
 | Baseline compile/link/package at `d082d64` | PASS | `ps4/logs/baseline-build-d082d64.log`, `baseline-build-metrics.txt` |
-| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidate-cdvd-qa-final.log` |
+| Candidate compile/link/package at final documented commit | PASS | `ps4/logs/candidatecd5da76.log` |
 | Current strict dynamic import audit | PASS: 257 total, 0 unresolved, no known PS5-only | same build log |
 | Package stage compliance validation | PASS: redistributable BIOS-free build, 17 required files | same build log |
 | Bit-for-bit package reproducibility | PASS | repeated packaging at `1846c3b` produced identical PKG SHA-256 `e70d618f...89b15f`; the current folder-DAG candidate also reproduced identical PKG SHA-256 `e2c61513...16bc` in `ps4/logs/pkg-repro-folder-dag.log` |
-| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
+| Host tests | PASS | `ps4/tools/run-host-tests.sh` passes end-to-end in `ps4/logs/host-tests-mcd-mec.log` and, after the analyzer-only storage diagnostics, `ps4/logs/host-tests-analyzer-storage.log` and `ps4/logs/host-tests-wsi-plane.log` and `ps4/logs/host-tests-lazy-overlay.log` and `ps4/logs/host-tests-mcd-review.log`, and after lazy memory backing in `ps4/logs/host-tests-memory-lazy.log`, and after diagnostic-ring splitting in `ps4/logs/host-tests-vkring.log` and after optional backing/profiler allocation in `ps4/logs/host-tests-lazy-profiler.log`, and after SPU2/MTVU memory reduction in `ps4/logs/host-tests-memory-reduction.log`, folder-card hardening in `ps4/logs/host-tests-folder-geometry.log`, lazy PGIF backing in `ps4/logs/host-tests-pgif-final.log`, SPU2 reset invalidation in `ps4/logs/host-tests-spu2-final.log`, wrapped-DMA invalidation in `ps4/logs/host-tests-spu2-wrap.log`, bounded folder-card traversal in `ps4/logs/host-tests-folder-bounded.log`, write-failure retention in `ps4/logs/host-tests-folder-writefail.log`, memory-card security hardening in `ps4/logs/host-tests-mcd-security.log`, final memory-card durability/bounds hardening in `ps4/logs/host-tests-mcd-final.log`, directory-DAG/recovery diagnostics in `ps4/logs/host-tests-folder-dag.log`, and metadata/CDVD fallback hardening in `ps4/logs/host-tests-cdvd-qa.log`, and hostile-savestate/memory-card close hardening in `ps4/logs/host-tests-cd5da76.log`; broader older host evidence remains in `ps4/logs/host-tests-candidate45.log` |
 | Frame-pacing host test | PASS: 911/911 | same |
 | Input mapping host tests | PASS: kbm_map and pad_map | same |
 | Texture-root host test | PASS | same |
@@ -213,7 +217,7 @@ Built in the Linux x86_64 OpenOrbis container at exactly `9b5707d` (includes sto
 | P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 shares mount through CEMUPS4 `/net/shareN`; per-share boot checks now run concurrently (maximum four workers) with deterministic result logging; failed shares stay registered for explicit retry but are excluded from automatic scans; query options/ports unsupported; SMB remains deliberately unexposed |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
-| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured; host-measured static memory footprint reduced by 75,287,872 bytes of BSS from the original reference through dead worker-stack removal, lazy optional backing, SPU2 PCM cache compaction, and the PS4 MTVU backing cap; hardware performance impact remains unmeasured |
+| P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol; ThinLTO experimental package builds but is completely unmeasured; host-measured static memory footprint reduced by 75,812,160 bytes of BSS from the original reference through dead worker-stack removal, lazy optional backing, SPU2 PCM cache compaction, and the PS4 MTVU backing cap; hardware performance impact remains unmeasured |
 
 ## Console smoke-test priority
 
@@ -243,6 +247,9 @@ Built in the Linux x86_64 OpenOrbis container at exactly `9b5707d` (includes sto
 - **PGIF backing:** the oversized 512 KiB PS1 GPU FIFO backing is no longer static BSS. It is allocated lazily on the first actual GP0 FIFO write, retries after VM reset if allocation failed, keeps FIFO size/DREQ semantics visible before allocation, and is surfaced as a fatal analyzer condition if allocation fails.
 
 - **SPU2 reset correctness:** resetting SPU2 RAM now invalidates every validated ADPCM decode-cache entry. This closes a stale-audio edge case where a freshly reset game could hit decode cache left by the previous session; the compacted cache layout itself was independently reviewed as lossless. Wrapped DMA writes that pass the dynamic/register region now invalidate the wrapped cacheable prefix too.
+
+- **Hostile-savestate hardening:** fixed-size memory entries now fail the load when truncated rather than silently preserving stale tail bytes; memory-state reads reject negative and overflowing sizes; VIF partial-transfer sizes are bounded to their 4 KiB staging buffers; GIF path geometry is validated against the fixed runtime allocation before packet bytes are copied; StateWrapper and memory-state string/container lengths cannot exceed bytes actually remaining in their backing stream. This is a fail-closed corrupted-state policy and needs hardware validation with legitimate states.
+- **File/folder memory-card follow-up:** uncached file-card erase operations now use the same fixed-card-size bound as writes, closing the remaining host-image extension path found by adversarial review. Folder-card close failures are logged and analyzed as storage-risk failures, and metadata-write state is cleared whenever quick-access metadata is discarded.
 
 - **OpenOrbis libc/netfs interposition:** object-code inspection of `/opt/pacbrew/ps4/openorbis/lib/libc.a` shows `opendir` references public `open`, `readdir64` references public `getdents`, `__stdio_read` references wrapped `_read`/`_readv`, and even hidden `__lseek`/`getdents64` are thunks to public `lseek`/`getdents`. CEMUPS4's `--wrap` coverage therefore does reach the stdio/dirent paths PCSX2 uses in this specific libc build. This is strong static evidence, not a substitute for console playback validation.
 - **Hot-order file:** exact symbol coverage in the current non-LTO candidate is 362/397. Most missing entries are stale PS5 recorder symbols (`ps5vk_record_*`) or STL hash-table instantiations whose mangled names changed when Orbis node allocators/libc++ details changed; `V_VolumeSlide::Update` is now `UpdateSlide`, and `__emutls_get_address` is absent. The order file still must not be treated as Jaguar-tuned.

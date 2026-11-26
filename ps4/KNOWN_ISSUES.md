@@ -24,7 +24,7 @@
 
 ## Memory/robustness
 
-1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract.
+1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract. Corrupted-state handling is now fail-closed for truncated fixed memory entries, negative/overflowing memory reads, oversized VIF staging, impossible GIF queue geometry, and stream-exceeding string/container lengths, but legitimate-state compatibility still must be proven on hardware and this is not a complete hostile-input proof.
 2. Baseline compiler warnings have been triaged and the highest-confidence correctness issues integrated; remaining warning-volume reduction is non-critical cleanup, not evidence of a clean runtime.
 3. The non-executable-memory interpreter fallback is compile-validated only. It should allow boot/UI diagnostics, but its real speed and correctness on Jaguar are unknown.
 4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
@@ -34,7 +34,7 @@
 ## Memory-pressure tradeoffs
 
 1. The PS4 MTVU backing is capped at the existing 2048 KiB default lap, removing the ability to test larger 4/8/16 MiB laps on the normal PS4 candidate. This preserves default behavior while avoiding 14 MiB of always-resident BSS, but heavy-MTVU games still need hardware comparison before the cap is treated as final.
-2. Folder memory-card superblock geometry is now validated before the implementation trusts it, and direct FAT/data-cluster indexing is bounded. Metadata-cluster traversal is now iterative and cycle-safe, direct FAT-chain indexing is bounded, and directory recursion is depth-capped. Out-of-range sector pages are now rejected before caching. Null host file handles are no longer cached as permanent folder-card failures, stdio buffers are flushed before dirty pages may be dropped, and per-flush visited marks bound shared-directory DAG expansion, and quick-access targets are rebuilt each flush. However, residual close-time metadata/write behavior and broader folder-card behavior still need review, so malformed metadata must not be treated as fully hardened untrusted input yet.
+2. Folder memory-card superblock geometry is now validated before the implementation trusts it, and direct FAT/data-cluster indexing is bounded. Metadata-cluster traversal is now iterative and cycle-safe, direct FAT-chain indexing is bounded, and directory recursion is depth-capped. Out-of-range sector pages are now rejected before caching. Null host file handles are no longer cached as permanent folder-card failures, stdio buffers are flushed before dirty pages may be dropped, and per-flush visited marks bound shared-directory DAG expansion, and quick-access targets are rebuilt each flush. Close-time metadata write state is now cleared and close failures are logged/analyzed, but broader folder-card behavior still needs review, so malformed metadata must not be treated as fully hardened untrusted input yet.
 
 ## User-data layout
 
