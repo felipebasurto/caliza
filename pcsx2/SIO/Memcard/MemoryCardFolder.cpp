@@ -57,22 +57,41 @@ static std::optional<ryml::Tree> loadYamlFile(const char* filePath)
 	return tree;
 }
 
+// Metadata writes are small but important for save ordering/timestamps. Write a temporary
+// sibling whose name is skipped by the folder-card scanner, then replace the live file only
+// after flush+close succeeds. needs proper testing with storage failure injection.
+static bool CommitAtomicMetadataWrite(const std::string& tempFileName, const char* filename, bool ok)
+{
+	if (!ok)
+	{
+		FileSystem::DeleteFilePath(tempFileName.c_str());
+		Console.ErrorFmt("FolderMcd: metadata write failed; could not write/flush '{}'", filename);
+		return false;
+	}
+	if (!FileSystem::RenamePath(tempFileName.c_str(), filename))
+	{
+		FileSystem::DeleteFilePath(tempFileName.c_str());
+		Console.ErrorFmt("FolderMcd: metadata write failed; could not replace '{}'", filename);
+		return false;
+	}
+	return true;
+}
+
 /// A helper function to write a YAML file
 static bool SaveYAMLToFile(const char* filename, const ryml::NodeRef& node)
 {
-	std::FILE* file = FileSystem::OpenCFile(filename, "w");
+	const std::string tempFileName = std::string(filename) + ".tmp";
+	std::FILE* file = FileSystem::OpenCFile(tempFileName.c_str(), "w");
 	if (!file)
 	{
-		Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", filename);
+		Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", tempFileName);
 		return false;
 	}
 	ryml::emit_yaml(node, file);
 	bool ok = std::fflush(file) == 0;
 	if (std::fclose(file) != 0)
 		ok = false;
-	if (!ok)
-		Console.ErrorFmt("FolderMcd: metadata write failed; could not flush/close '{}'", filename);
-	return ok;
+	return CommitAtomicMetadataWrite(tempFileName, filename, ok);
 }
 
 static auto last = std::chrono::time_point<std::chrono::system_clock>();
@@ -2286,10 +2305,11 @@ void FileAccessHelper::WriteMetadata(const std::string_view folderName, const Me
 			FileSystem::CreateDirectoryPath(metaDirName.c_str(), false);
 		}
 
-		std::FILE* metaFile = FileSystem::OpenCFile(metaFileName.c_str(), "wb");
+		const std::string tempMetaFileName = metaFileName + ".tmp";
+		std::FILE* metaFile = FileSystem::OpenCFile(tempMetaFileName.c_str(), "wb");
 		if (!metaFile)
 		{
-			Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", metaFileName);
+			Console.ErrorFmt("FolderMcd: metadata write failed; could not open '{}'", tempMetaFileName);
 		}
 		else
 		{
@@ -2298,8 +2318,7 @@ void FileAccessHelper::WriteMetadata(const std::string_view folderName, const Me
 				ok = false;
 			if (std::fclose(metaFile) != 0)
 				ok = false;
-			if (!ok)
-				Console.ErrorFmt("FolderMcd: metadata write failed; could not write/flush '{}'", metaFileName);
+			(void)CommitAtomicMetadataWrite(tempMetaFileName, metaFileName.c_str(), ok);
 		}
 	}
 	else
