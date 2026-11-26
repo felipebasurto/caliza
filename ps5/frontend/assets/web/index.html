@@ -325,7 +325,7 @@ const GROUPS = [
     // when PS5SX2 starts; each share's games are listed like a drive's.
     { key: "PS5SX2/NfsShares", label: "NFS shares", type: "text", def: "", restart: true, later: "the NFS shares",
       placeholder: "nfs://192.168.1.10/volume1/PS2",
-      hint: "Games on a PC or NAS shared over NFS: nfs:// addresses separated by ; (the server, then the shared folder or a folder in it). NFS v3 (Windows: WinNFSd or haneWIN; Linux, Synology, QNAP, TrueNAS), else v4. Add ?version=4, ?nfsport=2049&mountport=1058 or ?uid=1000&gid=1000 when the server needs them. Read-only. Mounted when PS5SX2 starts; boot.log says how it went." },
+      hint: "Games on a PC or NAS shared over NFS: nfs:// addresses separated by ; (the server, then the shared folder or a folder in it). NFS v3 (Windows: WinNFSd or haneWIN; Linux, Synology, QNAP, TrueNAS), else v4. Add ?version=4, ?nfsport=2049&mountport=1058 or ?uid=1000&gid=1000 when the server needs them. On PS4 use plain nfs://server/export (NFS v3); query options are not supported. Read-only. Mounted when PS5SX2 starts; boot.log says how it went." },
     { key: "PS5SX2/BiosFolder", label: "BIOS folder", type: "text", def: "", restart: true, later: "the BIOS folder",
       placeholder: "/mnt/ext1/PS2/bios",
       hint: "Where to look for the BIOS first. Without it: /data/PCSX2/bios, then /data/PCSX2 and the drives' bios/ and PCSX2/bios/ folders. Read when PS5SX2 starts." },

@@ -55,7 +55,7 @@ No optimization should be claimed without same-scene baseline/candidate logs.
 - Audio uses fixed 256-frame grain (~5.3 ms at 48 kHz); return values/latency settings are not fully honored.
 - Main writable data root is `/data/PCSX2`.
 - Package resources are `/app0/resources`; optional personal BIOS builds use `/app0/bios` then copy to `/data/PCSX2/bios`.
-- NFS game shares are effectively unavailable on PS4 because PS5 file wrapping is not linked there.
+- NFS game shares use CEMUPS4's `/net` network filesystem on PS4, not the PS5 `/nfs` libc-wrap layer. Plain NFSv3 `nfs://host/export` mounts appear as `/net/share1`, `/net/share2`, ...; query options and custom ports are rejected with boot-log lines.
 
 ## Firmware/loader matrix to fill on hardware
 

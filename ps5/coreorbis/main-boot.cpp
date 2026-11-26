@@ -2059,6 +2059,11 @@ static std::vector<std::string> orbis_extra_game_folders(const char* when)
   return dirs;
 }
 
+#ifdef ORBIS_PS4
+extern "C" void ps4_netfs_mount(const char* name, const char* url, const char* user, const char* password);
+extern "C" int ps4_netfs_check(const char* name, char* message, size_t size);
+#endif
+
 // vk-285-135 (AI-assisted; testers: "nfs mounting"): gs.ini's PS5SX2/NfsShares, nfs:// addresses separated by ';' (the
 // settings page's Folders group, the shelf's folder picker), mounted after the jailbreak (orbis-shims/OrbisNfs.cpp: the
 // app's own NFS client) and listed like the drives: each share's folder under /nfs/<host>/<path>. All at once, each try
@@ -2073,12 +2078,63 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
     return dirs;
   }
 #ifdef ORBIS_PS4
-  // The NFS client itself builds on PS4, but the C library file-call wrappers that expose /nfs paths to the
-  // scanner/emulator do not (CEMUPS4 owns parts of the libc file surface). Mounting shares anyway would cost boot
-  // time and network traffic while making no games visible. Keep the configuration harmless and say why.
-  printf("[boot] %s: NFS shares configured but unsupported on PS4 in this build; not mounting\n", when);
-  fflush(stdout);
+  // PS4 cannot use the PS5 libc-wrap /nfs layer (CEMUPS4 owns part of that file surface), but CEMUPS4
+  // already links a read-only network filesystem under /net. Reuse it rather than duplicating another
+  // client: plain nfs://host/export addresses are mounted lazily and exposed to the same scanner as
+  // ordinary folders. PS5-style query options are not portable to that NFSv3 interface. Needs proper
+  // testing against a real server.
   OrbisNfs::SetShares(std::string());
+  const auto trim = [](std::string item) {
+    while (!item.empty() && (item.front() == ' ' || item.front() == '\t'))
+      item.erase(item.begin());
+    while (!item.empty() && (item.back() == ' ' || item.back() == '\t'))
+      item.pop_back();
+    return item;
+  };
+  std::vector<std::string> seen;
+  size_t at = 0;
+  int share_index = 0;
+  const auto netfs_t0 = std::chrono::steady_clock::now();
+  while (at <= list.size())
+  {
+    size_t end = list.find_first_of(";\r\n", at);
+    if (end == std::string::npos)
+      end = list.size();
+    const std::string item = trim(list.substr(at, end - at));
+    at = end + 1;
+    if (item.empty())
+      continue;
+    OrbisNfs::Address address;
+    std::string error;
+    if (!OrbisNfs::ParseAddress(item, address, error))
+    {
+      printf("[boot] %s: network share left out (%s): %s\n", when, error.c_str(), item.c_str());
+      continue;
+    }
+    if (item.find('?') != std::string::npos || address.nfsport != 0 || address.mountport != 0)
+    {
+      printf("[boot] %s: network share left out (PS4 /net supports plain NFSv3 nfs://host/export, not ports or ?version/uid options): %s\n",
+        when, item.c_str());
+      continue;
+    }
+    // Use the parsed/decoded host and path rather than the raw text: unlike the PS5 OrbisNfs client,
+    // CEMUPS4's netfs does not percent-decode the export path itself.
+    const std::string url = "nfs://" + address.host + address.path;
+    if (std::find(seen.begin(), seen.end(), url) != seen.end())
+      continue;
+    seen.push_back(url);
+    const std::string name = "share" + std::to_string(++share_index);
+    ps4_netfs_mount(name.c_str(), url.c_str(), "", "");
+    char message[192] = {};
+    const int mounted = ps4_netfs_check(name.c_str(), message, sizeof(message));
+    printf("[boot] %s: network share %s at /net/%s: %s%s\n", when, url.c_str(), name.c_str(),
+      message[0] ? message : (mounted ? "connected" : "not connected"), mounted ? "" : " (left out)");
+    if (mounted)
+      dirs.push_back("/net/" + name);
+  }
+  printf("[boot] %s: network shares looked at in %.2f s\n", when,
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - netfs_t0).count());
+  fflush(stdout);
   return dirs;
 #endif
   std::vector<std::string> problems;

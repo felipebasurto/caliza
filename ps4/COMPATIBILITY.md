@@ -22,7 +22,7 @@ This matrix separates inherited claims, static evidence, host verification, and 
 | Input | Implemented | host pad remapping tests pass; DS4 path inherited | Disconnect/hotplug handling improved; PS4 connected-byte layout remains console-unverified |
 | Audio | Implemented + telemetry | `[audio]` underrun/output-error counters added | Runtime latency and user ID behavior unverified on PS4 |
 | BIOS detection/loading | Implemented | `/data/PCSX2/bios`; embedded personal BIOS copy path exists | Redistributable PKG must remain BIOS-free |
-| ISO loading | Implemented | `/data/PCSX2/games`, USB scanning inherited | NFS is effectively unsupported on PS4 candidate until wrap layer ported |
+| ISO loading | Implemented | `/data/PCSX2/games`, USB scanning inherited | plain NFSv3 shares are now exposed through `/net/shareN`; console scan/load behavior unverified |
 | Memory cards | Implemented | inherited PCSX2/PS5SX2 code | Needs console persistence test |
 | Save states | Implemented, console-unverified | load path now streams entry payloads instead of buffering the whole state file | Save/load cycle and flexible-memory headroom need console validation |
 | Frontend/shelf | Implemented through Vulkan WSI | fe_ps5 Vulkan shelf | CPU overlay VideoOut buffers API is PS5-only/stubbed |

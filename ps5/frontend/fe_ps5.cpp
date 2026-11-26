@@ -1684,7 +1684,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		acfg.folder_places.push_back({"USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i)});
 	acfg.folder_places.push_back({"Extended storage", "/mnt/ext0"});
 	acfg.folder_places.push_back({"Extended storage 2", "/mnt/ext1"});
+#ifdef ORBIS_PS4
+	acfg.folder_places.push_back({"Network shares", "/net"}); // CEMUPS4 netfs: a folder while shares are set
+#else
 	acfg.folder_places.push_back({"NFS shares", "/nfs"}); // OrbisNfs.cpp: a folder while shares are set
+#endif
 	acfg.bios_present = paths.bios_check; // vk-285-134
 	acfg.bios_problem = paths.bios_problem;
 	acfg.bios_dir = paths.bios_dir;

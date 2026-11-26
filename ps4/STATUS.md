@@ -101,7 +101,7 @@ Built in the Linux x86_64 OpenOrbis container after commit `bb0d1ad`:
 | P1-CONSOLE | Real PS4 boot/render/input/audio validation | not started | install only the current candidate through the user's existing safe flow |
 | P1-FW | Firmware/loader matrix | empty | requires console evidence per firmware/loader |
 | P1-INTERPRETER | Automatic fallback when no executable memory exists | absent | currently rejects memory and fails clearly; implement explicit fallback policy if needed |
-| P1-NFS | NFS support on PS4 | explicitly disabled as unusable | mount attempts skipped with actionable boot log; port libc wrap layer before enabling |
+| P1-NFS | NFS support on PS4 | implemented, console-unverified | plain NFSv3 `nfs://host/export` shares mount through CEMUPS4 `/net/shareN`; query options/ports unsupported; SMB API exists but is not exposed yet |
 | P1-SAVESTATE | Savestate memory peak | load and synchronous save paths improved, console-unverified | load streams entries from disk; synchronous saves stream entries without materializing a second full state; threaded saves keep the snapshot contract |
 | P1-HTTP | HTTPS/covers on console | implemented but unverified | test DNS, TCP, RDRAND/urandom, TLS roots, redirects, and offline behavior on hardware |
 | P2-PERF | Hardware performance measurements | not started | requires console or user-run measurement protocol |

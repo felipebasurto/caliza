@@ -19,7 +19,7 @@
 1. Player-1 disconnect stuck-input handling is improved, but the PS4 pad connected-byte layout is unverified; the candidate fails open and logs the byte window for first console validation.
 2. USB keyboard/mouse remains off by default on PS4. `/data/PCSX2/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
 3. Cover downloads now use the mbedTLS HTTPS client on PS4, but DNS/TLS/redirect behavior is still console-unverified.
-4. NFS game shares are effectively dead on PS4 because the PS5 file-wrap layer is not linked in; either port or explicitly hide/report unsupported.
+4. NFS game shares now use CEMUPS4 `/net/shareN` rather than the PS5 `/nfs` libc-wrap layer. Only plain NFSv3 `nfs://host/export` addresses are supported, behavior is console-unverified, and SMB is not exposed in the UI yet.
 5. NVRAM lives beside BIOS; read-only custom BIOS folders can break NVRAM persistence.
 
 ## Memory/robustness

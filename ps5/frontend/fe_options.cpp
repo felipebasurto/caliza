@@ -942,9 +942,15 @@ std::string OptionsSheet::Help(const Row& r) const
 			       "the drives' bios folders). Read when PS5SX2 starts.";
 		case Kind::NfsShares:
 		{
+#ifdef ORBIS_PS4
+			std::string h = "Cross: the NFS shares, and Add a share with the keyboard: plain nfs://<server>/<export> (NFS v3). "
+			                "Their games are listed like a drive's, from /net/share1/ and the next numbers. Read-only. "
+			                "Mounted when the app starts; boot.log says how it went.";
+#else
 			std::string h = "Cross: the NFS shares, and Add a share with the PS5's keyboard: nfs://<server>/<shared folder> (NFS v3, else "
 			                "v4; Windows: WinNFSd or haneWIN). Their games are listed like a drive's, from /nfs/<server>/. Read-only. "
 			                "Mounted when PS5SX2 starts; boot.log says how it went.";
+#endif
 			const std::vector<std::string> list = SplitFolderList(OwnValue(kNfsSharesKey));
 			if (!list.empty())
 				h += " Now: " + JoinFolderList(list) + ".";
