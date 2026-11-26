@@ -247,6 +247,7 @@ public:
 	static const u32 DataClusterInUseMask = 0x80000000u;
 
 	static const int FramesAfterWriteUntilFlush = 2;
+	static const int FramesAfterWriteFailureUntilFlush = 300;
 
 protected:
 	union superBlockUnion
@@ -304,6 +305,7 @@ protected:
 
 	// host write failure state for the page currently being flushed
 	bool m_fileWriteFailed = false;
+	bool m_fileWriteFailedThisFlush = false;
 	bool m_fileWriteErrorReported = false;
 
 	// currently active filter settings

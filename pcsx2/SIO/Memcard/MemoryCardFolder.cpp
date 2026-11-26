@@ -137,6 +137,7 @@ void FolderMemoryCard::InitializeInternalData()
 	m_filteringEnabled = false;
 	m_filteringString = {};
 	m_fileWriteFailed = false;
+	m_fileWriteFailedThisFlush = false;
 	m_fileWriteErrorReported = false;
 }
 
@@ -1123,6 +1124,15 @@ s32 FolderMemoryCard::Save(const u8* src, u32 adr, int size)
 	const u32 offset = adr % PageSizeRaw;
 	const u32 end = offset + size;
 
+	// Guest-controlled sector addresses can wrap the transfer address across
+	// the whole 32-bit space. Pages beyond the implemented FAT/card geometry can
+	// never be flushed and would otherwise accumulate in the cache maps without
+	// bound. Clamp to the implemented maximum as well as the active card size so
+	// a hostile superblock cannot re-inflate the bound. Needs proper testing.
+	const u32 maxPage = std::min(GetSizeInClusters(), MaxImplementedFatClusters) * 2;
+	if (page >= maxPage)
+		return 1;
+
 	if (end > PageSizeRaw)
 	{
 		// is trying to store more than one page at a time
@@ -1180,6 +1190,7 @@ void FolderMemoryCard::Flush()
 	WriteToFile(m_folderName.GetFullPath().RemoveLast() + L"-debug_" + wxDateTime::Now().Format(L"%Y-%m-%d-%H-%M-%S") + L"_pre-flush.ps2");
 #endif
 
+	m_fileWriteFailedThisFlush = false;
 	Console.WriteLn("FolderMcd: Writing data for slot %u to file system...", m_slot);
 	Common::Timer timeFlushStart;
 
@@ -1247,6 +1258,17 @@ void FolderMemoryCard::Flush()
 	m_lastAccessedFile.FlushAll();
 	m_lastAccessedFile.ClearMetadataWriteState();
 	m_oldDataCache.clear();
+
+	if (m_fileWriteFailedThisFlush)
+	{
+		// Keep the dirty pages in cache and retry on a bounded cadence instead of
+		// spinning every frame or silently waiting for the next guest write.
+		m_framesUntilFlush = FramesAfterWriteFailureUntilFlush;
+	}
+	else
+	{
+		m_fileWriteErrorReported = false;
+	}
 
 	Console.WriteLn("FolderMcd: Done! Took %.2f ms.", timeFlushStart.GetTimeMilliseconds());
 
@@ -1627,6 +1649,7 @@ s32 FolderMemoryCard::WriteWithoutCache(const u8* src, u32 adr, int size)
 void FolderMemoryCard::NoteFileWriteFailure()
 {
 	m_fileWriteFailed = true;
+	m_fileWriteFailedThisFlush = true;
 	if (!m_fileWriteErrorReported)
 	{
 		Console.Error("FolderMcd: host file write failed; dirty memory-card pages are kept for retry");
@@ -1667,7 +1690,13 @@ bool FolderMemoryCard::WriteToFile(const u8* src, u32 adr, u32 dataLength)
 				const u32 fileOffsetEnd = std::min(fileOffsetStart + dataLength, fileSize);
 				const u32 bytesToWrite = fileOffsetEnd - fileOffsetStart;
 
-				u32 actualFileSize = static_cast<u32>(std::clamp<s64>(FileSystem::FSize64(file), 0, std::numeric_limits<u32>::max()));
+				const s64 fileSizeResult = FileSystem::FSize64(file);
+				if (fileSizeResult < 0)
+				{
+					NoteFileWriteFailure();
+					return false;
+				}
+				u32 actualFileSize = static_cast<u32>(std::clamp<s64>(fileSizeResult, 0, std::numeric_limits<u32>::max()));
 				if (actualFileSize < fileOffsetStart)
 				{
 					if (FileSystem::FSeek64(file, actualFileSize, SEEK_SET) != 0)
