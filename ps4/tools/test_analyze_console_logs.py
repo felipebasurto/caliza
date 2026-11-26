@@ -109,6 +109,24 @@ def main() -> int:
         ok &= expect("nonexecutable fallback warns without failing", noexec, (), 0,
                      "slow interpreter compatibility fallback")
 
+        mcdfail = root / "mcdfail.log"
+        mcdfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                           "[mcd] slot 0: wrote back 1 block(s) (16 KiB) in 1 write(s), 2.0 ms (idle) -- WRITE FAILED\n")
+        ok &= expect("memory-card write failure is fatal", mcdfail, (), 1,
+                     "memory-card cache write failure evidence")
+
+        nvramfail = root / "nvramfail.log"
+        nvramfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                             "Failed to save NVRAM to scph10000.nvm: read-only file system\n")
+        ok &= expect("NVRAM save failure warns without failing", nvramfail, (), 0,
+                     "WARN NVRAM save failure")
+
+        statecorrupt = root / "statecorrupt.log"
+        statecorrupt.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                                "Save state corruption in eeMemory.bin.\n")
+        ok &= expect("savestate corruption is fatal", statecorrupt, (), 1,
+                     "savestate corruption evidence present")
+
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

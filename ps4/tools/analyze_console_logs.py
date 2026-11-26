@@ -118,6 +118,18 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
     require(ev, args.expect_state, "savestate round trip", state_write and state_load, "both [state] wrote and [state] loaded lines")
     if state_write and not any("(streaming)" in line for line in ev.matching("[state] wrote ")):
         ev.warnings.append("savestate write did not use the streaming path (expected only for threaded/non-pad saves)")
+    if ev.has("Save state corruption") or ev.has("Savestate data corruption"):
+        ev.failures.append("savestate corruption evidence present")
+    elif ev.has("Failed to load state"):
+        ev.warnings.append("savestate load failure evidence present; inspect whether the .backup fallback succeeded")
+
+    mcd_write_failures = sum("WRITE FAILED" in line for line in ev.matching("[mcd]"))
+    if mcd_write_failures:
+        ev.failures.append(f"memory-card cache write failure evidence present in {mcd_write_failures} line(s); guest saves are at risk")
+    if ev.has("Failed to save NVRAM"):
+        ev.warnings.append("NVRAM save failure evidence present; settings may be lost on exit")
+    if ev.has("Failed to write MEC") or ev.has("Failed to replace MEC"):
+        ev.warnings.append("mechacon-version persistence failure evidence present")
 
     nfs_connected = bool(re.search(r"network share .* at /net/share\d+: (?=Connected|connected)", "\n".join(ev.lines), re.IGNORECASE))
     nfs_left_out = ev.count("network share left out") + sum(
