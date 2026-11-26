@@ -2286,7 +2286,7 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
     const bool large_stack = attr_initialized && pthread_attr_setstacksize(&attr, 1024 * 1024) == 0;
     size_t created = 0;
     if (!large_stack)
-      printf("[boot] %s: network share large worker stack unavailable; boot check skipped rather than risking small stacks\n", when);
+      printf("[boot] %s: network share large worker stack unavailable; checks skipped because uncancellable serial RPCs would make boot unbounded\n", when);
     else
     {
       for (; created < worker_count; created++)
@@ -2321,7 +2321,8 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
       timed_out = shared->completed.load(std::memory_order_relaxed) < shared->jobs.size();
       pthread_mutex_unlock(&shared->mutex);
     }
-    // Copy only jobs explicitly marked complete; pending jobs may still be written by detached workers.
+    // Copy immutable identity for every job. Only read mutable results for jobs explicitly marked
+    // complete; pending jobs may still be written by detached workers.
     for (size_t job_index = 0; job_index < shared->jobs.size(); job_index++)
     {
       const NetfsShareJob& job = shared->jobs[job_index];
@@ -2332,13 +2333,15 @@ static std::vector<std::string> orbis_nfs_game_folders(const char* when)
       finished.url = job.url;
       finished.mounted = done == 1;
       if (done == 0)
-        std::snprintf(finished.message, sizeof(finished.message), "check timed out");
+        std::snprintf(finished.message, sizeof(finished.message), "%s", created == 0 ? "check unavailable" : "check timed out");
       else
         std::snprintf(finished.message, sizeof(finished.message), "%s", job.message);
       jobs.push_back(std::move(finished));
     }
     if (timed_out)
       printf("[boot] %s: network share check budget expired after 8 s; pending shares stay registered for manual retry\n", when);
+    if (created == 0)
+      printf("[boot] %s: network share checks unavailable; shares stay registered for manual retry\n", when);
     release_shared(shared);
 
     for (const NetfsShareJob& job : jobs)
