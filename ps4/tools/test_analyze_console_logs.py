@@ -20,6 +20,8 @@ GOOD = """[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (flexible)
 [boot] boot: network share nfs://192.168.1.2/ps2 at /net/share1: Connected
 [threads] draws=120 gs_idle_ms=1 ee_waitgs_ms=2(3) ee_ringfull_ms=0(0) ticker_cpu=1
 [copies] draw=1(1.0MB)
+[pcsx2] VM stage: Opening SPU2
+[pcsx2] first VMManager::Execute begin
 """
 
 BAD_MEM = """[dbg] memmap: direct alloc failed, falling through
@@ -74,6 +76,20 @@ def main() -> int:
         nfsfail.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
                            "[boot] boot: network share nfs://192.168.1.2/ps2 at /net/share1: doesn't answer (not added to scan)\n")
         ok &= expect("unchecked NFS share fails expectation", nfsfail, ("--expect-nfs",), 1, "missing required evidence for NFS share")
+
+        ok &= expect("latest boot-trace milestone is reported", good, (), 0,
+                     "INFO boot trace: last persistent milestone: first VMManager::Execute begin")
+
+        plain = root / "plain.log"
+        plain.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n")
+        ok &= expect("missing boot-trace milestones are informational", plain, (), 0,
+                     "INFO boot trace: no persistent [pcsx2] milestones found")
+
+        failedboot = root / "failedboot.log"
+        failedboot.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
+                              "[pcsx2] VMManager::Initialize failed\n")
+        ok &= expect("failure boot-trace milestone warns", failedboot, (), 0,
+                     "WARN boot trace ended at failure milestone: VMManager::Initialize failed")
 
     print("console-log analyzer tests: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1

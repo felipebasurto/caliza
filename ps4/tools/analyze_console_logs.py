@@ -65,9 +65,22 @@ def analyze(paths: list[pathlib.Path], args: argparse.Namespace) -> Evidence:
         ev.failures.append("no log lines were read")
         return ev
 
+    boot_steps = []
+    for line in ev.lines:
+        match = re.search(r"\[pcsx2\]\s*(.+)$", line)
+        if match:
+            boot_steps.append(match.group(1).strip())
+    if boot_steps:
+        last_step = boot_steps[-1]
+        ev.notes.append(f"INFO boot trace: last persistent milestone: {last_step}")
+        if "failed" in last_step.lower():
+            ev.warnings.append(f"boot trace ended at failure milestone: {last_step}")
+    else:
+        ev.notes.append("INFO boot trace: no persistent [pcsx2] milestones found")
+
     memmap_ok = ev.has("[dbg] memmap: data=")
     require(ev, True, "memory map", memmap_ok, "successful direct data/code mapping line")
-    if ev.has("[dbg] memmap: direct alloc failed"):
+    if ev.has("[dbg] memmap: direct alloc failed") or ev.has("[dbg] memmap: direct memory initialization failed"):
         ev.failures.append("direct memory allocation failed; fastmem/JIT memory map is not valid")
     if ev.has("[boot] SysMemory::Reset FAILED") or ev.has("[dbg] sysmem: AllocateMemoryMap failed") or ev.has("[dbg] sysmem: vtlb_Core_Alloc failed"):
         ev.failures.append("VM memory initialization failed; boot should stop rather than reset invalid memory")
