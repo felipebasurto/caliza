@@ -553,9 +553,11 @@ endif
 all: $(OBJS)
 	@echo "VK COMPILE OK: $(words $(OBJS)) objects"
 
-# The object list link-vk.sh links (the GL build's conv.sh finds them with find).
-.PHONY: objects.txt
-objects.txt: $(OBJS)
+# The object list build-ps4.sh links. It is a build artifact too: callers doing isolated
+# or concurrent experiment builds can select another path with OBJECTS_FILE.
+OBJECTS_FILE ?= objects.txt
+$(OBJECTS_FILE): $(OBJS)
+	@mkdir -p $(dir $@)
 	@printf '%s\n' $(OBJS) > $@
 
 $(OBJDIR)/%.o: $(PCSX2)/%.cpp

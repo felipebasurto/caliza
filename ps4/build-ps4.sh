@@ -10,6 +10,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PCSX2="$(cd "$HERE/.." && pwd)"
 PORT="${PS4_PORT_DIR:-$HOME/cemups4}"
 PSB="${PCSX2PS4_BUILD:-$HOME/pcsx2ps4-build}"
+mkdir -p "$PSB"
 export PS4_SYSROOT="${PS4_SYSROOT:-$HOME/cemups4-build/sysroot}"
 OPENORBIS="${OPENORBIS:-/opt/pacbrew/ps4/openorbis}"
 mode="${1:-}"
@@ -32,7 +33,9 @@ echo "[build-ps4] compiling (NARROW=$narrow LTO=$lto ORBIS_ORDER=$order)"
 # paraLLEl-GS as a second renderer when ps4/build-pgs.sh has built its libraries.
 pgs=0
 [ -s "$PSB/pgs/libs.txt" ] && pgs=1 && echo "[build-ps4] with paraLLEl-GS"
-make -C "$HERE" -f Makefile.ps4 -j"${JOBS:-20}" PGS=$pgs NARROW="$narrow" LTO="$lto" all objects.txt > "$PSB/compile.log" 2>&1 \
+objects_file="$PSB/objects.txt"
+rm -f "$objects_file"
+make -C "$HERE" -f Makefile.ps4 -j"${JOBS:-20}" OBJDIR="$PSB/obj" OBJECTS_FILE="$objects_file" PGS=$pgs NARROW="$narrow" LTO="$lto" all "$objects_file" > "$PSB/compile.log" 2>&1 \
     || { grep -E "error" "$PSB/compile.log" | head -40; exit 1; }
 tail -1 "$PSB/compile.log"
 
@@ -43,7 +46,7 @@ link="$PSB/build/link"
 # the previous experiment's values. This does not recompile the port objects; Makefile.ps4 owns those.
 ps4_cmake -S "$HERE/link" -B "$link" -G "Unix Makefiles" \
     -DCMAKE_TOOLCHAIN_FILE="$PORT/toolchain/ps4-cemu.cmake" -DPS4_PORT_DIR="$PORT" \
-    -DPCSX2_OBJECTS_FILE="$HERE/objects.txt" -DPGS_LIBS_FILE="$PSB/pgs/libs.txt" -DPS4_PAID=0x3800000000000035 \
+    -DPCSX2_OBJECTS_FILE="$objects_file" -DPGS_LIBS_FILE="$PSB/pgs/libs.txt" -DPS4_PAID=0x3800000000000035 \
     -DPS4_NARROW="$narrow" -DPS4_LTO="$lto" -DORBIS_ORDER_FILE="$order" > "$PSB/link-configure.log" 2>&1 \
     || { tail -30 "$PSB/link-configure.log"; exit 1; }
 elf="$link/pcsx2"
