@@ -60,23 +60,30 @@ static bool ISOprecache(ProgressCallback* progress, Error* error)
 	return iso.Precache(progress, error);
 }
 
+static void lsn_to_msf_no_offset(s32 lsn, u8* minute, u8* second, u8* frame)
+{
+	*minute = static_cast<u8>(lsn / (60 * 75));
+	*second = static_cast<u8>((lsn / 75) % 60);
+	*frame = static_cast<u8>(lsn % 75);
+}
+
 static s32 ISOreadSubQ(u32 lsn, cdvdSubQ* subq)
 {
 	// fake it
 	u8 min, sec, frm;
-	subq->ctrl = 4;
+	subq->ctrl = (cdtype == CDVD_TYPE_CDDA) ? 0 : 4;
 	subq->adr = 1;
 	subq->trackNum = itob(1);
 	subq->trackIndex = itob(1);
 
-	lba_to_msf(lsn, &min, &sec, &frm);
+	lsn_to_msf_no_offset(lsn, &min, &sec, &frm);
 	subq->trackM = itob(min);
 	subq->trackS = itob(sec);
 	subq->trackF = itob(frm);
 
 	subq->pad = 0;
 
-	lba_to_msf(lsn + (2 * 75), &min, &sec, &frm);
+	lba_to_msf(lsn, &min, &sec, &frm);
 	subq->discM = itob(min);
 	subq->discS = itob(sec);
 	subq->discF = itob(frm);
