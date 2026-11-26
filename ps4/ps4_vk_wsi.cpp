@@ -15,6 +15,7 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
 #include "ps4_wsi_stats.h"
+#include "ps4_wsi_decision.h"
 
 #include <orbis/VideoOut.h>
 #include <orbis/libkernel.h>
@@ -262,12 +263,7 @@ FlipSnapshot GetFlipSnapshot()
 // the status query fails. Needs proper testing on the console.
 bool ImageAvailable(const Swapchain* sc, uint32_t image, const FlipSnapshot& flip)
 {
-	const int64_t shown = sc->shown_by[image];
-	if (shown == 0)
-		return true;
-	if (!flip.valid || flip.arg < shown)
-		return false;
-	return flip.current_buffer != sc->first + static_cast<int>(image);
+	return ps4_wsi_image_available(sc->shown_by[image], flip.valid, flip.arg, flip.current_buffer, sc->first, image);
 }
 
 // Keep round-robin order as a preference, but take any free image. Strictly waiting on the next one
@@ -278,12 +274,11 @@ bool WaitForImage(Swapchain* sc, uint64_t timeout_ns, uint32_t* index)
 	for (;;)
 	{
 		const FlipSnapshot flip = GetFlipSnapshot();
-		for (uint32_t offset = 0; offset < kImages; offset++)
+		uint32_t image = 0;
+		uint32_t next = sc->next;
+		if (ps4_wsi_select_image(sc->shown_by, sc->next, flip.valid, flip.arg, flip.current_buffer, sc->first, &image, &next))
 		{
-			const uint32_t image = (sc->next + offset) % kImages;
-			if (!ImageAvailable(sc, image, flip))
-				continue;
-			sc->next = (image + 1) % kImages;
+			sc->next = next;
 			*index = image;
 			return true;
 		}
@@ -1156,18 +1151,18 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
 		if (r == VK_SUCCESS)
 		{
 			const uint32_t image = info->pImageIndices[n];
-			const unsigned mode =
-				sc->present_mode == VK_PRESENT_MODE_FIFO_KHR ? ORBIS_VIDEO_OUT_FLIP_VSYNC : ORBIS_VIDEO_OUT_FLIP_HSYNC;
+			const unsigned mode = ps4_wsi_flip_mode(sc->present_mode == VK_PRESENT_MODE_FIFO_KHR,
+				ORBIS_VIDEO_OUT_FLIP_VSYNC, ORBIS_VIDEO_OUT_FLIP_HSYNC);
 			const int64_t arg = s_flip_arg.fetch_add(1, std::memory_order_relaxed) + 1;
 			int flip = ac_ps4_submit_flip(s_video, static_cast<unsigned>(sc->first) + image, mode, arg);
-			if (flip != 0)
+			if (ps4_wsi_gpu_flip_needs_cpu_fallback(flip))
 			{
 				// No GPU-side flip: wait for the GPU here, then flip from the CPU.
 				NoteFlipFallback(arg, image, flip);
 				Device<PFN_vkQueueWaitIdle>(sc->device, "vkQueueWaitIdle")(queue);
 				flip = sceVideoOutSubmitFlip(s_video, sc->first + static_cast<int>(image), mode, arg);
 			}
-			if (flip < 0)
+			if (!ps4_wsi_flip_succeeded(flip))
 			{
 				s_stat_present_failures.fetch_add(1, std::memory_order_relaxed);
 				static int s_reported;

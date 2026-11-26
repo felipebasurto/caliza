@@ -21,6 +21,13 @@ run_test frame_pacing tests/fgpacing/test_fg_pacing.cpp -Werror
 run_test kbm_map tests/kbm/test_kbm_map.cpp
 run_test pad_map tests/padmap/test_pad_map.cpp
 run_test texture_roots tests/textures/textures_test.cpp
+echo "== wsi_decision =="
+if g++ -std=c++17 -Wall -Wextra -Werror -I"$here/include" "$here/tests/test_wsi_decision.cpp" -o "$out/wsi_decision" && "$out/wsi_decision"; then
+    echo "PASS: wsi_decision"
+else
+    echo "FAIL: wsi_decision" >&2
+    status=1
+fi
 echo "== package_stage_validator =="
 if python3 "$here/tools/test_validate_package_stage.py"; then
     echo "PASS: package_stage_validator"
