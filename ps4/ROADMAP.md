@@ -11,13 +11,13 @@
 ## P1 platform robustness
 
 1. Console-validate the executable-memory probe now implemented before recompiler memory use.
-2. Add actionable failure UI/log if no executable memory source exists; consider explicit interpreter fallback.
+2. Console-validate the non-executable-memory interpreter fallback; measure its speed and confirm generated-code paths stay disabled.
 3. Hardware-test opt-in USB keyboard/mouse using `/data/PCSX2/flags/usbkbm`; enable by default only if the console matrix proves it safe.
 4. Validate the new CEMUPS4 `/net` NFSv3 path on hardware, then decide whether SMB deserves a separate credential-aware network-shares UI.
 5. Console-validate the new mbedTLS cover-download path, including offline behavior and certificate failure handling.
 6. Use the new audio underrun/output telemetry on hardware; honor latency settings where possible.
-7. Console-validate streamed savestate loading and then reduce the save path's large serialized buffer if flexible memory remains tight.
-8. Finish WSI lifetime hardening for multi-device aliasing and swapchain recreation assumptions.
+7. Console-validate streamed savestate loading/saving, backup fallback, memory cards, and atomic NVRAM persistence under real power-loss/crash scenarios.
+8. Finish WSI lifetime hardening for multi-device aliasing; failed swapchain recreation now releases the retired Orbis swapchain.
 
 ## P2 compatibility
 

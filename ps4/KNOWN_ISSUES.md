@@ -3,7 +3,7 @@
 ## Critical/platform
 
 1. **Baseline ELF imports PS5-only JIT shared-memory symbols.** `sceKernelJitCreateSharedMemory` and `sceKernelJitMapSharedMemory` appear as dynamic imports even though direct memory is the default. Candidate removes those references under `ORBIS_PS4`; verify with dynamic import audit.
-2. **Executable memory is firmware/loader dependent.** Direct memory mapped/mprotected executable is the chosen path. It must be proven on each supported firmware/homebrew loader. If it fails, there is currently no clean automatic interpreter fallback.
+2. **Executable memory is firmware/loader dependent.** Direct memory mapped/mprotected executable is the chosen path. It must be proven on each supported firmware/homebrew loader. If execution fails but RW memory exists, the PS4 candidate now falls back to interpreters; expect a severe performance cost and validate boot/UI behavior on hardware.
 3. **OpenOrbis stubs can overstate available symbols.** Export-index checks are necessary but insufficient; keep an explicit PS5-only denylist.
 
 ## Renderer/GPU
@@ -16,17 +16,17 @@
 
 ## Input/audio/filesystem
 
-1. Player-1 disconnect stuck-input handling is improved, but the PS4 pad connected-byte layout is unverified; the candidate fails open and logs the byte window for first console validation.
+1. Player-1 disconnect stuck-input handling and extra-controller hotplug retry are improved, but the PS4 pad connected-byte layout is unverified; the candidate fails open and logs the byte window for first console validation.
 2. USB keyboard/mouse remains off by default on PS4. `/data/PCSX2/flags/usbkbm` opts in for hardware testing; behavior is still console-unverified.
 3. Cover downloads now use the mbedTLS HTTPS client on PS4, but DNS/TLS/redirect behavior is still console-unverified.
 4. NFS game shares now use CEMUPS4 `/net/shareN` rather than the PS5 `/nfs` libc-wrap layer. Only plain NFSv3 `nfs://host/export` addresses are supported, behavior is console-unverified, and SMB is not exposed in the UI yet.
-5. NVRAM lives beside BIOS; read-only custom BIOS folders can break NVRAM persistence.
+5. NVRAM lives beside BIOS; read-only custom BIOS folders can break NVRAM persistence. Writes are now periodic, dirty-only, and atomic on PS4, but a read-only location still cannot persist them.
 
 ## Memory/robustness
 
 1. Savestate loading streams entry payloads, and synchronous saves stream entries without a second full-state buffer; both paths still need console memory/correctness validation. Threaded saves intentionally keep the full-snapshot contract.
 2. Compiler warning count is 148 in baseline and not triaged.
-3. No automatic fallback to interpreter if executable memory cannot be validated; allocation now fails clearly instead of accepting non-executable memory.
+3. The non-executable-memory interpreter fallback is compile-validated only. It should allow boot/UI diagnostics, but its real speed and correctness on Jaguar are unknown.
 4. The legacy non-PS4 direct-code fallback still maps `0x33` (CPU/GPU RW, no CPU execute) and lacks ownership tracking. It is PS5-only, was not changed without PS5 hardware validation, and should either use the validated RW-to-mprotect path or fail cleanly in a future narrow patch.
 5. JIT shared-memory ownership remains incomplete on the PS5-only opt-in path because the kernel handle is lost; do not reintroduce those imports on PS4.
 
