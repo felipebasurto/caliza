@@ -428,6 +428,28 @@ bool USB::DoState(StateWrapper& sw)
 			return true;
 		}
 
+		// Devices skipped because of a configuration mismatch do not run DoEndpointState below.
+		// Clear every live endpoint queue up front so a pre-load usb_packet can never survive as
+		// stale queue linkage and later be inserted twice. needs proper testing.
+		for (u32 port = 0; port < USB::NUM_PORTS; port++)
+		{
+			USBDevice* dev = s_usb_device[port];
+			if (!dev)
+				continue;
+			USBEndpoint* endpoints[1 + USB_MAX_ENDPOINTS * 2];
+			endpoints[0] = &dev->ep_ctl;
+			for (u32 i = 0; i < USB_MAX_ENDPOINTS; i++)
+			{
+				endpoints[1 + i] = &dev->ep_in[i];
+				endpoints[1 + USB_MAX_ENDPOINTS + i] = &dev->ep_out[i];
+			}
+			for (USBEndpoint* ep : endpoints)
+			{
+				while (!QTAILQ_EMPTY(&ep->queue))
+					QTAILQ_REMOVE(&ep->queue, QTAILQ_FIRST(&ep->queue), queue);
+			}
+		}
+
 		for (u32 port = 0; port < USB::NUM_PORTS; port++)
 		{
 			s32 state_devtype;
