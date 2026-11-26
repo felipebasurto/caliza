@@ -304,7 +304,7 @@ void HostSys::FlushInstructionCache(void* address, u32 size)
 namespace PageFaultHandler
 {
 	static std::recursive_mutex s_exception_handler_mutex;
-	static bool s_in_exception_handler = false;
+	static thread_local sig_atomic_t t_in_exception_handler = 0;
 	static bool s_installed = false;
 } // namespace PageFaultHandler
 
@@ -431,30 +431,21 @@ void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 
 #endif
 
-	// Orbis: recursive fault while the handler is already active - the mutex is
-	// held, so bail immediately to avoid a deadlock/fault-storm (kernel panic).
-	if (s_in_exception_handler)
+	// Orbis: only same-thread re-entry is recursive. A fault on another thread must wait for
+	// the mutex and then be handled normally; treating it as recursion killed the whole process.
+	if (t_in_exception_handler)
 	{
-		FILE* f = fopen(g_orbis_pf_log, "a");
-		if (f)
-		{
-			fprintf(f, "[pf] sig=%d pc=%p addr=%p write=%d (recursive, bail)\n", sig, exception_pc, exception_address, is_write);
-			fclose(f);
-		}
+		static constexpr char recursive_msg[] = "[pf] recursive page-fault handler entry; exiting\n";
+		(void)!write(STDERR_FILENO, recursive_msg, sizeof(recursive_msg) - 1);
 		_exit(1);
 	}
 
 	// Executing the handler concurrently from multiple threads wouldn't go down well.
 	s_exception_handler_mutex.lock();
 
-	// Prevent recursive exception filtering.
-	HandlerResult result = HandlerResult::ExecuteNextHandler;
-	if (!s_in_exception_handler)
-	{
-		s_in_exception_handler = true;
-		result = HandlePageFault(exception_pc, exception_address, is_write);
-		s_in_exception_handler = false;
-	}
+	t_in_exception_handler = 1;
+	const HandlerResult result = HandlePageFault(exception_pc, exception_address, is_write);
+	t_in_exception_handler = 0;
 
 	s_exception_handler_mutex.unlock();
 

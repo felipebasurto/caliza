@@ -29,10 +29,10 @@ REQUIRED = [
     "vu0MicroMem.bin",
     "vu1MicroMem.bin",
     "SPU2.bin",
-    "USB.bin",
     "PAD.bin",
+    "GS.bin",
 ]
-OPTIONAL = {"Achievements.bin"}
+OPTIONAL = {"USB.bin", "Achievements.bin"}
 KNOWN = set(REQUIRED) | OPTIONAL
 
 
@@ -82,13 +82,11 @@ def main() -> int:
         pos += 8
         if size > len(data) - pos:
             return fail(f"entry {name!r} extends past EOF ({size} bytes at {pos})")
-        if name in seen:
-            return fail(f"duplicate entry {name!r}")
-        seen.add(name)
+        if name not in seen:
+            seen.add(name)
         entries.append((name, pos, size))
         pos += int(size)
-    if pos != len(data):
-        return fail(f"trailing bytes after final entry ({len(data) - pos})")
+    trailing = len(data) - pos
 
     missing = [name for name in REQUIRED if name not in seen]
     unknown = [name for name in seen if name not in KNOWN]
@@ -99,6 +97,11 @@ def main() -> int:
     print(f"savestate validation: PASS: {count} entries, {total_payload} payload bytes, version {version:#x}")
     for name, offset, size in entries:
         print(f"  {name}: {size} bytes @ {offset}")
+    duplicates = count - len(seen)
+    if duplicates:
+        print(f"savestate validation: note: {duplicates} duplicate entr(y/ies) present; loader uses the first")
+    if trailing:
+        print(f"savestate validation: note: {trailing} trailing bytes ignored by loader")
     if unknown:
         print("savestate validation: note: unknown entries present: " + ", ".join(sorted(unknown)))
     if version != CURRENT_VERSION:

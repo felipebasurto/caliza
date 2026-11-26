@@ -14,7 +14,7 @@ VERSION = 0x9A59 << 16
 REQUIRED = [
     "PCSX2 Internal Structures.dat", "eeMemory.bin", "iopMemory.bin", "eeHwRegs.bin", "iopHwRegs.bin",
     "Scratchpad.bin", "vu0Memory.bin", "vu1Memory.bin", "vu0MicroMem.bin", "vu1MicroMem.bin", "SPU2.bin",
-    "USB.bin", "PAD.bin",
+    "PAD.bin", "GS.bin",
 ]
 
 
@@ -62,18 +62,27 @@ def main() -> int:
 
         path = root / "trailing.p2s"
         path.write_bytes(valid() + b"x")
-        ok &= expect("trailing bytes", path, 1, "trailing bytes")
+        ok &= expect("trailing bytes are tolerated like the loader", path, 0, "trailing bytes ignored")
 
-        entries = [(name, b"x") for name in REQUIRED[:-1]]
+        entries = [(name, b"x") for name in REQUIRED if name != "PAD.bin"]
         path = root / "missing.p2s"
         path.write_bytes(blob(entries))
         ok &= expect("missing required entry", path, 1, "missing required entries: PAD.bin")
 
-        entries = [(name, b"x") for name in REQUIRED]
-        entries[1] = (REQUIRED[0], b"x")
+        entries = [(name, b"x") for name in REQUIRED] + [(REQUIRED[0], b"x")]
         path = root / "duplicate.p2s"
         path.write_bytes(blob(entries))
-        ok &= expect("duplicate entry", path, 1, "duplicate entry")
+        ok &= expect("duplicate entries are tolerated like the loader", path, 0, "duplicate")
+
+        entries = [(name, b"x") for name in REQUIRED if name != "GS.bin"] + [("USB.bin", b"x")]
+        path = root / "missing-gs.p2s"
+        path.write_bytes(blob(entries))
+        ok &= expect("missing GS entry is fatal", path, 1, "missing required entries: GS.bin")
+
+        entries = [(name, b"x") for name in REQUIRED]
+        path = root / "no-usb.p2s"
+        path.write_bytes(blob(entries))
+        ok &= expect("missing USB entry is optional", path, 0, "PASS: 13 entries")
 
         path = root / "truncated.p2s"
         path.write_bytes(valid()[:-3])
