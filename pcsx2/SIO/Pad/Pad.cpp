@@ -69,6 +69,7 @@ bool Pad::Initialize()
 
 void Pad::Shutdown()
 {
+	std::lock_guard<std::mutex> lock(s_orbis_pad_mutex);
 	for (auto& port : s_controllers)
 		port.reset();
 }

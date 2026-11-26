@@ -731,11 +731,18 @@ static void orbis_pad_apply(OrbisPadPort &p, const OrbisPadData &d)
 // two-motor call).
 struct OrbisRumbleOut
 {
-  u32 sent = 0;
+  static constexpr u32 FORCE_SEND = 0xffffffffu;
+  u32 sent = FORCE_SEND; // vibration bytes are only 16 bits, so this always forces one send
+  int32_t handle = -1;
   unsigned logged = 0;
 };
 static void orbis_rumble_send(int index, int32_t handle, OrbisRumbleOut &out)
 {
+  if (handle != out.handle)
+  {
+    out.handle = handle;
+    out.sent = OrbisRumbleOut::FORCE_SEND;
+  }
   if (handle < 0)
     return;
   const bool on = g_orbis_rumble_on.load(std::memory_order_relaxed) != 0 && !g_orbis_menu_request.load(std::memory_order_relaxed);
@@ -1065,7 +1072,24 @@ static void *orbis_pad_thread(void *)
     {
       OrbisPadPort &px = extra[i];
       if (px.handle < 0)
-        continue;
+      {
+        if ((reads % 250u) == 0u)
+        {
+          int retry = scePadOpen(g_orbis_extra_user[i], 0, 0, nullptr);
+          if (retry < 0)
+            retry = scePadGetHandle(g_orbis_extra_user[i], 0, 0);
+          if (retry >= 0)
+          {
+            px.handle = retry;
+            char who[16];
+            snprintf(who, sizeof(who), "player %d", i + 2);
+            printf("[pad] %s controller handle appeared: %d\n", who, retry);
+            orbis_pad_rumble_mode(retry, who);
+          }
+        }
+        if (px.handle < 0)
+          continue;
+      }
       OrbisPadData d2;
       memset(&d2, 0, sizeof(d2));
       const int rc2 = p_read(px.handle, &d2);
