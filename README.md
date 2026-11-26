@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ps4/docs/zeruko-icon-master.png" alt="Zeruko" width="180">
+</p>
+
 <h1 align="center">Zeruko</h1>
 
 <h3 align="center">Your classics, back in orbit.</h3>

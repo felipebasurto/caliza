@@ -208,6 +208,10 @@ Last updated: 2026-11-26 after integrating CDDA mode-2448 support, memory-card c
 | P1-DEBUG | Debug allocation protocol corruption | fixed | `ps5dbgclient.cpp` allocation body now matches documented wire layout |
 | P2-DOCS | Required technical docs | done, still evolving | all requested docs exist under `ps4/` |
 
+## v0.1.0 release evidence (2026-11-26)
+
+First public Zeruko release, exact commit `be61d8f` (plus the docs-only commits that follow it). Package `zeruko-v0.1.0-ps4.pkg` (60,817,408 bytes), SHA-256 `0d47fafc19e6295c7eb60efc245819c1337a00b6790a77644c795aca48017ccc`, bit-for-bit reproducible (independent repackaging produced the identical hash). Title id `ZERU00001`, content id `IV0000-ZERU00001_00-ZERUKO0000000000`. Package validation PASS (redistributable BIOS-free build, 17 required files), 257 dynamic imports with 0 unresolved and 0 known PS5-only imports, full host test runner PASS, compile rc=0 zero errors. Embedded provenance `Build commit: be61d8f` and `Corresponding source: https://github.com/felipebasurto/zeruko`. Includes the /data/PCSX2 migration, the About Zeruko licence screen, and the Orbiting Z package icon. Hardware validation remains the critical open item - install this exact hash only.
+
 ## Current candidate artifact
 
 Built in the Linux x86_64 OpenOrbis container at exactly `0d781cd` (includes CD block-dump safety, folder memory-card truncation/atomic conversion/read-failure/depth-cap/close-durability hardening, atomic metadata replacement with best-effort directory synchronization, non-lossy prioritized state requests, foreground-user pad fallback, corrected pad diagnostics and D-pad cancellation, retired pad objects that cannot dangle across controller recreation, durable memory-card shrink/fsync retry handling, CDDA mode-2448 sector support, stale state-request elimination, pad slot bounds, symlink-preserving memory-card conversion, bounded use-after-free-safe emulation audio teardown, and bounded frontend shelf-audio teardown, fail-closed CHD unit-size mismatch copies, CDVD savestate staging refetch, block-dump subchannel fidelity, and the experimental smart tune auto-tuner):
