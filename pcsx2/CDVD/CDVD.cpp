@@ -238,6 +238,32 @@ void cdvdSaveNVRAM()
 		return;
 	}
 
+#ifdef ORBIS_PS4
+	// Write the replacement beside the NVRAM and rename it into place. Power loss can still lose the
+	// newest write, but it must not leave the previous 1 KiB file half-written on the console.
+	const std::string tmpfile = nvmfile + ".tmp";
+	std::FILE* out = std::fopen(tmpfile.c_str(), "wb");
+	bool wrote = false;
+	bool closed = false;
+	if (out)
+	{
+		wrote = std::fwrite(s_nvram, NVRAM_SIZE, 1, out) == 1;
+		closed = std::fclose(out) == 0;
+	}
+	bool saved = wrote && closed;
+	if (saved && std::rename(tmpfile.c_str(), nvmfile.c_str()) != 0)
+		saved = false;
+	if (saved)
+	{
+		s_nvram_dirty.store(false, std::memory_order_relaxed);
+		INFO_LOG("NVRAM saved to {}.", Path::GetFileName(nvmfile));
+	}
+	else
+	{
+		std::remove(tmpfile.c_str());
+		ERROR_LOG("Failed to save NVRAM to {}: {}", Path::GetFileName(nvmfile), Error::CreateErrno(errno).GetDescription());
+	}
+#else
 	if (FileSystem::FSeek64(fp.get(), 0, SEEK_SET) == 0 &&
 		std::fwrite(s_nvram, NVRAM_SIZE, 1, fp.get()) == 1)
 	{
@@ -248,6 +274,7 @@ void cdvdSaveNVRAM()
 	{
 		ERROR_LOG("Failed to save NVRAM to {}: {}", Path::GetFileName(nvmfile), Error::CreateErrno(errno).GetDescription());
 	}
+#endif
 }
 
 static void cdvdReadNVM(u8* dst, int offset, int bytes)
