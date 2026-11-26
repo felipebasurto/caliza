@@ -114,6 +114,12 @@ private:
           else if (!was_filling && refill_completed)
             s_audio_underruns.fetch_add(1, std::memory_order_relaxed);
         }
+        else
+        {
+          // Pause can race the first grain or land after the outer pause check. Never submit
+          // uninitialized or repeated stack audio in that window. needs proper testing.
+          std::memset(buf, 0, sizeof(buf));
+        }
         m_in_read.fetch_sub(1, std::memory_order_acq_rel);
       }
       s_audio_grains.fetch_add(1, std::memory_order_relaxed);
