@@ -14,6 +14,7 @@
 #include "common/Path.h"
 #include "common/StringUtil.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 
@@ -198,6 +199,8 @@ protected:
 	bool m_cache_ok[8] = {};
 	u32 m_idle_seconds[8] = {};
 	u32 m_dirty_seconds[8] = {};
+	u32 m_flush_fail_cooldown[8] = {};
+	bool m_flush_error_reported[8] = {};
 
 public:
 	FileMemoryCard();
@@ -222,7 +225,7 @@ protected:
 	bool Seek(std::FILE* f, u32 adr);
 	bool Create(const char* mcdFile, uint sizeInMB);
 	bool LoadCache(uint slot); // vk-285-31
-	void FlushCache(uint slot, const char* why);
+	void FlushCache(uint slot, const char* why, bool force = false);
 	void MarkDirty(uint slot, u32 adr, u32 size);
 };
 
@@ -433,14 +436,17 @@ void FileMemoryCard::MarkDirty(uint slot, u32 adr, u32 size)
 }
 
 // Writes the dirty erase blocks back: one seek and one write per run of neighbouring blocks.
-void FileMemoryCard::FlushCache(uint slot, const char* why)
+void FileMemoryCard::FlushCache(uint slot, const char* why, bool force)
 {
 	if (!m_dirty_any[slot] || m_cache[slot].empty() || !m_file[slot])
+		return;
+	if (!force && m_flush_fail_cooldown[slot] != 0)
 		return;
 	OrbisMcdTimer timer;
 	const auto c0 = std::chrono::steady_clock::now();
 	std::FILE* f = m_file[slot];
-	std::vector<u8>& dirty = m_dirty[slot];
+	const std::vector<u8> dirty = m_dirty[slot];
+	std::vector<u8>& live_dirty = m_dirty[slot];
 	const std::vector<u8>& image = m_cache[slot];
 	u32 blocks = 0, runs = 0;
 	size_t bytes = 0;
@@ -454,7 +460,7 @@ void FileMemoryCard::FlushCache(uint slot, const char* why)
 		}
 		size_t e = b;
 		while (e < dirty.size() && dirty[e])
-			dirty[e++] = 0;
+			e++;
 		const size_t off = b * MC2_ERASE_SIZE;
 		const size_t len = std::min(e * MC2_ERASE_SIZE, image.size()) - off;
 		ok = ok && FileSystem::FSeek64(f, static_cast<s64>(off), SEEK_SET) == 0 && std::fwrite(&image[off], len, 1, f) == 1;
@@ -464,13 +470,32 @@ void FileMemoryCard::FlushCache(uint slot, const char* why)
 		b = e;
 	}
 	ok = ok && std::fflush(f) == 0;
-	m_dirty_any[slot] = false;
+	if (ok)
+	{
+		for (size_t b = 0; b < dirty.size() && b < live_dirty.size(); b++)
+		{
+			if (dirty[b])
+				live_dirty[b] = 0;
+		}
+		m_dirty_any[slot] = std::find(live_dirty.begin(), live_dirty.end(), 1) != live_dirty.end();
+		m_flush_fail_cooldown[slot] = 0;
+		m_flush_error_reported[slot] = false;
+	}
+	else
+	{
+		// Keep the failed blocks dirty so a later retry or close cannot silently drop guest saves.
+		m_dirty_any[slot] = true;
+		m_flush_fail_cooldown[slot] = 10;
+		if (!m_flush_error_reported[slot])
+		{
+			Host::ReportErrorAsync("Memory Card Write Failed", "Error writing the memory card file.");
+			m_flush_error_reported[slot] = true;
+		}
+	}
 	g_orbis_mcd_flush_kib.fetch_add(static_cast<u32>(bytes >> 10), std::memory_order_relaxed);
 	std::printf("[mcd] slot %u: wrote back %u block(s) (%zu KiB) in %u write(s), %.1f ms (%s)%s\n", slot, blocks,
 		bytes >> 10, runs, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count(), why,
 		ok ? "" : " -- WRITE FAILED");
-	if (!ok)
-		Host::ReportErrorAsync("Memory Card Write Failed", "Error writing the memory card file.");
 }
 
 // vk-285-31: once an emulated second (sioNextFrame). The first call after a write sees the second
@@ -479,6 +504,12 @@ void FileMemoryCard::NextFrame(uint slot)
 {
 	if (!m_dirty_any[slot])
 		return;
+	if (m_flush_fail_cooldown[slot] != 0)
+	{
+		m_flush_fail_cooldown[slot]--;
+		if (m_flush_fail_cooldown[slot] != 0)
+			return;
+	}
 	m_idle_seconds[slot]++;
 	m_dirty_seconds[slot]++;
 	if (m_idle_seconds[slot] >= 2)
@@ -495,7 +526,7 @@ void FileMemoryCard::Close()
 			continue;
 
 		// vk-285-31: the RAM image's changes first.
-		FlushCache(slot, "close");
+		FlushCache(slot, "close", true);
 		m_cache[slot] = {};
 		m_dirty[slot] = {};
 		m_cache_ok[slot] = false;

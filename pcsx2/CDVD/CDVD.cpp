@@ -51,6 +51,30 @@ static std::atomic_bool s_nvram_dirty{false};
 static constexpr u32 DEFAULT_MECHA_VERSION = 0x00020603;
 static u32 s_mecha_version = 0;
 
+static bool cdvdWriteMechaVersionFile(const std::string& mecfile)
+{
+	Error error;
+	const std::string tmpfile = mecfile + ".tmp";
+	bool written = false;
+	{
+		auto fp = FileSystem::OpenManagedCFile(tmpfile.c_str(), "wb", &error);
+		written = fp && std::fwrite(&s_mecha_version, sizeof(s_mecha_version), 1, fp.get()) == 1 &&
+		          std::fflush(fp.get()) == 0;
+	}
+	if (!written)
+	{
+		FileSystem::DeleteFilePath(tmpfile.c_str());
+		return false;
+	}
+	if (!FileSystem::RenamePath(tmpfile.c_str(), mecfile.c_str(), &error))
+	{
+		ERROR_LOG("Failed to replace MEC file {}: {}", Path::GetFileName(mecfile), error.GetDescription());
+		FileSystem::DeleteFilePath(tmpfile.c_str());
+		return false;
+	}
+	return true;
+}
+
 static __fi void SetSCMDResultSize(u8 size) noexcept
 {
 	cdvd.SCMDResultCnt = size;
@@ -204,11 +228,10 @@ void cdvdLoadNVRAM()
 	{
 		s_mecha_version = DEFAULT_MECHA_VERSION;
 
-		ERROR_LOG("Failed to open or read MEC file at {}: {}, creating default.", Path::GetFileName(nvmfile),
+		ERROR_LOG("Failed to open or read MEC file at {}: {}, creating default.", Path::GetFileName(mecfile),
 			error.GetDescription());
 		fp.reset();
-		fp = FileSystem::OpenManagedCFileTryIgnoreCase(mecfile.c_str(), "wb");
-		if (!fp || std::fwrite(&s_mecha_version, sizeof(s_mecha_version), 1, fp.get()) != 1)
+		if (!cdvdWriteMechaVersionFile(mecfile))
 			Host::ReportErrorAsync("Error", "Failed to write MEC file. Check your BIOS setup/permission settings.");
 	}
 	DEV_LOG("Mechacon version: 0x{:08X}", s_mecha_version);
