@@ -1,31 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Caliza ecosystem overview showing storage sources, the Estratos TV interface and PCSX2 core on PS4, and the LAN companion web panel">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 572" width="1200" height="572" role="img" aria-label="Caliza overview showing user storage, the PS4 emulator with its Estratos interface and PCSX2 core, and the LAN companion panel">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="620" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#05071A"/>
-      <stop offset="55%" stop-color="#090E30"/>
-      <stop offset="100%" stop-color="#05081E"/>
-    </linearGradient>
-    <radialGradient id="nebulaA" cx="52%" cy="46%" r="48%">
-      <stop offset="0%" stop-color="#3340D0" stop-opacity="0.34"/>
-      <stop offset="55%" stop-color="#5A34B8" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#05071A" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="nebulaB" cx="88%" cy="18%" r="36%">
-      <stop offset="0%" stop-color="#5A34B8" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#05071A" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="heroPlate" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#131D54" stop-opacity="0.92"/>
-      <stop offset="100%" stop-color="#080D2B" stop-opacity="0.94"/>
-    </linearGradient>
-    <linearGradient id="panelPlate" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0D133A" stop-opacity="0.90"/>
-      <stop offset="100%" stop-color="#070B24" stop-opacity="0.92"/>
-    </linearGradient>
-    <linearGradient id="focusRow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#6F95FF" stop-opacity="0.34"/>
-      <stop offset="100%" stop-color="#6F95FF" stop-opacity="0.04"/>
-    </linearGradient>
     <linearGradient id="logoTop" gradientUnits="userSpaceOnUse" x1="60.45" y1="8.26" x2="60.45" y2="60.26">
       <stop offset="0" stop-color="#F4FBFF"/>
       <stop offset="1" stop-color="#9EDFFF"/>
@@ -47,26 +21,11 @@
     </style>
   </defs>
 
-  <!-- Canvas background -->
-  <rect x="0.5" y="0.5" width="1199" height="619" rx="18" fill="url(#bg)" stroke="#8C9BFF" stroke-opacity="0.26"/>
-  <rect x="1" y="1" width="1198" height="618" rx="18" fill="url(#nebulaA)"/>
-  <rect x="1" y="1" width="1198" height="618" rx="18" fill="url(#nebulaB)"/>
+  <!-- Canvas -->
+  <rect x="0.5" y="0.5" width="1199" height="571" rx="16" fill="#06081F" stroke="#8C9BFF" stroke-opacity="0.26"/>
 
-  <!-- Subtle Estratos floating wireframe cubes -->
-  <g fill="none" stroke="#A9B0FF" stroke-opacity="0.11" stroke-width="1">
-    <polygon points="1095,46 1127,64 1095,82 1063,64"/>
-    <polygon points="1063,64 1095,82 1095,118 1063,100"/>
-    <polygon points="1095,82 1127,64 1127,100 1095,118"/>
-    <polygon points="1146,18 1166,29 1146,40 1126,29"/>
-    <polygon points="1126,29 1146,40 1146,62 1126,51"/>
-    <polygon points="1146,40 1166,29 1166,51 1146,62"/>
-    <polygon points="68,546 92,560 68,574 44,560"/>
-    <polygon points="44,560 68,574 68,600 44,586"/>
-    <polygon points="68,574 92,560 92,586 68,600"/>
-  </g>
-
-  <!-- Header bar -->
-  <g transform="translate(40, 26) scale(0.42)">
+  <!-- Header -->
+  <g transform="translate(40, 24) scale(0.40)">
     <path d="M64.05 46.74 L109.09 72.74 L64.05 98.74 L19.02 72.74 Z" fill="url(#logoTop)"/>
     <path d="M19.02 72.74 L64.05 98.74 L64.05 114.34 L19.02 88.34 Z" fill="url(#logoLeft)"/>
     <path d="M64.05 98.74 L109.09 72.74 L109.09 88.34 L64.05 114.34 Z" fill="url(#logoRight)"/>
@@ -77,201 +36,172 @@
     <path d="M10.91 31.66 L55.95 57.66 L55.95 71.70 L10.91 45.70 Z" fill="url(#logoLeft)"/>
     <path d="M55.95 57.66 L100.98 31.66 L100.98 45.70 L55.95 71.70 Z" fill="url(#logoRight)"/>
   </g>
-  <text x="100" y="51" class="sans" font-size="22" font-weight="700" letter-spacing="3.5" fill="#F2F5FF">CALIZA</text>
-  <text x="100" y="72" class="sans" font-size="13.5" fill="#A3ACDA">Couch-friendly PlayStation 2 emulator for homebrew-capable PS4 consoles</text>
+  <text x="96" y="48" class="sans" font-size="20" font-weight="600" letter-spacing="2.5" fill="#F2F5FF">CALIZA</text>
+  <text x="96" y="68" class="sans" font-size="13.5" fill="#A3ACDA">Native PlayStation 2 emulator for PS4, ported from PCSX2</text>
+  <line x1="40" y1="88" x2="1160" y2="88" stroke="#8C9BFF" stroke-opacity="0.22"/>
 
-  <!-- Header pills -->
-  <g class="sans" font-size="12" font-weight="500">
-    <rect x="752" y="37" width="134" height="28" rx="14" fill="#101846" stroke="#8C9BFF" stroke-opacity="0.35"/>
-    <text x="819" y="55" text-anchor="middle" fill="#D4D9FF">Controller-first UI</text>
-    <rect x="896" y="37" width="150" height="28" rx="14" fill="#101846" stroke="#8C9BFF" stroke-opacity="0.35"/>
-    <text x="971" y="55" text-anchor="middle" fill="#A5E7FF">Vulkan (Mesa RADV)</text>
-    <rect x="1056" y="37" width="104" height="28" rx="14" fill="#101846" stroke="#8C9BFF" stroke-opacity="0.35"/>
-    <text x="1108" y="55" text-anchor="middle" fill="#72E3B5">GPLv3+ Free</text>
-  </g>
+  <!-- Column 1: Storage and BIOS -->
+  <g transform="translate(40, 108)">
+    <rect width="288" height="416" rx="12" fill="#0B1033" stroke="#8C9BFF" stroke-opacity="0.28"/>
+    <text x="20" y="34" class="sans" font-size="16" font-weight="600" fill="#F2F5FF">Storage and BIOS</text>
 
-  <line x1="40" y1="92" x2="1160" y2="92" stroke="#8C9BFF" stroke-opacity="0.24" stroke-width="1"/>
-
-  <!-- COLUMN 1: YOUR STORAGE -->
-  <g>
-    <rect x="40" y="114" width="290" height="454" rx="14" fill="url(#panelPlate)" stroke="#8C9BFF" stroke-opacity="0.30"/>
-    <text x="62" y="144" class="sans" font-size="12" font-weight="700" letter-spacing="1.6" fill="#A5E7FF">1 · YOUR MEDIA</text>
-    <text x="62" y="166" class="sans" font-size="17" font-weight="600" fill="#F2F5FF">Storage &amp; BIOS</text>
-    <text x="62" y="185" class="sans" font-size="12.5" fill="#A3ACDA">User-supplied files, read in place</text>
-
-    <!-- Storage items -->
-    <g transform="translate(58, 204)">
-      <rect width="254" height="54" rx="9" fill="#0B1134" stroke="#8C9BFF" stroke-opacity="0.22"/>
-      <text x="14" y="22" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">Internal Console Storage</text>
-      <text x="14" y="40" class="mono" font-size="11.5" fill="#A3ACDA">/data/caliza/bios &amp; games</text>
-    </g>
-    <g transform="translate(58, 268)">
-      <rect width="254" height="54" rx="9" fill="#0B1134" stroke="#8C9BFF" stroke-opacity="0.22"/>
-      <text x="14" y="22" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">USB Drives</text>
-      <text x="14" y="40" class="mono" font-size="11.5" fill="#A3ACDA">/mnt/usb0 · direct folder scan</text>
-    </g>
-    <g transform="translate(58, 332)">
-      <rect width="254" height="54" rx="9" fill="#0B1134" stroke="#8C9BFF" stroke-opacity="0.22"/>
-      <text x="14" y="22" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">Extended &amp; Network (NFSv3)</text>
-      <text x="14" y="40" class="mono" font-size="11.5" fill="#A3ACDA">/mnt/ext0 · nfs://server/share</text>
+    <g transform="translate(20, 52)">
+      <rect width="248" height="54" rx="8" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="14" y="23" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">Internal storage</text>
+      <text x="14" y="41" class="mono" font-size="11.5" fill="#A3ACDA">/data/caliza/bios and games</text>
     </g>
 
-    <!-- Supported formats -->
-    <text x="62" y="412" class="sans" font-size="11.5" font-weight="600" letter-spacing="0.8" fill="#8E98CA">SUPPORTED DISC IMAGES</text>
-    <g class="mono" font-size="12" font-weight="600">
-      <rect x="58" y="422" width="56" height="26" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.32"/>
-      <text x="86" y="439" text-anchor="middle" fill="#D4D9FF">.iso</text>
-      <rect x="122" y="422" width="56" height="26" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.32"/>
-      <text x="150" y="439" text-anchor="middle" fill="#D4D9FF">.chd</text>
-      <rect x="186" y="422" width="56" height="26" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.32"/>
-      <text x="214" y="439" text-anchor="middle" fill="#D4D9FF">.cso</text>
-      <rect x="250" y="422" width="56" height="26" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.32"/>
-      <text x="278" y="439" text-anchor="middle" fill="#D4D9FF">.zso</text>
+    <g transform="translate(20, 118)">
+      <rect width="248" height="54" rx="8" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="14" y="23" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">USB drives</text>
+      <text x="14" y="41" class="mono" font-size="11.5" fill="#A3ACDA">/mnt/usb0</text>
     </g>
 
-    <!-- Read-only safety note -->
-    <rect x="58" y="466" width="254" height="82" rx="10" fill="#0A1D2B" stroke="#72E3B5" stroke-opacity="0.34"/>
-    <circle cx="76" cy="488" r="4.5" fill="#72E3B5"/>
-    <text x="88" y="492" class="sans" font-size="12.5" font-weight="600" fill="#72E3B5">Non-destructive by design</text>
-    <text x="72" y="512" class="sans" font-size="12" fill="#C4D4DF">Images are read in place and never</text>
-    <text x="72" y="529" class="sans" font-size="12" fill="#C4D4DF">moved, formatted, or overwritten.</text>
+    <g transform="translate(20, 184)">
+      <rect width="248" height="54" rx="8" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="14" y="23" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">Extended and NFSv3</text>
+      <text x="14" y="41" class="mono" font-size="11.5" fill="#A3ACDA">/mnt/ext0, nfs://server/share</text>
+    </g>
+
+    <g transform="translate(20, 256)" class="mono" font-size="12" font-weight="600">
+      <rect x="0" y="0" width="56" height="28" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.30"/>
+      <text x="28" y="18" text-anchor="middle" fill="#D4D9FF">.iso</text>
+      <rect x="64" y="0" width="56" height="28" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.30"/>
+      <text x="92" y="18" text-anchor="middle" fill="#D4D9FF">.chd</text>
+      <rect x="128" y="0" width="56" height="28" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.30"/>
+      <text x="156" y="18" text-anchor="middle" fill="#D4D9FF">.cso</text>
+      <rect x="192" y="0" width="56" height="28" rx="6" fill="#131B4A" stroke="#8C9BFF" stroke-opacity="0.30"/>
+      <text x="220" y="18" text-anchor="middle" fill="#D4D9FF">.zso</text>
+    </g>
+
+    <rect x="20" y="304" width="248" height="92" rx="8" fill="#0A1728" stroke="#72E3B5" stroke-opacity="0.32"/>
+    <text x="34" y="328" class="sans" font-size="13" font-weight="600" fill="#72E3B5">Read in place</text>
+    <text x="34" y="350" class="sans" font-size="12" fill="#C4D4DF">Caliza never moves, formats,</text>
+    <text x="34" y="368" class="sans" font-size="12" fill="#C4D4DF">or writes to game drives.</text>
+    <text x="34" y="386" class="sans" font-size="11.5" fill="#8E98CA">User supplies BIOS and discs.</text>
   </g>
 
   <!-- Connector 1 -> 2 -->
   <g>
-    <line x1="332" y1="340" x2="374" y2="340" stroke="#A5E7FF" stroke-width="2" marker-end="url(#arrowIce)"/>
-    <text x="353" y="328" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#A5E7FF">Read</text>
+    <line x1="330" y1="316" x2="372" y2="316" stroke="#A5E7FF" stroke-width="1.8" marker-end="url(#arrowIce)"/>
+    <text x="351" y="304" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#A5E7FF">Read</text>
   </g>
 
-  <!-- COLUMN 2: CALIZA ON PS4 (HERO) -->
-  <g>
-    <rect x="378" y="114" width="454" height="454" rx="14" fill="url(#heroPlate)" stroke="#7AA8FF" stroke-opacity="0.65" stroke-width="1.4"/>
-    <rect x="378.5" y="136" width="4" height="44" rx="2" fill="#A5E7FF"/>
+  <!-- Column 2: Caliza on PS4 -->
+  <g transform="translate(376, 108)">
+    <rect width="456" height="416" rx="12" fill="#0E1540" stroke="#7AA8FF" stroke-opacity="0.58" stroke-width="1.2"/>
+    <text x="20" y="34" class="sans" font-size="16" font-weight="600" fill="#F2F5FF">Caliza on PS4</text>
+    <text x="436" y="34" text-anchor="end" class="mono" font-size="11.5" fill="#A3ACDA">1080p / 720p</text>
 
-    <text x="400" y="144" class="sans" font-size="12" font-weight="700" letter-spacing="1.6" fill="#A5E7FF">2 · ON THE CONSOLE</text>
-    <text x="400" y="166" class="sans" font-size="17" font-weight="600" fill="#F2F5FF">Caliza on PlayStation 4</text>
-    <text x="814" y="165" text-anchor="end" class="mono" font-size="11.5" fill="#A3ACDA">1080p / 720p TV</text>
+    <!-- Upper block: Estratos TV interface -->
+    <rect x="20" y="52" width="416" height="176" rx="10" fill="#080D2B" stroke="#8C9BFF" stroke-opacity="0.30"/>
+    <text x="36" y="76" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">Estratos interface</text>
+    <text x="420" y="76" text-anchor="end" class="mono" font-size="11.5" fill="#A3ACDA">Vulkan 2D</text>
+    <line x1="36" y1="88" x2="420" y2="88" stroke="#8C9BFF" stroke-opacity="0.20"/>
 
-    <!-- Upper Stratum: Estratos UI -->
-    <rect x="396" y="184" width="418" height="178" rx="11" fill="#080D2B" stroke="#8C9BFF" stroke-opacity="0.34"/>
-    <text x="412" y="206" class="sans" font-size="13" font-weight="600" fill="#F2F5FF">Estratos TV Interface</text>
-    <text x="798" y="206" text-anchor="end" class="sans" font-size="11.5" fill="#A3ACDA">10-foot Vulkan 2D</text>
-    <line x1="412" y1="216" x2="798" y2="216" stroke="#8C9BFF" stroke-opacity="0.22"/>
-
-    <!-- Mini schematic nav rail -->
-    <g transform="translate(412, 226)">
-      <rect width="122" height="122" rx="8" fill="#060A22" stroke="#8C9BFF" stroke-opacity="0.22"/>
-      <rect x="6" y="7" width="110" height="21" rx="4" fill="url(#focusRow)"/>
-      <rect x="6" y="7" width="3" height="21" rx="1.5" fill="#A5E7FF"/>
-      <text x="16" y="21.5" class="sans" font-size="11.3" font-weight="600" fill="#F2F5FF">Continue</text>
-      <text x="16" y="42" class="sans" font-size="11.3" fill="#A3ACDA">Library</text>
-      <text x="16" y="60" class="sans" font-size="11.3" fill="#A3ACDA">Memory cards</text>
-      <text x="16" y="78" class="sans" font-size="11.3" fill="#A3ACDA">Settings</text>
-      <text x="16" y="96" class="sans" font-size="11.3" fill="#A3ACDA">Accessibility</text>
-      <text x="16" y="113" class="sans" font-size="11" fill="#7D88BC">Diagnostics</text>
+    <!-- Nav rail schematic (uses real Estratos focus bar) -->
+    <g transform="translate(36, 100)">
+      <rect width="110" height="114" rx="6" fill="#060A22" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <rect x="6" y="6" width="98" height="20" rx="4" fill="#1A2B68"/>
+      <rect x="6" y="6" width="3" height="20" rx="1.5" fill="#A5E7FF"/>
+      <text x="15" y="20" class="sans" font-size="11" font-weight="600" fill="#F2F5FF">Continue</text>
+      <text x="15" y="39" class="sans" font-size="11" fill="#A3ACDA">Library</text>
+      <text x="15" y="56" class="sans" font-size="11" fill="#A3ACDA">Memory cards</text>
+      <text x="15" y="73" class="sans" font-size="11" fill="#A3ACDA">Settings</text>
+      <text x="15" y="90" class="sans" font-size="11" fill="#A3ACDA">Accessibility</text>
+      <text x="15" y="106" class="sans" font-size="10.5" fill="#7D88BC">Diagnostics</text>
     </g>
 
-    <!-- 4 compact UI capability tiles -->
-    <g transform="translate(546, 226)">
-      <rect x="0" y="0" width="121" height="56" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.26"/>
-      <text x="10" y="21" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Library</text>
-      <text x="10" y="37" class="sans" font-size="10.8" fill="#A3ACDA">Filters, search,</text>
-      <text x="10" y="50" class="sans" font-size="10.8" fill="#A3ACDA">per-game details</text>
+    <!-- Feature tiles -->
+    <g transform="translate(158, 100)">
+      <rect x="0" y="0" width="126" height="52" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.24"/>
+      <text x="10" y="20" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Library</text>
+      <text x="10" y="37" class="sans" font-size="10.5" fill="#A3ACDA">Filters and search</text>
 
-      <rect x="131" y="0" width="121" height="56" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.26"/>
-      <text x="141" y="21" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Smart Tune</text>
-      <text x="141" y="37" class="sans" font-size="10.8" fill="#A3ACDA">112 settings +</text>
-      <text x="141" y="50" class="sans" font-size="10.8" fill="#A3ACDA">auto-tuning</text>
+      <rect x="136" y="0" width="126" height="52" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.24"/>
+      <text x="146" y="20" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Settings</text>
+      <text x="146" y="37" class="sans" font-size="10.5" fill="#A3ACDA">Global and per-game</text>
 
-      <rect x="0" y="66" width="121" height="56" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.26"/>
-      <text x="10" y="87" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Saves &amp; Cards</text>
-      <text x="10" y="103" class="sans" font-size="10.8" fill="#A3ACDA">Slot 1/2 cards,</text>
-      <text x="10" y="116" class="sans" font-size="10.8" fill="#A3ACDA">quick save states</text>
+      <rect x="0" y="62" width="126" height="52" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.24"/>
+      <text x="10" y="82" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Cards and states</text>
+      <text x="10" y="99" class="sans" font-size="10.5" fill="#A3ACDA">Slots and shortcuts</text>
 
-      <rect x="131" y="66" width="121" height="56" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.26"/>
-      <text x="141" y="87" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Accessibility</text>
-      <text x="141" y="103" class="sans" font-size="10.8" fill="#A3ACDA">100–200% text,</text>
-      <text x="141" y="116" class="sans" font-size="10.8" fill="#A3ACDA">high contrast</text>
+      <rect x="136" y="62" width="126" height="52" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.24"/>
+      <text x="146" y="82" class="sans" font-size="12" font-weight="600" fill="#F2F5FF">Accessibility</text>
+      <text x="146" y="99" class="sans" font-size="10.5" fill="#A3ACDA">100 to 200% text</text>
     </g>
 
-    <!-- Contract pill between UI & Core -->
-    <rect x="444" y="372" width="322" height="26" rx="13" fill="#132258" stroke="#A5E7FF" stroke-opacity="0.50"/>
-    <text x="605" y="389" text-anchor="middle" class="mono" font-size="11.2" font-weight="600" fill="#A5E7FF">↑ Snapshot   ·   Backend Contract   ·   Command ↓</text>
+    <!-- Contract bar -->
+    <rect x="64" y="240" width="328" height="24" rx="6" fill="#132258" stroke="#A5E7FF" stroke-opacity="0.45"/>
+    <text x="228" y="256" text-anchor="middle" class="mono" font-size="11" font-weight="600" fill="#A5E7FF">Snapshot up, commands down (contract.h)</text>
 
-    <!-- Lower Stratum: Emulation Core -->
-    <rect x="396" y="408" width="418" height="142" rx="11" fill="#080D2B" stroke="#8C9BFF" stroke-opacity="0.34"/>
-    <text x="412" y="430" class="sans" font-size="13" font-weight="600" fill="#F2F5FF">PCSX2 Emulation Core + Orbis Layer</text>
-    <text x="798" y="430" text-anchor="end" class="mono" font-size="11" fill="#FFD092">Experimental</text>
-    <line x1="412" y1="440" x2="798" y2="440" stroke="#8C9BFF" stroke-opacity="0.22"/>
+    <!-- Lower block: PCSX2 core -->
+    <rect x="20" y="276" width="416" height="120" rx="10" fill="#080D2B" stroke="#8C9BFF" stroke-opacity="0.30"/>
+    <text x="36" y="300" class="sans" font-size="13.5" font-weight="600" fill="#F2F5FF">PCSX2 core and Orbis layer</text>
+    <text x="420" y="300" text-anchor="end" class="mono" font-size="11.5" fill="#A3ACDA">OpenOrbis</text>
+    <line x1="36" y1="312" x2="420" y2="312" stroke="#8C9BFF" stroke-opacity="0.20"/>
 
-    <g transform="translate(412, 450)">
-      <rect x="0" y="0" width="122" height="62" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.24"/>
-      <text x="10" y="21" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">CPU &amp; Memory</text>
-      <text x="10" y="38" class="mono" font-size="10.5" fill="#A3ACDA">EE · IOP · VU</text>
-      <text x="10" y="53" class="sans" font-size="10.2" fill="#8E98CA">MTVU + safe fallback</text>
+    <g transform="translate(36, 324)">
+      <rect x="0" y="0" width="120" height="58" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="10" y="20" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">CPU and memory</text>
+      <text x="10" y="36" class="mono" font-size="10.5" fill="#A3ACDA">EE, IOP, VU</text>
+      <text x="10" y="50" class="sans" font-size="10.5" fill="#8E98CA">MTVU and fallback</text>
 
-      <rect x="132" y="0" width="122" height="62" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.24"/>
-      <text x="142" y="21" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">Graphics (GS)</text>
-      <text x="142" y="38" class="mono" font-size="10.5" fill="#A5E7FF">Vulkan RADV</text>
-      <text x="142" y="53" class="sans" font-size="10.2" fill="#8E98CA">paraLLEl-GS / SW</text>
+      <rect x="132" y="0" width="120" height="58" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="142" y="20" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">Graphics</text>
+      <text x="142" y="36" class="mono" font-size="10.5" fill="#A5E7FF">Vulkan RADV</text>
+      <text x="142" y="50" class="sans" font-size="10.5" fill="#8E98CA">paraLLEl-GS or SW</text>
 
-      <rect x="264" y="0" width="122" height="62" rx="8" fill="#0D1542" stroke="#8C9BFF" stroke-opacity="0.24"/>
-      <text x="274" y="21" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">Audio &amp; I/O</text>
-      <text x="274" y="38" class="mono" font-size="10.5" fill="#A3ACDA">SPU2 · CDVD</text>
-      <text x="274" y="53" class="sans" font-size="10.2" fill="#8E98CA">Atomic saves &amp; cards</text>
+      <rect x="264" y="0" width="120" height="58" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.22"/>
+      <text x="274" y="20" class="sans" font-size="12" font-weight="600" fill="#D4D9FF">Audio and I/O</text>
+      <text x="274" y="36" class="mono" font-size="10.5" fill="#A3ACDA">SPU2, CDVD</text>
+      <text x="274" y="50" class="sans" font-size="10.5" fill="#8E98CA">Atomic saves</text>
     </g>
-
-    <text x="605" y="536" text-anchor="middle" class="sans" font-size="11.5" fill="#8E98CA">OpenOrbis toolchain · BIOS-free redistributable package · Reproducible builds</text>
   </g>
 
   <!-- Connector 2 <-> 3 -->
   <g>
-    <line x1="834" y1="340" x2="876" y2="340" stroke="#A5E7FF" stroke-width="2" marker-start="url(#arrowIce)" marker-end="url(#arrowIce)"/>
-    <text x="855" y="328" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#A5E7FF">LAN</text>
+    <line x1="836" y1="316" x2="876" y2="316" stroke="#A5E7FF" stroke-width="1.8" marker-start="url(#arrowIce)" marker-end="url(#arrowIce)"/>
+    <text x="856" y="304" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#A5E7FF">LAN</text>
   </g>
 
-  <!-- COLUMN 3: COMPANION PANEL -->
-  <g>
-    <rect x="880" y="114" width="280" height="454" rx="14" fill="url(#panelPlate)" stroke="#8C9BFF" stroke-opacity="0.30"/>
-    <text x="902" y="144" class="sans" font-size="12" font-weight="700" letter-spacing="1.6" fill="#A5E7FF">3 · FROM YOUR COUCH</text>
-    <text x="902" y="166" class="sans" font-size="17" font-weight="600" fill="#F2F5FF">Companion Panel</text>
-    <text x="902" y="185" class="sans" font-size="12.5" fill="#A3ACDA">Served by the console on your LAN</text>
+  <!-- Column 3: Companion panel -->
+  <g transform="translate(880, 108)">
+    <rect width="280" height="416" rx="12" fill="#0B1033" stroke="#8C9BFF" stroke-opacity="0.28"/>
+    <text x="20" y="34" class="sans" font-size="16" font-weight="600" fill="#F2F5FF">Companion panel</text>
 
-    <!-- Stylized browser / phone card -->
-    <rect x="898" y="204" width="244" height="248" rx="10" fill="#070C27" stroke="#8C9BFF" stroke-opacity="0.28"/>
-    <rect x="910" y="216" width="220" height="24" rx="6" fill="#101846" stroke="#8C9BFF" stroke-opacity="0.22"/>
-    <circle cx="922" cy="228" r="3" fill="#72E3B5"/>
-    <text x="932" y="232" class="mono" font-size="11" fill="#A5E7FF">https://&lt;console-ip&gt;</text>
+    <rect x="20" y="52" width="240" height="240" rx="8" fill="#080D2B" stroke="#8C9BFF" stroke-opacity="0.24"/>
+    <rect x="32" y="64" width="216" height="24" rx="6" fill="#101846" stroke="#8C9BFF" stroke-opacity="0.22"/>
+    <text x="44" y="80" class="mono" font-size="11.5" fill="#A5E7FF">https://&lt;console-ip&gt;</text>
 
-    <g transform="translate(910, 252)">
-      <rect width="220" height="42" rx="7" fill="#0D143E" stroke="#8C9BFF" stroke-opacity="0.20"/>
-      <text x="12" y="18" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Browse Library</text>
-      <text x="12" y="33" class="sans" font-size="11" fill="#A3ACDA">Inspect serials, storage &amp; status</text>
+    <g transform="translate(32, 100)">
+      <rect width="216" height="40" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.20"/>
+      <text x="12" y="17" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Browse library</text>
+      <text x="12" y="32" class="sans" font-size="11" fill="#A3ACDA">Serials, folders, and status</text>
     </g>
-    <g transform="translate(910, 302)">
-      <rect width="220" height="42" rx="7" fill="#0D143E" stroke="#8C9BFF" stroke-opacity="0.20"/>
-      <text x="12" y="18" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Global &amp; Per-Game Settings</text>
-      <text x="12" y="33" class="sans" font-size="11" fill="#A3ACDA">Edit all options without TV typing</text>
+    <g transform="translate(32, 148)">
+      <rect width="216" height="40" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.20"/>
+      <text x="12" y="17" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Edit settings</text>
+      <text x="12" y="32" class="sans" font-size="11" fill="#A3ACDA">Global and per-game options</text>
     </g>
-    <g transform="translate(910, 352)">
-      <rect width="220" height="42" rx="7" fill="#0D143E" stroke="#8C9BFF" stroke-opacity="0.20"/>
-      <text x="12" y="18" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Folders &amp; Patches</text>
-      <text x="12" y="33" class="sans" font-size="11" fill="#A3ACDA">Manage sources, cards &amp; packs</text>
+    <g transform="translate(32, 196)">
+      <rect width="216" height="40" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.20"/>
+      <text x="12" y="17" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Manage folders</text>
+      <text x="12" y="32" class="sans" font-size="11" fill="#A3ACDA">Sources, cards, and packs</text>
     </g>
-    <g transform="translate(910, 402)">
-      <rect width="220" height="40" rx="7" fill="#0D143E" stroke="#8C9BFF" stroke-opacity="0.20"/>
-      <text x="12" y="17" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Diagnostic Reports</text>
-      <text x="12" y="32" class="sans" font-size="11" fill="#A3ACDA">Export boot.log &amp; emulog.txt</text>
+    <g transform="translate(32, 244)">
+      <rect width="216" height="36" rx="6" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.20"/>
+      <text x="12" y="16" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Export diagnostics</text>
+      <text x="12" y="30" class="sans" font-size="11" fill="#A3ACDA">boot.log and emulog.txt</text>
     </g>
 
-    <!-- Stylized abstract QR cue -->
-    <rect x="898" y="466" width="244" height="82" rx="10" fill="#0B1134" stroke="#8C9BFF" stroke-opacity="0.26"/>
-    <g transform="translate(914, 480)" fill="#D4D9FF">
-      <rect x="0" y="0" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.5"/>
+    <rect x="20" y="304" width="240" height="92" rx="8" fill="#0E1540" stroke="#8C9BFF" stroke-opacity="0.24"/>
+    <g transform="translate(36, 325)" fill="#D4D9FF">
+      <rect x="0" y="0" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.2"/>
       <rect x="5" y="5" width="6" height="6" fill="#A5E7FF"/>
-      <rect x="34" y="0" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.5"/>
+      <rect x="34" y="0" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.2"/>
       <rect x="39" y="5" width="6" height="6" fill="#A5E7FF"/>
-      <rect x="0" y="34" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.5"/>
+      <rect x="0" y="34" width="16" height="16" rx="2" fill="none" stroke="#A5E7FF" stroke-width="2.2"/>
       <rect x="5" y="39" width="6" height="6" fill="#A5E7FF"/>
       <rect x="22" y="4" width="6" height="6"/>
       <rect x="22" y="16" width="6" height="12"/>
@@ -282,11 +212,10 @@
       <rect x="38" y="38" width="12" height="12"/>
       <rect x="22" y="44" width="10" height="6"/>
     </g>
-    <text x="978" y="497" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Quick QR access</text>
-    <text x="978" y="515" class="sans" font-size="11.5" fill="#A3ACDA">Open Diagnostics or hold</text>
-    <text x="978" y="531" class="mono" font-size="11" fill="#A5E7FF">L2 + D-pad Down (2s)</text>
+    <text x="100" y="340" class="sans" font-size="12.5" font-weight="600" fill="#F2F5FF">Open via QR code</text>
+    <text x="100" y="358" class="sans" font-size="11.5" fill="#A3ACDA">Diagnostics screen, or hold</text>
+    <text x="100" y="374" class="mono" font-size="11" fill="#A5E7FF">L2 + D-pad Down (2s)</text>
   </g>
 
-  <!-- Footer -->
-  <text x="600" y="596" text-anchor="middle" class="sans" font-size="11.5" fill="#7D88BC">Independent open-source software (GPLv3+) · No BIOS, firmware, keys, or game artwork included · Not affiliated with Sony Interactive Entertainment or the PCSX2 project</text>
+  <text x="600" y="550" text-anchor="middle" class="sans" font-size="11.5" fill="#7D88BC">GPLv3+ open-source software. Includes no BIOS, keys, or game files. Not affiliated with Sony Interactive Entertainment or PCSX2.</text>
 </svg>
