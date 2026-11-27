@@ -14,9 +14,17 @@ extern "C" int orbis_reserve_range(void** addr, unsigned long long len);
 extern "C" long long g_orbis_data_phys;
 extern "C" int sceKernelMapDirectMemory(void** addr, unsigned long long len, int prot, int flags,
 	long long directMemoryStart, unsigned long long alignment);
+extern "C" int sceKernelMprotect(void* addr, unsigned long long len, int prot);
 extern "C" int sceKernelMunmap(void* addr, unsigned long long len);
 extern "C" int sceKernelReserveVirtualRange(void** addr, unsigned long long len, int flags, unsigned long long alignment);
 static constexpr int ORBIS_MAP_FIXED = 0x10;
+extern "C" {
+int g_orbis_fastmem_reserve_rc = -1;
+unsigned long long g_orbis_fastmem_reserve_addr = 0;
+unsigned long long g_orbis_fastmem_map_ok = 0;
+unsigned long long g_orbis_fastmem_map_fail = 0;
+int g_orbis_fastmem_map_last_rc = 0;
+}
 #endif
 #include "common/BitUtils.h"
 #include "common/Console.h"
@@ -58,6 +66,12 @@ static __ri uint LinuxProt(const PageProtectionMode& mode)
 void HostSys::MemProtect(void* baseaddr, size_t size, const PageProtectionMode& mode)
 {
 	pxAssertMsg((size & (__pagesize - 1)) == 0, "Size is page aligned");
+
+#ifdef ORBIS_VULKAN
+	const int orbis_prot = (mode.CanRead() ? 0x1 : 0) | (mode.CanWrite() ? 0x2 : 0) | (mode.CanExecute() ? 0x5 : 0);
+	if (sceKernelMprotect(baseaddr, size, orbis_prot) == 0)
+		return;
+#endif
 
 	const u32 lnxmode = LinuxProt(mode);
 
@@ -188,19 +202,41 @@ std::unique_ptr<SharedMemoryMappingArea> SharedMemoryMappingArea::Create(size_t 
 	// thread stacks inside it, then map flexible memory at the reserved address.
 	void* reserved = nullptr;
 #ifdef ORBIS_VULKAN
-	// PS5 Vulkan build: the driver's GPU-visible memory must lie in the 4 GiB window
-	// [0x2'0000'0000, 0x3'0000'0000) (its shaders' address high word is 2), and the
-	// kernel places a reservation with no hint first-fit from the window's start.
-	// This area is 4 GiB (vtlb fastmem): unhinted it takes the whole window, and the
-	// driver's first mapping (vkCreateDevice's submission buffer) lands outside it
-	// (VK_ERROR_OUT_OF_DEVICE_MEMORY, vk-285-1). Ask for space above the window.
-	reserved = reinterpret_cast<void*>(static_cast<uintptr_t>(0x300000000ULL));
-	const int reserve_rc = orbis_reserve_range(&reserved, size);
-	std::printf("[dbg] shmarea: reserve %zu bytes rc=%d at %p\n", size, reserve_rc, reserve_rc == 0 ? reserved : nullptr);
-	if (reserve_rc != 0)
-		reserved = nullptr;
-	// vk-285-64: with the guest's data in direct memory the reservation is the whole area; Map()
-	// fills it with direct mappings. (The mmap below would ask the flexible shim for all of it.)
+	// Keep fastmem outside the GPU-visible 4 GiB window [0x2'0000'0000, 0x3'0000'0000)
+	// and outside the fixed data/stack/code mappings [0x6'0000'0000, 0xa'0000'0000).
+	static constexpr uintptr_t kFastmemHints[] = {
+		0x300000000ULL,
+		0x400000000ULL,
+		0x500000000ULL,
+		0xa00000000ULL,
+		0xb00000000ULL,
+		0xc00000000ULL,
+		0x1000000000ULL,
+	};
+	int reserve_rc = -1;
+	for (uintptr_t hint : kFastmemHints)
+	{
+		void* candidate = reinterpret_cast<void*>(hint);
+		const int rc = orbis_reserve_range(&candidate, size);
+		reserve_rc = rc;
+		if (rc == 0 && candidate)
+		{
+			const uintptr_t base = reinterpret_cast<uintptr_t>(candidate);
+			const uintptr_t end = base + size;
+			// Reject any kernel placement overlapping the GPU-visible window.
+			if (end <= 0x200000000ULL || base >= 0x300000000ULL)
+			{
+				reserved = candidate;
+				break;
+			}
+			sceKernelMunmap(candidate, size);
+			reserve_rc = -2;
+		}
+	}
+	g_orbis_fastmem_reserve_rc = reserve_rc;
+	g_orbis_fastmem_reserve_addr = reinterpret_cast<unsigned long long>(reserved);
+	std::printf("[dbg] shmarea: reserve %zu bytes rc=0x%x at %p (data_phys=%lld)\n",
+		size, static_cast<unsigned>(reserve_rc), reserved, g_orbis_data_phys);
 	if (reserved && g_orbis_data_phys >= 0)
 		return std::unique_ptr<SharedMemoryMappingArea>(
 			new SharedMemoryMappingArea(static_cast<u8*>(reserved), size, size / __pagesize));
@@ -234,12 +270,15 @@ u8* SharedMemoryMappingArea::Map(void* file_handle, size_t file_offset, void* ma
 			g_orbis_data_phys + static_cast<long long>(file_offset), __pagesize);
 		if (rc != 0 || addr != map_base)
 		{
+			g_orbis_fastmem_map_fail++;
+			g_orbis_fastmem_map_last_rc = rc;
 			static int s_logged = 0;
 			if (s_logged++ < 8)
 				std::printf("[fastmem] map %p +%zu offset 0x%zx failed: rc=0x%x at %p\n", map_base, map_size,
 					file_offset, static_cast<unsigned>(rc), addr);
 			return nullptr;
 		}
+		g_orbis_fastmem_map_ok++;
 		m_num_mappings++;
 		return static_cast<u8*>(map_base);
 	}

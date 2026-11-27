@@ -370,6 +370,7 @@ int vtlb_DynGenReadNonQuad(u32 bits, bool sign, bool xmm, int addr_reg, vtlb_Rea
 	int x86_dest_reg;
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 	{
+		vtlb_RecordFastmemEmit(false);
 		iFlushCall(FLUSH_FULLVTLB);
 
 		DynGen_PrepRegs(addr_reg, -1, bits, xmm);
@@ -392,6 +393,7 @@ int vtlb_DynGenReadNonQuad(u32 bits, bool sign, bool xmm, int addr_reg, vtlb_Rea
 		return x86_dest_reg;
 	}
 
+	vtlb_RecordFastmemEmit(true);
 	const u8* codeStart;
 	const xAddressReg x86addr(addr_reg);
 	if (!xmm)
@@ -454,40 +456,42 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, bool sign, bool xmm, u32 addr_const, 
 	auto vmv = vtlbdata.vmap[addr_const >> VTLB_PAGE_BITS];
 	if (!vmv.isHandler(addr_const))
 	{
-		// Orbis: host pointers live above 4GB (PS5 direct maps at 0x600000000+),
+		vtlb_RecordConstEmit();
+		// Orbis: host pointers live above 4GB (direct maps at 0x600000000+),
 		// and the emitter encodes absolute memrefs as disp32 (truncating to
 		// lo32, e.g. 0x600017410 -> [0x17410] which faults). Materialize the
-		// full 64-bit address with movabs into a scratch register.
-		// NOTE: the scratch must be encodable base-only WITHOUT a SIB: the
-		// emitter's ModRM-only path misencodes r12/r13/rsp/rbp (low 3 bits
-		// 100/101) as disp32, silently reading the wrong address. rax/rcx
-		// (ids 0/1) are always safe.
+		// full 64-bit address with movabs into a base-only SIB-safe register.
+		// NOTE: the emitter's ModRM-only path misencodes r12/r13/rsp/rbp (low 3 bits
+		// 100/101) as disp32, silently reading the wrong address.
 		const uptr ppf = vmv.assumePtr(addr_const);
 		if (!xmm)
 		{
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(eax), eax.GetId());
-			const xAddressReg scratch = (x86_dest_reg == rax.GetId()) ? rcx : rax;
-			xPUSH(scratch);
-			xMOV64(scratch, (sptr)ppf);
+			const bool dest_is_sib_safe = ((x86_dest_reg & 7) != 4) && ((x86_dest_reg & 7) != 5);
+			const xAddressReg addr_base = dest_is_sib_safe ? xAddressReg(x86_dest_reg) : rax;
+			if (!dest_is_sib_safe)
+				xPUSH(addr_base);
+			xMOV64(addr_base, (sptr)ppf);
 			switch (bits)
 			{
 			case 8:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr8[scratch]) : xMOVZX(xRegister32(x86_dest_reg), ptr8[scratch]);
+				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr8[addr_base]) : xMOVZX(xRegister32(x86_dest_reg), ptr8[addr_base]);
 				break;
 
 			case 16:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr16[scratch]) : xMOVZX(xRegister32(x86_dest_reg), ptr16[scratch]);
+				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr16[addr_base]) : xMOVZX(xRegister32(x86_dest_reg), ptr16[addr_base]);
 				break;
 
 			case 32:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr32[scratch]) : xMOV(xRegister32(x86_dest_reg), ptr32[scratch]);
+				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr32[addr_base]) : xMOV(xRegister32(x86_dest_reg), ptr32[addr_base]);
 				break;
 
 			case 64:
-				xMOV(xRegister64(x86_dest_reg), ptr64[scratch]);
+				xMOV(xRegister64(x86_dest_reg), ptr64[addr_base]);
 				break;
 			}
-			xPOP(scratch);
+			if (!dest_is_sib_safe)
+				xPOP(addr_base);
 		}
 		else
 		{
@@ -522,14 +526,17 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, bool sign, bool xmm, u32 addr_const, 
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(eax), eax.GetId());
 			if (!xmm)
 			{
-				const xAddressReg scratch = (x86_dest_reg == rax.GetId()) ? rcx : rax;
-				xPUSH(scratch);
-				xMOV64(scratch, (sptr)&psHu32(INTC_STAT));
+				const bool dest_is_sib_safe = ((x86_dest_reg & 7) != 4) && ((x86_dest_reg & 7) != 5);
+				const xAddressReg addr_base = dest_is_sib_safe ? xAddressReg(x86_dest_reg) : rax;
+				if (!dest_is_sib_safe)
+					xPUSH(addr_base);
+				xMOV64(addr_base, (sptr)&psHu32(INTC_STAT));
 				if (sign)
-					xMOVSX(xRegister64(x86_dest_reg), ptr32[scratch]);
+					xMOVSX(xRegister64(x86_dest_reg), ptr32[addr_base]);
 				else
-					xMOV(xRegister32(x86_dest_reg), ptr32[scratch]);
-				xPOP(scratch);
+					xMOV(xRegister32(x86_dest_reg), ptr32[addr_base]);
+				if (!dest_is_sib_safe)
+					xPOP(addr_base);
 			}
 			else
 			{
@@ -584,6 +591,7 @@ int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_r
 
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 	{
+		vtlb_RecordFastmemEmit(false);
 		iFlushCall(FLUSH_FULLVTLB);
 
 		DynGen_PrepRegs(arg1regd.GetId(), -1, bits, true);
@@ -596,6 +604,7 @@ int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_r
 		return reg;
 	}
 
+	vtlb_RecordFastmemEmit(true);
 	const int reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0); // Handler returns in xmm0
 	const u8* codeStart = x86Ptr;
 
@@ -627,6 +636,7 @@ int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallbac
 	auto vmv = vtlbdata.vmap[addr_const >> VTLB_PAGE_BITS];
 	if (!vmv.isHandler(addr_const))
 	{
+		vtlb_RecordConstEmit();
 		// Orbis: host pointer above 4GB; absolute disp32 would truncate.
 		const uptr ppf = vmv.assumePtr(addr_const);
 		reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
@@ -715,6 +725,7 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 
 	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc))
 	{
+		vtlb_RecordFastmemEmit(false);
 		iFlushCall(FLUSH_FULLVTLB);
 
 		DynGen_PrepRegs(addr_reg, value_reg, sz, xmm);
@@ -722,6 +733,7 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 		return;
 	}
 
+	vtlb_RecordFastmemEmit(true);
 	const u8* codeStart = x86Ptr;
 
 	const xAddressReg vaddr_reg(addr_reg);
@@ -837,6 +849,7 @@ void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg)
 	auto vmv = vtlbdata.vmap[addr_const >> VTLB_PAGE_BITS];
 	if (!vmv.isHandler(addr_const))
 	{
+		vtlb_RecordConstEmit();
 		// Orbis: host pointer above 4GB; absolute disp32 would truncate.
 		// Scratch must never be the value register itself.
 		const uptr ppf = vmv.assumePtr(addr_const);
