@@ -2790,6 +2790,7 @@ void VMManager::InitializeCPUProviders()
 	const bool vu3op_off = ::OrbisFlag("novu3op");
 	const bool clutskip_off = ::OrbisFlag("noclutskip");
 	const bool gsvtonce_off = ::OrbisFlag("nogsvtonce");
+	const bool tidreset_off = ::OrbisFlag("notidreset");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
@@ -2800,6 +2801,7 @@ void VMManager::InitializeCPUProviders()
 	g_orbis_vu1_three_op.store(vu3op_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_gs_skip_clut64.store(clutskip_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_gs_vt_strip_once.store(gsvtonce_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_tid_reset_invalidate.store(tidreset_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2837,6 +2839,10 @@ void VMManager::InitializeCPUProviders()
 		static_cast<unsigned long long>(g_orbis_gs_vt_strip_draws.load(std::memory_order_relaxed)),
 		static_cast<unsigned long long>(g_orbis_gs_vt_strip_saved.load(std::memory_order_relaxed)),
 		static_cast<unsigned long long>(g_orbis_gs_vt_strip_bails.load(std::memory_order_relaxed)));
+	printf("[perf] ee_tid_reset_invalidate: %s (%s) invalidations=%llu\n",
+		tidreset_off ? "off" : "on",
+		tidreset_off ? "flags/notidreset" : "default",
+		static_cast<unsigned long long>(g_orbis_tid_invalidations.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

@@ -101,3 +101,20 @@ static __fi void OrbisTidEret()
 	t.ex_seq = 0;
 	t.ex_tid = false;
 }
+
+// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit cd3da52, emu-core-4): a VM reset (cpuReset) or savestate
+// load (PreLoadPrep) replaces EE registers and running thread without an exception/ERET pair, so drop any
+// cached GetThreadId and in-flight exception state. Disabled via /data/caliza/flags/notidreset.
+static __fi void OrbisTidInvalidate()
+{
+	if (g_orbis_tid_reset_invalidate.load(std::memory_order_relaxed) == 0)
+		return;
+	OrbisTidCache& t = g_orbis_tid;
+	t.seq++;
+	t.valid_seq = 0;
+	t.ex_seq = 0;
+	t.ex_tid = false;
+	t.tid_pending = false;
+	t.check = false;
+	g_orbis_tid_invalidations.fetch_add(1, std::memory_order_relaxed);
+}

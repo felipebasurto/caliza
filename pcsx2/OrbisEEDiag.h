@@ -76,6 +76,8 @@ extern std::atomic<int> g_orbis_gs_skip_clut64; // 1 unless flags/noclutskip
 extern std::atomic<u64> g_orbis_gs_clut64_skips;
 extern std::atomic<int> g_orbis_gs_vt_strip_once; // 1 unless flags/nogsvtonce
 extern std::atomic<u64> g_orbis_gs_vt_strip_draws, g_orbis_gs_vt_strip_saved, g_orbis_gs_vt_strip_bails;
+extern std::atomic<int> g_orbis_tid_reset_invalidate; // 1 unless flags/notidreset
+extern std::atomic<u64> g_orbis_tid_invalidations;
 
 bool OrbisCpuHasLzcnt();
 

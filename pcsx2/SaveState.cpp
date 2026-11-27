@@ -16,6 +16,7 @@
 #include "Host.h"
 #include "MTGS.h"
 #include "MTVU.h"
+#include "OrbisEEHle.h"
 #include "Patch.h"
 #include "R3000A.h"
 #include "SIO/Multitap/MultitapProtocol.h"
@@ -66,6 +67,10 @@ static void PreLoadPrep()
 	mmap_ResetBlockTracking();
 
 	VMManager::Internal::ClearCPUExecutionCaches();
+
+	// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit cd3da52): drop cached GetThreadId and in-flight
+	// exception state before loading another run's EE state.
+	OrbisTidInvalidate();
 }
 
 static void PostLoadPrep()
