@@ -287,6 +287,7 @@ public:
 		out.accessibility = overlay.accessibility;
 		out.continue_game_id = overlay.continue_game_id;
 		out.continue_valid = !overlay.continue_game_id.empty();
+		out.pause_trigger_chosen = overlay.pause_trigger_chosen;
 		out.selected_game_id = overlay.selected_game_id;
 		out.operations = overlay.operations;
 		out.texture_packs = overlay.texture_packs;
@@ -336,6 +337,7 @@ private:
 		AccessibilityState accessibility;
 		std::string continue_game_id;
 		std::string selected_game_id;
+		bool pause_trigger_chosen = false;
 		std::string projection_problem;
 		std::string web_panel_url;
 		std::vector<OperationStatus> operations;
@@ -614,17 +616,22 @@ private:
 			: storage::fs::ReadFile(m_options.global_settings_path, &text, &read_error);
 		if (!ok || text.empty())
 			return;
+		const settings::DocumentState raw_doc = settings::ParseSettingsDocument(text);
 		bool migrated = false;
-		const settings::DocumentState doc = CanonicalDocument(settings::ParseSettingsDocument(text), &migrated);
+		const settings::DocumentState doc = CanonicalDocument(raw_doc, &migrated);
 		if (!migrated)
 			return;
-		const std::string* p1 = settings::FindValue(doc, "Caliza/PauseButton1");
-		const std::string* p2 = settings::FindValue(doc, "Caliza/PauseButton2");
-		if (!p1 || !p2)
-			return;
 		std::vector<settings::Mutation> mutations;
-		mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseButton1", *p1});
-		mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseButton2", *p2});
+		if (settings::FindValue(raw_doc, "Caliza/PauseButton1"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseButton1", ""});
+		if (settings::FindValue(raw_doc, "Caliza/PauseButton2"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseButton2", ""});
+		if (const std::string* trigger = settings::FindValue(doc, "Caliza/PauseTrigger"))
+			mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseTrigger", *trigger});
+		else if (settings::FindValue(raw_doc, "Caliza/PauseTrigger"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseTrigger", ""});
+		if (mutations.empty())
+			return;
 		std::string summary, write_error;
 		m_options.hooks.edit_settings_file(m_options.global_settings_path, mutations, &summary, &write_error);
 	}
@@ -1463,6 +1470,7 @@ private:
 		settings::DocumentState global_doc;
 		std::string error;
 		ReadSettingsDocument(m_options.global_settings_path, &global_doc, &error);
+		out.pause_trigger_chosen = settings::HasExplicitPauseTrigger(global_doc);
 
 		// The shared schema projection is the native/web boundary for visible rows. The console surface merges the
 		// global layer with game-scoped rows so the registry is complete in one snapshot; writing a game-only row still

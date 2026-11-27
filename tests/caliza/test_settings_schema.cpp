@@ -80,8 +80,7 @@ const char* const kCompatibilityKeys[] = {
 	"CropTop",
 	"CropRight",
 	"CropBottom",
-	"Caliza/PauseButton1",
-	"Caliza/PauseButton2",
+	"Caliza/PauseTrigger",
 	"Caliza/SaveButton1",
 	"Caliza/SaveButton2",
 	"Caliza/LoadButton1",
@@ -265,9 +264,9 @@ void TestInventory()
 	using namespace caliza::settings;
 	CHECK(kSchemaVersion == 1);
 	CHECK(Groups().size() == 21);
-	CHECK(Settings().size() == 119);
+	CHECK(Settings().size() == 118);
 	CHECK(Actions().size() == 49);
-	CheckHash(SettingsInventoryHash(), 0x7eca3c7bbe0279acull, "settings");
+	CheckHash(SettingsInventoryHash(), 0xf83a4108702b601dull, "settings");
 	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
@@ -383,7 +382,7 @@ void TestInventory()
 	CHECK(manual_fixes == 10);
 	CHECK(saw_master);
 
-	for (const char* pair_key : {"Caliza/PauseButton1", "Caliza/SaveButton1", "Caliza/LoadButton1", "Caliza/FastButton1", "Caliza/DiscButton1"})
+	for (const char* pair_key : {"Caliza/SaveButton1", "Caliza/LoadButton1", "Caliza/FastButton1", "Caliza/DiscButton1"})
 	{
 		const SettingDef* first = FindSettingByKey(pair_key);
 		CHECK(first != nullptr);
@@ -449,8 +448,7 @@ void TestLegacyKeyMigration()
 	size_t migratable_canonical_keys = 0;
 	for (const SettingDef& def : Settings())
 		if (def.compatibility_key.compare(0, 7, "Caliza/") == 0 && def.compatibility_key.compare(0, 9, "Caliza/Ui") != 0 &&
-			def.compatibility_key != "Caliza/VUClampMode" && def.compatibility_key != "Caliza/PauseButton1" &&
-			def.compatibility_key != "Caliza/PauseButton2")
+			def.compatibility_key != "Caliza/VUClampMode" && def.compatibility_key != "Caliza/PauseTrigger")
 			++migratable_canonical_keys;
 	CHECK(migratable_canonical_keys == migrations.size());
 	std::set<std::string> legacy_keys, canonical_keys;
@@ -497,30 +495,68 @@ void TestLegacyKeyMigration()
 	CHECK(migrated_renderer != nullptr && *migrated_renderer == "Hardware");
 	CHECK(migrated_folders != nullptr && *migrated_folders == "/data/caliza/games");
 
-	// Legacy Share/Create pause bindings migrate to Touchpad + None in both MigrateIniText and MigrateLegacyPauseCombo.
+	// Pause trigger presets & migration: 6 presets, L3+R3 default, Touchpad Select warning, no Share/PS.
+	{
+		const auto& presets = PauseTriggerPresets();
+		CHECK(presets.size() == 6);
+		CHECK(presets[0].id == "l3_r3" && presets[0].recommended);
+		CHECK(presets[1].id == "touchpad" && presets[1].warn_select);
+		CHECK(presets[1].warning.find("Touchpad acts as PS2 Select") != std::string::npos);
+		CHECK(presets[5].id == "options_hold" && presets[5].warn_start);
+		const SettingDef* pt = FindSettingByKey("Caliza/PauseTrigger");
+		CHECK(pt != nullptr && pt->default_value == "l3_r3" && pt->choices.size() == 6);
+		for (const auto& p : presets)
+		{
+			CHECK(!caliza::legacy::IsLegacyPauseButtonValue(p.id));
+			CHECK(p.description.size() > 20);
+		}
+	}
+	// Legacy Share/Create pause bindings clear PauseTrigger ("not chosen") so the first-run chooser appears.
 	{
 		const std::string share_ini = "Caliza/PauseButton1=Share\nCaliza/PauseButton2=None\n";
 		const std::string fixed_text = caliza::legacy::MigrateIniText(share_ini);
 		const DocumentState fixed_doc = ParseSettingsDocument(fixed_text);
-		const std::string* p1 = FindValue(fixed_doc, "Caliza/PauseButton1");
-		const std::string* p2 = FindValue(fixed_doc, "Caliza/PauseButton2");
-		CHECK(p1 != nullptr && *p1 == "Touchpad");
-		CHECK(p2 != nullptr && *p2 == "None");
+		CHECK(FindValue(fixed_doc, "Caliza/PauseButton1") == nullptr);
+		CHECK(FindValue(fixed_doc, "Caliza/PauseButton2") == nullptr);
+		CHECK(FindValue(fixed_doc, "Caliza/PauseTrigger") == nullptr);
+		CHECK(!HasExplicitPauseTrigger(fixed_doc));
 	}
 	{
 		DocumentState doc = ParseSettingsDocument("Caliza/PauseButton1=CreateHold\n");
 		CHECK(MigrateLegacyPauseCombo(&doc));
-		const std::string* p1 = FindValue(doc, "Caliza/PauseButton1");
-		const std::string* p2 = FindValue(doc, "Caliza/PauseButton2");
-		CHECK(p1 != nullptr && *p1 == "Touchpad");
-		CHECK(p2 != nullptr && *p2 == "None");
+		CHECK(FindValue(doc, "Caliza/PauseButton1") == nullptr);
+		CHECK(FindValue(doc, "Caliza/PauseTrigger") == nullptr);
+		CHECK(!HasExplicitPauseTrigger(doc));
 		CHECK(!MigrateLegacyPauseCombo(&doc)); // idempotent after migration
 	}
 	{
-		DocumentState custom = ParseSettingsDocument("Caliza/PauseButton1=L3R3\nCaliza/PauseButton2=L1\n");
-		CHECK(!MigrateLegacyPauseCombo(&custom));
-		CHECK(*FindValue(custom, "Caliza/PauseButton1") == "L3R3");
-		CHECK(*FindValue(custom, "Caliza/PauseButton2") == "L1");
+		DocumentState doc = ParseSettingsDocument("Caliza/PauseTrigger=Share\n");
+		CHECK(MigrateLegacyPauseCombo(&doc));
+		CHECK(!HasExplicitPauseTrigger(doc));
+	}
+	// Legacy non-Share PauseButton1/2 pairs map to the closest preset and drop the obsolete keys.
+	{
+		DocumentState d1 = ParseSettingsDocument("Caliza/PauseButton1=L3R3\nCaliza/PauseButton2=L1\n");
+		CHECK(MigrateLegacyPauseCombo(&d1));
+		CHECK(HasExplicitPauseTrigger(d1));
+		CHECK(*FindValue(d1, "Caliza/PauseTrigger") == "l3_r3_l1");
+		CHECK(FindValue(d1, "Caliza/PauseButton1") == nullptr);
+
+		DocumentState d2 = ParseSettingsDocument("Caliza/PauseButton1=Touchpad\nCaliza/PauseButton2=None\n");
+		CHECK(MigrateLegacyPauseCombo(&d2));
+		CHECK(*FindValue(d2, "Caliza/PauseTrigger") == "touchpad");
+
+		DocumentState d3 = ParseSettingsDocument("Caliza/PauseButton1=L3R3\nCaliza/PauseButton2=None\n");
+		CHECK(MigrateLegacyPauseCombo(&d3));
+		CHECK(*FindValue(d3, "Caliza/PauseTrigger") == "l3_r3");
+
+		DocumentState d4 = ParseSettingsDocument("Caliza/PauseButton1=Options\nCaliza/PauseButton2=None\n");
+		CHECK(MigrateLegacyPauseCombo(&d4));
+		CHECK(*FindValue(d4, "Caliza/PauseTrigger") == "options_hold");
+
+		DocumentState d5 = ParseSettingsDocument("Caliza/PauseButton1=L1\nCaliza/PauseButton2=Touchpad\n");
+		CHECK(MigrateLegacyPauseCombo(&d5));
+		CHECK(*FindValue(d5, "Caliza/PauseTrigger") == "l1_r1_touchpad");
 	}
 }
 

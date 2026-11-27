@@ -228,9 +228,24 @@ DocumentState ParseSettingsDocument(const std::string& text);
 std::string SerializeSettingsDocument(const DocumentState& state);
 const std::string* FindValue(const DocumentState& state, const std::string& key);
 std::string EffectiveValue(const SettingDef& def, const DocumentState& own, const DocumentState& global, bool* inherited = nullptr);
-// Replaces legacy Share/Create pause bindings in `doc` with the GoldHEN-safe default (L3R3 + L1).
-// Returns true when `doc` was modified.
+struct PauseTriggerPreset
+{
+	std::string id;          // wire value stored in Caliza/PauseTrigger
+	std::string label;       // short display label
+	std::string description; // one-line description including trade-off
+	bool recommended = false;
+	bool warn_select = false; // Touchpad click replaces PS2 Select
+	bool warn_start = false;  // Hold Options uses PS2 Start
+	std::string warning;     // optional explicit warning banner
+};
+const std::vector<PauseTriggerPreset>& PauseTriggerPresets();
+
+// Migrates legacy Caliza/PauseButton1/2 keys (and any legacy Share/Create trigger) to
+// Caliza/PauseTrigger. Legacy Share/Create values clear PauseTrigger so the first-run chooser
+// appears; non-Share PauseButton1/2 pairs map to the closest preset. Returns true when `doc` changed.
 bool MigrateLegacyPauseCombo(DocumentState* doc);
+// True when `doc` carries an explicit, valid Caliza/PauseTrigger preset choice.
+bool HasExplicitPauseTrigger(const DocumentState& doc);
 
 struct Mutation
 {

@@ -116,6 +116,29 @@ void TestSceneBuildIntoAndAtmosphere()
 	CHECK(reused.HasOpaqueFullscreenBackdrop());
 	CHECK(!reused.Batches().empty() && reused.Batches().front().opaque && reused.Batches().front().texture == nullptr);
 
+	// PauseTriggerSetup renders the preset list + right-hand trade-off / warning panel cleanly.
+	UiView setup_view = view;
+	setup_view.screen = Screen::PauseTriggerSetup;
+	setup_view.title = "Pause menu trigger";
+	setup_view.subtitle = "Choose how to open the in-game pause menu.";
+	setup_view.items.clear();
+	for (int i = 0; i < 6; ++i)
+	{
+		UiEntry entry;
+		entry.id = i == 1 ? "touchpad" : ("preset-" + std::to_string(i));
+		entry.label = i == 1 ? "Touchpad click" : "L3 + R3";
+		entry.value = i == 1 ? "Replaces Select" : "Recommended";
+		entry.detail = i == 1
+			? "Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it."
+			: "Press and release both sticks alone.";
+		entry.destructive = (i == 1);
+		entry.focused = (i == 1);
+		setup_view.items.push_back(std::move(entry));
+	}
+	scene.BuildInto(reused, setup_view, 1920, 1080, 1.75);
+	CHECK(reused.HasOpaqueFullscreenBackdrop());
+	CHECK(reused.VertexCount() > 500);
+
 	// Warm steady-state Home frames to check CPU cost and atmosphere texture pointer stability.
 	const auto t0 = std::chrono::steady_clock::now();
 	constexpr int kFrames = 120;

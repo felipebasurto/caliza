@@ -343,6 +343,7 @@ struct Snapshot
 	TexturePacks texture_packs; // for selected_game_id
 	std::string continue_game_id;
 	bool continue_valid = false;
+	bool pause_trigger_chosen = false;
 	std::string selected_game_id;
 	uint64_t time_unix = 0;
 };

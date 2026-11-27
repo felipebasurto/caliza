@@ -131,15 +131,26 @@ Check `[migrate]` lines in `/data/caliza/logs/boot.log` if anything did not copy
 
 | Default shortcut | Action |
 | --- | --- |
-| Touchpad click | Open or close the in-game pause menu (resume, save/load slots 1–10, disc swap, return to library) |
+| L3 + R3 (press and release alone) | Open or close the in-game pause menu (default preset; resume, save/load slots 1–10, disc swap, return to library) |
 | Options | PS2 Start |
 | L3 + R3 + D-pad Up | Quick save state to slot 1 |
 | L3 + R3 + D-pad Down | Quick load state from slot 1 |
 | L3 + R3 + D-pad Right | Switch to the next disc in a multi-disc set |
-| Hold L1 + R1 and click Touchpad | End the session and return to the library (when pause is remapped off Touchpad) |
+| Hold L1 + R1 and click Touchpad | End the session and return to the library (unless `L1 + R1 + Touchpad` is chosen as the pause trigger) |
 | Hold L2 + D-pad Down for 2 seconds | Open the companion panel or show its QR code |
 
-Inside the pause menu, move with the D-pad or left stick, pick a save slot (1–10) or target disc with Left/Right or L1/R1, confirm with Cross, and resume with Circle or the pause trigger. The default single-button Touchpad click avoids GoldHEN's long-press Share / double-press PS menu and PS4 system Share/PS buttons, and is intercepted before reaching the game so it does not press PS2 Select. Existing configurations carrying a legacy Share/Create pause binding are automatically migrated to Touchpad click. For PS2 games that need Select, remap the pause trigger (for example to `L3 + R3 + L1`) or map Select to another button under Controls or in the companion web panel.
+Inside the pause menu, move with the D-pad or left stick, pick a save slot (1–10) or target disc with Left/Right or L1/R1, confirm with Cross, and resume with Circle or the pause trigger.
+
+On first game launch (or after migrating a legacy Share/Create pause binding), Caliza prompts you to pick one of 6 pause menu presets (all avoiding Share/Create and PS reserved by PS4/GoldHEN), pre-selecting **L3 + R3**:
+
+- **L3 + R3** *(default)* — Press and release both sticks alone. Triggers on release only if no other button was pressed during the hold, keeping `L3 + R3 + D-pad` quick save/load/disc shortcuts and Select/Start free (disables the `L3 + R3` present-filter cycle).
+- **Touchpad click** — Single press, intercepted so it never leaks Select. Warning: Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it (the chooser and companion web panel offer one-step remapping of R3 to Select).
+- **L3 + R3 + L1** — Hold both sticks and press L1. Keeps Touchpad (Select) and Options (Start) free; requires three buttons.
+- **Hold Touchpad (0.5 s)** — Hold Touchpad for 0.5 s to pause; a short tap still sends PS2 Select on release (slight delay on Select).
+- **L1 + R1 + Touchpad** — Hold L1 + R1 and click Touchpad. Keeps single Touchpad click as PS2 Select; replaces the legacy instant exit shortcut.
+- **Hold Options (0.5 s)** — Hold Options for 0.5 s to pause. Options is PS2 Start; a short tap sends Start on release (avoid if a game needs Start held).
+
+You can change the preset anytime in **Controls** (`Caliza/PauseTrigger`) or in the companion web panel. Legacy `Caliza/PauseButton1`/`PauseButton2` bindings migrate automatically to the closest preset, and legacy Share/Create bindings clear to unchosen so the first-run chooser appears.
 
 ## Architecture
 

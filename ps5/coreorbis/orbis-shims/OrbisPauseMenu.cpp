@@ -77,7 +77,7 @@ RuntimeSink s_sink;
 caliza::PauseMenu s_menu(&s_sink);
 
 // Pad-thread-owned trigger and capture state.
-orbis_padmap::ComboWatch s_pause_watch;
+orbis_padmap::PauseTriggerWatch s_pause_watch;
 bool s_open_release_wait = false;
 bool s_close_capture = false;
 std::string s_opened_combo;
@@ -358,13 +358,35 @@ bool AllPadInputsUp(const OrbisPausePadState& pad)
 {
 	return pad.buttons == 0 && pad.l2 == 0 && pad.r2 == 0 && pad.touch == 0;
 }
+
+bool PauseTriggerHolding(orbis_padmap::PauseTrigger trigger, const orbis_padmap::ComboState& s)
+{
+	switch (trigger)
+	{
+		case orbis_padmap::PT_L3_R3:
+			return (s.buttons & 0x00000006u) == 0x00000006u;
+		case orbis_padmap::PT_TOUCHPAD:
+		case orbis_padmap::PT_TOUCHPAD_HOLD:
+			return (s.buttons & 0x40100000u) != 0;
+		case orbis_padmap::PT_L3_R3_L1:
+			return (s.buttons & 0x00000406u) == 0x00000406u;
+		case orbis_padmap::PT_L1_R1_TOUCHPAD:
+			return (s.buttons & 0x00000C00u) == 0x00000C00u && (s.buttons & 0x40100000u) != 0;
+		case orbis_padmap::PT_OPTIONS_HOLD:
+			return (s.buttons & 0x00000008u) != 0;
+		default:
+			return false;
+	}
+}
 } // namespace
 
 bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt,
-	uint32_t* out_suppress_bits)
+	uint32_t* out_suppress_bits, uint32_t* out_inject_bits)
 {
 	if (out_suppress_bits)
 		*out_suppress_bits = 0;
+	if (out_inject_bits)
+		*out_inject_bits = 0;
 
 	caliza::VmStatus vm;
 	{
@@ -387,9 +409,10 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	cs.l2 = pad.l2;
 	cs.r2 = pad.r2;
 	cs.touch = pad.touch;
-	uint32_t combo_block = 0;
-	const bool combo_active = orbis_padmap::ComboActive(cfg.pause, cs);
-	const bool pause_fired = s_pause_watch.Update(cfg.pause, cfg.hold_ms, cs, now_ms, combo_block);
+	const orbis_padmap::PauseTriggerResult trig =
+		s_pause_watch.Update(cfg.pause_trigger, cs, now_ms, s_menu.IsOpen() || s_close_capture);
+	const bool pause_fired = trig.fired;
+	const bool trigger_holding = PauseTriggerHolding(cfg.pause_trigger, cs);
 
 	caliza::Input in;
 	in.up = (pad.buttons & kBitUp) != 0 || pad.ly < kStickLo;
@@ -408,8 +431,9 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	if (!s_menu.IsOpen() && !s_close_capture && pause_fired &&
 		(vm.state == caliza::VmState::Running || vm.state == caliza::VmState::Paused))
 	{
-		s_opened_combo = orbis_padmap::DescribeCombo(cfg.pause, cfg.hold_ms);
-		std::printf("[pause] opened (combo: %s, title: %s)\n", s_opened_combo.c_str(),
+		s_opened_combo = orbis_padmap::PauseTriggerLabel(cfg.pause_trigger);
+		std::printf("[pause] opened (trigger: %s [%s], title: %s)\n", s_opened_combo.c_str(),
+			orbis_padmap::PauseTriggerName(cfg.pause_trigger),
 			vm.title.empty() ? "unknown" : vm.title.c_str());
 		std::fflush(stdout);
 		s_menu.Open(vm.title);
@@ -425,8 +449,8 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	}
 	else if (s_menu.IsOpen())
 	{
-		if (combo_active)
-			in = caliza::Input{}; // holding the pause combo to close must not also navigate or cycle slots
+		if (trigger_holding)
+			in = caliza::Input{}; // holding the pause trigger to close must not also navigate or cycle slots
 		in.options = pause_fired;
 	}
 
@@ -456,26 +480,31 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	if (!open && was_open)
 	{
 		const std::string& reason = s_menu.LastCloseReason();
-		const std::string combo = s_opened_combo.empty()
-			? orbis_padmap::DescribeCombo(cfg.pause, cfg.hold_ms)
+		const std::string trigger = s_opened_combo.empty()
+			? std::string(orbis_padmap::PauseTriggerLabel(cfg.pause_trigger))
 			: s_opened_combo;
-		std::printf("[pause] closed (reason: %s, combo: %s)\n",
-			reason.empty() ? "close" : reason.c_str(), combo.c_str());
+		std::printf("[pause] closed (reason: %s, trigger: %s)\n",
+			reason.empty() ? "close" : reason.c_str(), trigger.c_str());
 		std::fflush(stdout);
 		s_open_release_wait = false;
 		s_close_capture = true;
 	}
 	if (s_close_capture && AllPadInputsUp(pad))
 		s_close_capture = false;
-	if (out_suppress_bits && !open && !s_close_capture && (combo_active || combo_block != 0))
-		*out_suppress_bits = (combo_active ? orbis_padmap::ComboMask(cfg.pause) : 0u) | combo_block;
+	if (!open && !s_close_capture)
+	{
+		if (out_suppress_bits)
+			*out_suppress_bits = trig.suppress_bits;
+		if (out_inject_bits)
+			*out_inject_bits = trig.inject_bits;
+	}
 	return open || s_close_capture;
 }
 
 void OrbisPauseMenuReset()
 {
 	s_menu.Reset();
-	s_pause_watch = orbis_padmap::ComboWatch();
+	s_pause_watch.Reset();
 	s_open_release_wait = false;
 	s_close_capture = false;
 	s_opened_combo.clear();

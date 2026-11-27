@@ -81,16 +81,68 @@ inline bool IsLegacyPauseButtonValue(const std::string& value)
 	       SameAscii(v, "ShareLong") || SameAscii(v, "CreateLong");
 }
 
+inline bool IsValidPauseTriggerPreset(const std::string& value)
+{
+	const std::string v = TrimAscii(value);
+	return SameAscii(v, "l3_r3") || SameAscii(v, "touchpad") || SameAscii(v, "l3_r3_l1") ||
+	       SameAscii(v, "touchpad_hold") || SameAscii(v, "l1_r1_touchpad") || SameAscii(v, "options_hold");
+}
+
+// Maps legacy Caliza/PauseButton1 + PauseButton2 values to the closest PauseTrigger preset name.
+// Returns false if either button is legacy Share/Create (caller treats it as "not chosen" so the
+// first-run chooser appears) or if neither button is set.
+inline bool MapLegacyPauseButtonsToPresetName(const std::string& button1, const std::string& button2, std::string& out_preset,
+	bool* was_legacy_share = nullptr)
+{
+	if (was_legacy_share)
+		*was_legacy_share = false;
+	const std::string b1 = TrimAscii(button1);
+	const std::string b2 = TrimAscii(button2);
+	if (IsLegacyPauseButtonValue(b1) || IsLegacyPauseButtonValue(b2))
+	{
+		if (was_legacy_share)
+			*was_legacy_share = true;
+		return false;
+	}
+	if (b1.empty() && b2.empty())
+		return false;
+	auto is = [](const std::string& s, const char* name) { return SameAscii(s, name); };
+	auto none = [&](const std::string& s) { return s.empty() || is(s, "None"); };
+	auto has = [&](const char* name) { return is(b1, name) || is(b2, name); };
+	auto only = [&](const char* name) {
+		return (is(b1, name) && (none(b2) || is(b2, name))) || (is(b2, name) && none(b1));
+	};
+
+	if (only("Touchpad"))
+		out_preset = "touchpad";
+	else if (has("L3R3") && has("L1"))
+		out_preset = "l3_r3_l1";
+	else if (only("L3R3") || (has("L3") && has("R3")))
+		out_preset = "l3_r3";
+	else if (has("Touchpad") && (has("L1") || has("R1")))
+		out_preset = "l1_r1_touchpad";
+	else if (has("Options") && !has("Touchpad") && !has("L3R3"))
+		out_preset = "options_hold";
+	else if (has("L3R3"))
+		out_preset = "l3_r3_l1";
+	else if (has("Touchpad"))
+		out_preset = "touchpad_hold";
+	else
+		out_preset = "l3_r3";
+	return true;
+}
+
 // Compatibility translation for copied INI text: old user choices become Caliza keys, internal-root
-// folder links move to the canonical root, and legacy Share/Create pause bindings migrate to the
-// GoldHEN-safe default (Touchpad + None). External volume layout names are deliberately not rewritten.
+// folder links move to the canonical root, legacy PauseButton1/2 migrate to the closest PauseTrigger
+// preset, and legacy Share/Create pause values clear PauseTrigger so the first-run chooser appears.
+// External volume layout names are deliberately not rewritten.
 inline std::string MigrateIniText(std::string text)
 {
 	ReplaceAll(text, RetiredIniNamespace(), "Caliza/");
 	ReplaceAll(text, RetiredDataRoot(), "/data/caliza");
 
-	// Check whether PauseButton1 or PauseButton2 carries a legacy Share/Create trigger.
-	bool leg1 = false, leg2 = false, has1 = false, has2 = false;
+	bool has_trigger = false, trigger_valid = false, trigger_legacy_share = false;
+	bool has1 = false, has2 = false;
 	std::string val1, val2;
 	size_t pos = 0;
 	while (pos < text.size())
@@ -105,17 +157,21 @@ inline std::string MigrateIniText(std::string text)
 			{
 				const std::string k = TrimAscii(trimmed.substr(0, eq));
 				const std::string v = TrimAscii(trimmed.substr(eq + 1));
-				if (k == "Caliza/PauseButton1")
+				if (k == "Caliza/PauseTrigger")
+				{
+					has_trigger = true;
+					trigger_valid = IsValidPauseTriggerPreset(v);
+					trigger_legacy_share = IsLegacyPauseButtonValue(v);
+				}
+				else if (k == "Caliza/PauseButton1")
 				{
 					has1 = true;
 					val1 = v;
-					leg1 = IsLegacyPauseButtonValue(v);
 				}
 				else if (k == "Caliza/PauseButton2")
 				{
 					has2 = true;
 					val2 = v;
-					leg2 = IsLegacyPauseButtonValue(v);
 				}
 			}
 		}
@@ -123,28 +179,21 @@ inline std::string MigrateIniText(std::string text)
 			break;
 		pos = nl + 1;
 	}
-	if (!leg1 && !leg2)
+	if (!has1 && !has2 && !(has_trigger && trigger_legacy_share))
 		return text;
 
-	const auto non_empty_partner = [](const std::string& v) {
-		const std::string t = TrimAscii(v);
-		return !t.empty() && !SameAscii(t, "None") && !IsLegacyPauseButtonValue(t);
-	};
-	std::string new1 = "Touchpad", new2 = "None";
-	if (leg1 && !leg2 && non_empty_partner(val2))
+	std::string mapped_preset;
+	bool emit_preset = false;
+	if (!trigger_valid && !trigger_legacy_share && (has1 || has2))
 	{
-		new2 = val2;
-		new1 = SameAscii(val2, "Touchpad") ? "None" : "Touchpad";
-	}
-	else if (leg2 && !leg1 && non_empty_partner(val1))
-	{
-		new1 = val1;
-		new2 = SameAscii(val1, "Touchpad") ? "None" : "Touchpad";
+		bool was_share = false;
+		if (MapLegacyPauseButtonsToPresetName(val1, val2, mapped_preset, &was_share))
+			emit_preset = true;
 	}
 
 	std::string out;
-	out.reserve(text.size() + 48);
-	bool wrote1 = false, wrote2 = false;
+	out.reserve(text.size() + 32);
+	bool wrote_trigger = false;
 	pos = 0;
 	while (pos < text.size())
 	{
@@ -152,28 +201,29 @@ inline std::string MigrateIniText(std::string text)
 		const bool has_nl = nl != std::string::npos;
 		const std::string line = has_nl ? text.substr(pos, nl - pos) : text.substr(pos);
 		const std::string trimmed = TrimAscii(line);
-		bool replaced = false;
+		bool drop = false;
 		if (!trimmed.empty() && trimmed[0] != '#' && trimmed[0] != ';')
 		{
 			const size_t eq = trimmed.find('=');
 			if (eq != std::string::npos)
 			{
 				const std::string k = TrimAscii(trimmed.substr(0, eq));
-				if (k == "Caliza/PauseButton1")
+				if (k == "Caliza/PauseButton1" || k == "Caliza/PauseButton2")
 				{
-					out += "Caliza/PauseButton1=" + new1 + (has_nl ? "\n" : "");
-					wrote1 = true;
-					replaced = true;
+					if (emit_preset && !wrote_trigger)
+					{
+						out += "Caliza/PauseTrigger=" + mapped_preset + (has_nl ? "\n" : "");
+						wrote_trigger = true;
+					}
+					drop = true;
 				}
-				else if (k == "Caliza/PauseButton2")
+				else if (k == "Caliza/PauseTrigger" && trigger_legacy_share)
 				{
-					out += "Caliza/PauseButton2=" + new2 + (has_nl ? "\n" : "");
-					wrote2 = true;
-					replaced = true;
+					drop = true;
 				}
 			}
 		}
-		if (!replaced)
+		if (!drop)
 		{
 			out += line;
 			if (has_nl)
@@ -183,14 +233,11 @@ inline std::string MigrateIniText(std::string text)
 			break;
 		pos = nl + 1;
 	}
-	if (!wrote1 || !wrote2)
+	if (emit_preset && !wrote_trigger)
 	{
 		if (!out.empty() && out.back() != '\n')
 			out.push_back('\n');
-		if (!wrote1 && (!has1 || leg1))
-			out += "Caliza/PauseButton1=" + new1 + "\n";
-		if (!wrote2 && (!has2 || leg2))
-			out += "Caliza/PauseButton2=" + new2 + "\n";
+		out += "Caliza/PauseTrigger=" + mapped_preset + "\n";
 	}
 	return out;
 }

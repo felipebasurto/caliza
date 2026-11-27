@@ -22,6 +22,7 @@ enum class Screen
 	GameDetail,
 	TexturePacks,
 	PauseOverlay,
+	PauseTriggerSetup,
 	MemoryCards,
 	Settings,
 	Controls,
@@ -250,6 +251,7 @@ private:
 		CancelTexturePack,
 		DeleteTexturePack,
 		ApplyRecommendedSettings,
+		ChooseTouchpadPauseTrigger,
 	};
 
 	struct DialogState
@@ -324,6 +326,7 @@ private:
 	void HandleGameDetail(const LogicalInput& in);
 	void HandleTexturePacks(const LogicalInput& in);
 	void HandlePause(const LogicalInput& in);
+	void HandlePauseTriggerSetup(const LogicalInput& in);
 	void HandleMemoryCards(const LogicalInput& in);
 	void HandleSettings(const LogicalInput& in);
 	void HandleControls(const LogicalInput& in);
@@ -338,6 +341,8 @@ private:
 	void OpenLibrary();
 	void OpenGameDetail(const std::string& game_id);
 	void OpenPause();
+	void RequestLaunchGame(const std::string& game_id, bool smart_tune = false);
+	void CompletePauseTriggerChoice(const std::string& preset_id, bool remap_r3_to_select);
 	void OpenSettings(Screen return_screen, const std::string& game_id = std::string());
 	void OpenPicker(PickerPurpose purpose, Screen return_screen, const std::string& initial_path = std::string(),
 		const std::string& source_id = std::string());
@@ -405,6 +410,10 @@ private:
 	int m_texture_index = 0;
 	int m_pause_index = 0;
 	Screen m_pause_return_screen = Screen::Home;
+	int m_pause_setup_index = 0;
+	Screen m_pause_setup_return_screen = Screen::Home;
+	std::string m_pending_launch_game_id;
+	bool m_pending_launch_smart_tune = false;
 	int m_memory_zone = 0; // 0 slots, 1 cards/actions
 	int m_memory_slot = 0;
 	int m_memory_index = 0;

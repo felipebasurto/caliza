@@ -29,11 +29,14 @@ struct OrbisPausePadState
 };
 
 // Pad thread. True when this iteration's input must not reach the game (the overlay is open, or
-// the buttons that closed it are still held). Uses cfg.pause (default Touchpad click) and cfg.hold_ms.
-// When non-null, out_suppress_bits receives any pause-trigger button bits that must still be stripped
-// from game input while holding toward cfg.hold_ms (so Touchpad click never leaks PS2 Select).
+// the buttons that closed it are still held). Evaluates cfg.pause_trigger (default L3 + R3 on
+// release). When non-null:
+// - out_suppress_bits receives any pause-trigger button bits that must be stripped from game input
+//   (e.g. Touchpad/Select, Options/Start while holding, or L1 on L3+R3+L1).
+// - out_inject_bits receives any short-tap release pulse (PS2 Select for Hold Touchpad, PS2 Start
+//   for Hold Options).
 bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt,
-	uint32_t* out_suppress_bits = nullptr);
+	uint32_t* out_suppress_bits = nullptr, uint32_t* out_inject_bits = nullptr);
 
 // CPU thread. Executes the queued runtime commands in post order and publishes the VM status.
 void OrbisPauseMenuPumpCpu();

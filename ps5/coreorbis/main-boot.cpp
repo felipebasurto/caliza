@@ -1067,11 +1067,12 @@ static void *orbis_pad_thread(void *)
     const bool pad1_on = rc == 0 && (port1_connected || kbm_input_active);
     if (pad1_on)
     {
-      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): opened by cfg.pause (default Touchpad click,
-      // remappable in Controls; never uses Share/Create so GoldHEN's cheat menu does not clash).
-      // While it is open (or the buttons that closed it are still held) nothing reaches the game
-      // or the other combos; while holding toward hold_ms, the pause trigger's bits (e.g. Touchpad
-      // click / PS2 Select) are stripped so they are never forwarded to the game.
+      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): opened by cfg.pause_trigger (default L3 + R3
+      // on release only if no other button was pressed, selectable from 6 presets in first-run chooser /
+      // Controls; never uses Share/Create or PS reserved by PS4/GoldHEN). While open (or while closing
+      // inputs are still held) nothing reaches the game or other combos; pause_suppress_bits strips
+      // intercepted bits (Touchpad/Select, Options/Start while holding, L1) and pause_inject_bits
+      // pulses PS2 Select / Start on short tap for Hold Touchpad / Hold Options presets.
       const orbis_padmap::Config &cfg = orbis_padmap_current();
       const auto now_tick = std::chrono::steady_clock::now();
       const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1092,7 +1093,8 @@ static void *orbis_pad_thread(void *)
         pps.lx = d.lx; pps.ly = d.ly; pps.rx = d.rx; pps.ry = d.ry;
         pps.touch = raw_touch_zone;
         uint32_t pause_suppress_bits = 0;
-        pause_captured = OrbisPauseMenuPadTick(pps, cfg, now_ms, pad_dt, &pause_suppress_bits);
+        uint32_t pause_inject_bits = 0;
+        pause_captured = OrbisPauseMenuPadTick(pps, cfg, now_ms, pad_dt, &pause_suppress_bits, &pause_inject_bits);
         if (pause_captured)
         {
           d.buttons = 0;
@@ -1100,13 +1102,18 @@ static void *orbis_pad_thread(void *)
           d.lx = d.ly = d.rx = d.ry = 128;
           memset(&d.rest[40], 0, 12); // the touch state too: a two-touch combo must not fire either
         }
-        else if (pause_suppress_bits != 0)
+        else
         {
-          d.buttons &= ~pause_suppress_bits;
-          if (pause_suppress_bits & 0x100u)
-            d.l2 = 0;
-          if (pause_suppress_bits & 0x200u)
-            d.r2 = 0;
+          if (pause_suppress_bits != 0)
+          {
+            d.buttons &= ~pause_suppress_bits;
+            if (pause_suppress_bits & 0x100u)
+              d.l2 = 0;
+            if (pause_suppress_bits & 0x200u)
+              d.r2 = 0;
+          }
+          if (pause_inject_bits != 0)
+            d.buttons |= pause_inject_bits;
         }
       }
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
@@ -1158,13 +1165,13 @@ static void *orbis_pad_thread(void *)
           d.r2 = 0;
       }
       // eerec-282: L3+R3 held ~0.4 s and let go without the D-pad (or a save/load/pause) cycles the present filter
-      // (eerec-278 fired while held). (vk-285-73's notification test on D-pad Right/Left is gone in vk-285-74.)
+      // (eerec-278 fired while held). Disabled while L3+R3 is assigned to the pause menu trigger so they never collide.
       {
         static unsigned combo = 0;
         static bool used = false;
         static uint32_t prev_dpad = 0;
         const uint32_t dpad = d.buttons & 0xF0u; // Up 0x10, Right 0x20, Down 0x40, Left 0x80
-        if (pause_captured)
+        if (pause_captured || cfg.pause_trigger == orbis_padmap::PT_L3_R3)
         {
           combo = 0;
           used = false;
@@ -1187,6 +1194,8 @@ static void *orbis_pad_thread(void *)
       }
       // vk-285-49: L1+R1 held and a touchpad click = back to the menu (the user's choice). The click
       // that triggers it is held back from the game (it is Select there) until it is released.
+      // Skipped when L1+R1+Touchpad is selected as the pause menu trigger.
+      if (cfg.pause_trigger != orbis_padmap::PT_L1_R1_TOUCHPAD)
       {
         static bool s_prev_click = false, s_click_consumed = false;
         const bool click = (d.buttons & 0x00100000u) != 0; // the touchpad button
@@ -1768,8 +1777,9 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
     }, &pause_migrated);
     if (pause_migrated)
     {
-      printf("[boot] controls: migrated legacy Share/Create pause binding to %s (avoids GoldHEN cheat menu)\n",
-        orbis_padmap::DescribeCombo(map.pause, map.hold_ms).c_str());
+      printf("[boot] controls: migrated legacy pause binding to preset %s (%s)\n",
+        orbis_padmap::PauseTriggerLabel(map.pause_trigger),
+        orbis_padmap::PauseTriggerName(map.pause_trigger));
       fflush(stdout);
     }
     bool changed = false;
@@ -1785,15 +1795,16 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
     if (changed)
     {
       g_orbis_padmap_version.fetch_add(1, std::memory_order_release);
-      printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, PauseButton*, SaveButton*, LoadButton*, DiscButton*, StateHold)\n",
+      printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, PauseTrigger, SaveButton*, LoadButton*, DiscButton*, StateHold)\n",
         orbis_padmap::Describe(map).c_str());
       fflush(stdout);
     }
     if (changed || !s_pause_logged)
     {
       s_pause_logged = true;
-      printf("[boot] controls: pause menu trigger: %s\n",
-        orbis_padmap::DescribeCombo(map.pause, map.hold_ms).c_str());
+      printf("[boot] controls: pause menu trigger: %s (%s)\n",
+        orbis_padmap::PauseTriggerLabel(map.pause_trigger),
+        orbis_padmap::PauseTriggerName(map.pause_trigger));
       fflush(stdout);
     }
   }

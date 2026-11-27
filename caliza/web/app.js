@@ -52,6 +52,15 @@ const BUTTON_TARGETS = [["Cross","Cross"],["Circle","Circle"],["Square","Square"
 const DEADZONES = [["0","Off"],["5","5%"],["10","10%"],["15","15%"],["20","20%"],["25","25%"],["30","30%"]];
 const STRENGTHS = [["1","Full"],["0.75","75%"],["0.5","50%"],["0.4","40%"],["0.3","30%"],["0.25","25%"],["0.2","20%"],["0.15","15%"],["0.1","10%"]];
 const INVERT = [["0","Off"],["1","Up-down"],["2","Left-right"],["3","Both"]];
+const PAUSE_TRIGGER_PRESETS = [
+  ["l3_r3", "L3 + R3", "Press and release both sticks alone. Keeps L3+R3+D-pad shortcuts and Select/Start free; disables L3+R3 filter cycle."],
+  ["touchpad", "Touchpad click", "Single press. Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it."],
+  ["l3_r3_l1", "L3 + R3 + L1", "Hold both sticks and press L1. Keeps Touchpad (Select) and Options (Start) free; requires three buttons."],
+  ["touchpad_hold", "Hold Touchpad (0.5 s)", "Hold Touchpad 0.5 s to pause; short tap still sends PS2 Select on release (slight delay on Select)."],
+  ["l1_r1_touchpad", "L1 + R1 + Touchpad", "Hold L1 + R1 and click Touchpad. Keeps single Touchpad click as Select; replaces the old instant exit shortcut."],
+  ["options_hold", "Hold Options (0.5 s)", "Hold Options 0.5 s to pause. Options is PS2 Start; short tap sends Start on release (avoid if a game needs Start held)."],
+];
+const PAUSE_TRIGGER_OPTIONS = PAUSE_TRIGGER_PRESETS.map(([v, l]) => [v, l]);
 const COMBO_BUTTONS = [["L3R3","L3 + R3"],["Cross","Cross"],["Circle","Circle"],["Square","Square"],["Triangle","Triangle"],["L1","L1"],["R1","R1"],["L2","L2"],["R2","R2"],["L3","L3"],["R3","R3"],["Options","Options"],["Touchpad","Touchpad click"],["TouchLeft","Touchpad left"],["TouchRight","Touchpad right"],["Up","D-pad up"],["Down","D-pad down"],["Left","D-pad left"],["Right","D-pad right"],["None","Nothing"]];
 const item = (key, label, type, def, extra = {}) => ({ key, label, type, def, ...extra });
 const buttonItem = (name, label, def) => item(calizaKey("Button" + name), label, "pick", def, { options: BUTTON_TARGETS });
@@ -138,8 +147,8 @@ const GROUPS = [
     item(calizaKey("UiReduceMotion"), "Reduce motion", "toggle", "false", { short: "Motion %" }),
     item(calizaKey("UiLargeFocus"), "Large focus indicator", "toggle", "true", { short: "Focus %" }),
   ]},
-  { title: "Pause, state and disc shortcuts", tab: "controls", hint: "Combos use two physical buttons held together and avoid Share/PS system and GoldHEN shortcuts. These shortcuts do not depend on the in-game remapping below.", items: [
-    comboItem("PauseButton1", "Pause menu: first button", "Touchpad", "Pause menu"), comboItem("PauseButton2", "Pause menu: second button", "None"),
+  { title: "Pause, state and disc shortcuts", tab: "controls", hint: "All pause presets avoid Share/Create and PS reserved by PS4/GoldHEN. Shortcuts always read the controller's real buttons.", items: [
+    item(calizaKey("PauseTrigger"), "Pause menu trigger", "pick", "l3_r3", { options: PAUSE_TRIGGER_OPTIONS, hint: "Default: L3 + R3 (triggers on release only if no other button was pressed). Touchpad acts as PS2 Select; choosing Touchpad click means Select must be mapped to another button for games that use it." }),
     comboItem("SaveButton1", "Save: first button", "L3R3", "Save state"), comboItem("SaveButton2", "Save: second button", "Up"),
     comboItem("LoadButton1", "Load: first button", "L3R3", "Load state"), comboItem("LoadButton2", "Load: second button", "Down"),
     item(calizaKey("StateHold"), "Hold time", "seg", "0", { cols: 6, options: [["0","Instant"],["0.5","0.5 s"],["1","1 s"],["1.5","1.5 s"],["2","2 s"],["3","3 s"]], hint: "A longer hold prevents accidental saves and loads." }),
@@ -452,7 +461,17 @@ function renderSettingRow(data, group, it, index, scope) {
   if (it.pair && index > 0 && group.items[index - 1].pair) return "";
   const eff = effectiveSetting(data, it);
   const tag = it.restart ? '<span class="tag">next launch</span>' : "";
-  const hint = it.hint ? '<div class="setting-hint">' + esc(it.hint) + '</div>' : "";
+  let extraHint = "";
+  if (it.key === calizaKey("PauseTrigger")) {
+    const preset = PAUSE_TRIGGER_PRESETS.find((p) => sameChoice(p[0], eff.value));
+    if (preset) extraHint += '<div class="setting-hint">' + esc(preset[2]) + '</div>';
+    if (sameChoice(eff.value, "touchpad")) {
+      extraHint += '<div class="setting-hint" role="alert"><strong>Warning:</strong> Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it. <button class="button ghost" type="button" data-action="choice-setting" data-key="' + esc(calizaKey("ButtonR3")) + '" data-value="Select" data-focus-id="pause-remap-r3-select">Map R3 to Select</button></div>';
+    } else if (sameChoice(eff.value, "options_hold")) {
+      extraHint += '<div class="setting-hint" role="alert"><strong>Note:</strong> Options is PS2 Start; short tap sends Start on release. Avoid if a game requires holding Start.</div>';
+    }
+  }
+  const hint = (it.hint ? '<div class="setting-hint">' + esc(it.hint) + '</div>' : "") + extraHint;
   let control = "";
   if (it.type === "toggle") {
     control = '<button class="toggle-switch" type="button" aria-pressed="' + (truthy(eff.value) ? "true" : "false") + '" aria-label="' + esc(it.label) + '" data-action="toggle-setting" data-key="' + esc(it.key) + '" data-value="' + (truthy(eff.value) ? "false" : "true") + '" data-focus-id="setting-' + esc(scope + '-' + it.key) + '"></button>';
