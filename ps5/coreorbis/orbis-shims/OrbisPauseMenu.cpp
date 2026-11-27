@@ -360,8 +360,12 @@ bool AllPadInputsUp(const OrbisPausePadState& pad)
 }
 } // namespace
 
-bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt)
+bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt,
+	uint32_t* out_suppress_bits)
 {
+	if (out_suppress_bits)
+		*out_suppress_bits = 0;
+
 	caliza::VmStatus vm;
 	{
 		std::lock_guard<std::mutex> lock(s_state_mtx);
@@ -384,6 +388,7 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	cs.r2 = pad.r2;
 	cs.touch = pad.touch;
 	uint32_t combo_block = 0;
+	const bool combo_active = orbis_padmap::ComboActive(cfg.pause, cs);
 	const bool pause_fired = s_pause_watch.Update(cfg.pause, cfg.hold_ms, cs, now_ms, combo_block);
 
 	caliza::Input in;
@@ -420,7 +425,7 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	}
 	else if (s_menu.IsOpen())
 	{
-		if (orbis_padmap::ComboActive(cfg.pause, cs))
+		if (combo_active)
 			in = caliza::Input{}; // holding the pause combo to close must not also navigate or cycle slots
 		in.options = pause_fired;
 	}
@@ -462,6 +467,8 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Co
 	}
 	if (s_close_capture && AllPadInputsUp(pad))
 		s_close_capture = false;
+	if (out_suppress_bits && !open && !s_close_capture && (combo_active || combo_block != 0))
+		*out_suppress_bits = (combo_active ? orbis_padmap::ComboMask(cfg.pause) : 0u) | combo_block;
 	return open || s_close_capture;
 }
 

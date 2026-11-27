@@ -267,7 +267,7 @@ void TestInventory()
 	CHECK(Groups().size() == 21);
 	CHECK(Settings().size() == 119);
 	CHECK(Actions().size() == 49);
-	CheckHash(SettingsInventoryHash(), 0xd84e28bbdb6811acull, "settings");
+	CheckHash(SettingsInventoryHash(), 0x7eca3c7bbe0279acull, "settings");
 	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
@@ -497,30 +497,30 @@ void TestLegacyKeyMigration()
 	CHECK(migrated_renderer != nullptr && *migrated_renderer == "Hardware");
 	CHECK(migrated_folders != nullptr && *migrated_folders == "/data/caliza/games");
 
-	// Legacy Share/Create pause bindings migrate to L3R3 + L1 in both MigrateIniText and MigrateLegacyPauseCombo.
+	// Legacy Share/Create pause bindings migrate to Touchpad + None in both MigrateIniText and MigrateLegacyPauseCombo.
 	{
 		const std::string share_ini = "Caliza/PauseButton1=Share\nCaliza/PauseButton2=None\n";
 		const std::string fixed_text = caliza::legacy::MigrateIniText(share_ini);
 		const DocumentState fixed_doc = ParseSettingsDocument(fixed_text);
 		const std::string* p1 = FindValue(fixed_doc, "Caliza/PauseButton1");
 		const std::string* p2 = FindValue(fixed_doc, "Caliza/PauseButton2");
-		CHECK(p1 != nullptr && *p1 == "L3R3");
-		CHECK(p2 != nullptr && *p2 == "L1");
+		CHECK(p1 != nullptr && *p1 == "Touchpad");
+		CHECK(p2 != nullptr && *p2 == "None");
 	}
 	{
 		DocumentState doc = ParseSettingsDocument("Caliza/PauseButton1=CreateHold\n");
 		CHECK(MigrateLegacyPauseCombo(&doc));
 		const std::string* p1 = FindValue(doc, "Caliza/PauseButton1");
 		const std::string* p2 = FindValue(doc, "Caliza/PauseButton2");
-		CHECK(p1 != nullptr && *p1 == "L3R3");
-		CHECK(p2 != nullptr && *p2 == "L1");
+		CHECK(p1 != nullptr && *p1 == "Touchpad");
+		CHECK(p2 != nullptr && *p2 == "None");
 		CHECK(!MigrateLegacyPauseCombo(&doc)); // idempotent after migration
 	}
 	{
-		DocumentState custom = ParseSettingsDocument("Caliza/PauseButton1=Options\nCaliza/PauseButton2=Touchpad\n");
+		DocumentState custom = ParseSettingsDocument("Caliza/PauseButton1=L3R3\nCaliza/PauseButton2=L1\n");
 		CHECK(!MigrateLegacyPauseCombo(&custom));
-		CHECK(*FindValue(custom, "Caliza/PauseButton1") == "Options");
-		CHECK(*FindValue(custom, "Caliza/PauseButton2") == "Touchpad");
+		CHECK(*FindValue(custom, "Caliza/PauseButton1") == "L3R3");
+		CHECK(*FindValue(custom, "Caliza/PauseButton2") == "L1");
 	}
 }
 

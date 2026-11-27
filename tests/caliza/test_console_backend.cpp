@@ -546,11 +546,27 @@ void TestLegacyPauseComboMigration()
 				p2 = &item;
 		}
 	}
-	CHECK_TRUE(p1 != nullptr && p1->value == "L3R3");
-	CHECK_TRUE(p2 != nullptr && p2->value == "L1");
-	// Startup migration also upgrades gs.ini on disk so the old Share binding is removed.
+	CHECK_TRUE(p1 != nullptr && p1->value == "Touchpad");
+	CHECK_TRUE(p2 != nullptr && p2->value == "None");
+	// Startup migration also removes the old Share binding from gs.ini on disk; reloading yields Touchpad + None.
 	const std::string on_disk = ReadFile(options.global_settings_path);
 	CHECK_TRUE(on_disk.find("Share") == std::string::npos);
+	ConsoleBackend reloaded(options);
+	const Snapshot snap2 = reloaded.GetSnapshot();
+	const SettingItem* r1 = nullptr;
+	const SettingItem* r2 = nullptr;
+	for (const SettingCategory& category : snap2.settings)
+	{
+		for (const SettingItem& item : category.items)
+		{
+			if (item.id == "Caliza/PauseButton1")
+				r1 = &item;
+			else if (item.id == "Caliza/PauseButton2")
+				r2 = &item;
+		}
+	}
+	CHECK_TRUE(r1 != nullptr && r1->value == "Touchpad");
+	CHECK_TRUE(r2 != nullptr && r2->value == "None");
 }
 
 } // namespace

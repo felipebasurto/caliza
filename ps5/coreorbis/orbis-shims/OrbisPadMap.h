@@ -10,9 +10,10 @@
 //   Caliza/InvertLeft, InvertRight = 0 no, 1 up-down, 2 left-right, 3 both: the PS2 stick's axes (after the swap).
 //   Caliza/LeftStickDpad = 0 no, 1 the PS2's left stick also presses the D-pad, 2 it presses only the D-pad (the stick
 //     itself stays in the middle).
-//   Caliza/PauseButton1, PauseButton2 = the two buttons held together to open or close the in-game pause menu. Unset:
-//     L3R3 + L1 (avoids GoldHEN's long-press Share and PS4 system Share/PS combos). Legacy Share/Create values migrate
-//     automatically to L3R3 + L1.
+//   Caliza/PauseButton1, PauseButton2 = the button (or two buttons held together) to open or close the in-game pause
+//     menu. Unset: Touchpad + None (single-button touchpad click; avoids GoldHEN's long-press Share / double-press PS
+//     and PS4 system Share/PS, and is intercepted before reaching the game). Legacy Share/Create values migrate
+//     automatically to Touchpad + None.
 //   Caliza/SaveButton1, SaveButton2, LoadButton1, LoadButton2 = the two buttons held together to save or load the state
 //     (slot 1): L3R3 (both stick clicks) Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 Options Touchpad (its click)
 //     TouchLeft TouchRight (a finger on the touchpad's left or right third) Up Down Left Right, or None. Unset: L3R3 + Up
@@ -210,8 +211,8 @@ inline bool ParseComboButton(std::string v, ComboButton& out)
 	return false;
 }
 
-constexpr ComboButton kDefaultPauseButton1 = CB_L3R3;
-constexpr ComboButton kDefaultPauseButton2 = CB_L1;
+constexpr ComboButton kDefaultPauseButton1 = CB_TOUCHPAD;
+constexpr ComboButton kDefaultPauseButton2 = CB_NONE;
 
 // Legacy Share/Create pause trigger names that clash with GoldHEN's cheat menu (long-press Share)
 // and PS4 system Share interception.
@@ -227,7 +228,7 @@ inline bool IsLegacyPauseTrigger(std::string v)
 	       SameText(v, "ShareLong") || SameText(v, "CreateLong");
 }
 
-// Replaces any legacy Share/Create pause binding with the GoldHEN-safe default (L3R3 + L1),
+// Replaces any legacy Share/Create pause binding with the GoldHEN-safe default (Touchpad + None),
 // preserving a valid custom second button when present. Returns true if either value changed.
 inline bool MigratePauseButtons(std::string& button1, std::string& button2)
 {
@@ -301,7 +302,8 @@ struct Config
 	uint8_t deadzone_right = 0;
 	uint8_t invert_left = 0;  // bit 0 up-down, bit 1 left-right
 	uint8_t invert_right = 0;
-	// In-game pause menu combo (Caliza/PauseButton1/2): L3+R3 + L1 by default (avoids GoldHEN Share / system PS).
+	// In-game pause menu trigger (Caliza/PauseButton1/2): Touchpad click (single button) by default,
+	// avoiding GoldHEN's Share/PS shortcuts and PS4 system Share/PS interception.
 	ComboButton pause[2] = {kDefaultPauseButton1, kDefaultPauseButton2};
 	// vk-285-117: the save and load state combos (two buttons each) and how long they're held first.
 	ComboButton save[2] = {CB_L3R3, CB_UP};
@@ -462,6 +464,15 @@ inline bool ComboHeld(ComboButton b, const ComboState& s)
 		case CB_TOUCH_RIGHT: return s.touch == 2;
 		default: return (s.buttons & ComboBits(b)) != 0;
 	}
+}
+
+inline uint32_t ComboMask(const ComboButton (&b)[2])
+{
+	uint32_t mask = 0;
+	for (ComboButton x : b)
+		if (x != CB_NONE && x < CB_COUNT)
+			mask |= ComboBits(x);
+	return mask;
 }
 
 inline bool ComboActive(const ComboButton (&b)[2], const ComboState& s)

@@ -1067,10 +1067,11 @@ static void *orbis_pad_thread(void *)
     const bool pad1_on = rc == 0 && (port1_connected || kbm_input_active);
     if (pad1_on)
     {
-      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): opened by cfg.pause (default L3+R3 + L1,
+      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): opened by cfg.pause (default Touchpad click,
       // remappable in Controls; never uses Share/Create so GoldHEN's cheat menu does not clash).
       // While it is open (or the buttons that closed it are still held) nothing reaches the game
-      // or the other combos: neutral input is sent until all buttons/triggers/touch are released.
+      // or the other combos; while holding toward hold_ms, the pause trigger's bits (e.g. Touchpad
+      // click / PS2 Select) are stripped so they are never forwarded to the game.
       const orbis_padmap::Config &cfg = orbis_padmap_current();
       const auto now_tick = std::chrono::steady_clock::now();
       const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1090,13 +1091,22 @@ static void *orbis_pad_thread(void *)
         pps.r2 = d.r2;
         pps.lx = d.lx; pps.ly = d.ly; pps.rx = d.rx; pps.ry = d.ry;
         pps.touch = raw_touch_zone;
-        pause_captured = OrbisPauseMenuPadTick(pps, cfg, now_ms, pad_dt);
+        uint32_t pause_suppress_bits = 0;
+        pause_captured = OrbisPauseMenuPadTick(pps, cfg, now_ms, pad_dt, &pause_suppress_bits);
         if (pause_captured)
         {
           d.buttons = 0;
           d.l2 = d.r2 = 0;
           d.lx = d.ly = d.rx = d.ry = 128;
           memset(&d.rest[40], 0, 12); // the touch state too: a two-touch combo must not fire either
+        }
+        else if (pause_suppress_bits != 0)
+        {
+          d.buttons &= ~pause_suppress_bits;
+          if (pause_suppress_bits & 0x100u)
+            d.l2 = 0;
+          if (pause_suppress_bits & 0x200u)
+            d.r2 = 0;
         }
       }
       // vk-285-117 (AI-assisted): save and load the state (slot 1) with the combos the Controls tab chose (two buttons each,
@@ -1771,11 +1781,19 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
         changed = true;
       }
     }
+    static bool s_pause_logged = false;
     if (changed)
     {
       g_orbis_padmap_version.fetch_add(1, std::memory_order_release);
       printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, PauseButton*, SaveButton*, LoadButton*, DiscButton*, StateHold)\n",
         orbis_padmap::Describe(map).c_str());
+      fflush(stdout);
+    }
+    if (changed || !s_pause_logged)
+    {
+      s_pause_logged = true;
+      printf("[boot] controls: pause menu trigger: %s\n",
+        orbis_padmap::DescribeCombo(map.pause, map.hold_ms).c_str());
       fflush(stdout);
     }
   }

@@ -83,7 +83,7 @@ inline bool IsLegacyPauseButtonValue(const std::string& value)
 
 // Compatibility translation for copied INI text: old user choices become Caliza keys, internal-root
 // folder links move to the canonical root, and legacy Share/Create pause bindings migrate to the
-// GoldHEN-safe default (L3R3 + L1). External volume layout names are deliberately not rewritten.
+// GoldHEN-safe default (Touchpad + None). External volume layout names are deliberately not rewritten.
 inline std::string MigrateIniText(std::string text)
 {
 	ReplaceAll(text, RetiredIniNamespace(), "Caliza/");
@@ -130,16 +130,16 @@ inline std::string MigrateIniText(std::string text)
 		const std::string t = TrimAscii(v);
 		return !t.empty() && !SameAscii(t, "None") && !IsLegacyPauseButtonValue(t);
 	};
-	std::string new1 = "L3R3", new2 = "L1";
+	std::string new1 = "Touchpad", new2 = "None";
 	if (leg1 && !leg2 && non_empty_partner(val2))
 	{
 		new2 = val2;
-		new1 = SameAscii(val2, "L3R3") ? "L1" : "L3R3";
+		new1 = SameAscii(val2, "Touchpad") ? "None" : "Touchpad";
 	}
 	else if (leg2 && !leg1 && non_empty_partner(val1))
 	{
 		new1 = val1;
-		new2 = SameAscii(val1, "L3R3") ? "L1" : "L3R3";
+		new2 = SameAscii(val1, "Touchpad") ? "None" : "Touchpad";
 	}
 
 	std::string out;
