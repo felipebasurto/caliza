@@ -18,6 +18,7 @@ run_cpp test_pad_map ps5/coreorbis/tests/padmap/test_pad_map.cpp -I"$ROOT/ps5/co
 run_cpp test_dirent ps5/coreorbis/tests/dirent/test_dirent.cpp -I"$ROOT/ps5/coreorbis/orbis-shims"
 run_cpp test_texture_roots ps5/coreorbis/tests/textures/textures_test.cpp -I"$ROOT/ps5/coreorbis/orbis-shims"
 run_cpp test_patchdl ps5/coreorbis/tests/patchdl/test_patchdl.cpp -I"$ROOT/ps5/frontend" "$ROOT/ps5/frontend/fe_patchdl.cpp"
+run_cpp test_modern_controls ps5/coreorbis/tests/modern_controls/test_modern_controls.cpp -I"$ROOT/ps5/frontend" "$ROOT/ps5/frontend/fe_modern_controls.cpp"
 run_cpp test_wsi_decision ps4/tests/test_wsi_decision.cpp -I"$ROOT/ps4/include"
 run_cpp test_spu2_pcm_cache ps4/tests/test_spu2_pcm_cache.cpp
 run_cpp test_cdvd_subq ps4/tests/test_cdvd_subq.cpp -I"$ROOT"

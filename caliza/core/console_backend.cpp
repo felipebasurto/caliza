@@ -1309,6 +1309,61 @@ private:
 		return Success("texture pack removal requested");
 	}
 
+	// One boot.log line reporting whether a modern-controls group (ConsolePatchGroup::modern_controls, set by
+	// fe::IsModernControlsGroup; see docs/research/modern-controls.md) is actually turned on for the game about
+	// to launch, available but off, or absent, so a user who expects dual-stick controls has a place to look
+	// before assuming the game itself lacks them. Reuses the same per-game document read BuildOverlay uses, so
+	// "enabled" here always matches what the settings page shows.
+	void LogModernControlsForLaunch(const GameEntry& game)
+	{
+		if (!m_options.hooks.boot_log || !m_options.hooks.list_patch_groups)
+			return;
+		const std::string label = !game.serial.empty() ? game.serial : game.title;
+		settings::DocumentState doc;
+		ReadSettingsDocument(GameSettingsPath(game), &doc, nullptr);
+		struct Match
+		{
+			std::string name;
+			std::string file;
+			bool cheat;
+			bool enabled;
+		};
+		std::vector<Match> matches;
+		for (const bool cheats : {false, true})
+		{
+			const std::vector<std::string>& enabled_list = cheats ? doc.cheats : doc.patches;
+			for (const ConsolePatchGroup& group : m_options.hooks.list_patch_groups(game, cheats))
+			{
+				if (!group.modern_controls)
+					continue;
+				const bool enabled = std::find(enabled_list.begin(), enabled_list.end(), group.name) != enabled_list.end();
+				matches.push_back({group.name, group.file, cheats, enabled});
+			}
+		}
+		if (matches.empty())
+		{
+			m_options.hooks.boot_log("modern controls: no matching patch for " + label);
+			return;
+		}
+		bool any_enabled = false;
+		for (const Match& match : matches)
+		{
+			if (!match.enabled)
+				continue;
+			any_enabled = true;
+			m_options.hooks.boot_log("modern controls: applying \"" + match.name + "\" for " + label + " (" +
+				(match.cheat ? "cheats/" : "patches/") + match.file + ")");
+		}
+		if (!any_enabled)
+		{
+			std::string names;
+			for (const Match& match : matches)
+				names += (names.empty() ? "" : ", ") + match.name;
+			m_options.hooks.boot_log("modern controls: " + std::to_string(matches.size()) + " available for " + label +
+				" (" + names + ") but off; enable under Patches/Cheats > Modern controls");
+		}
+	}
+
 	Execution LaunchGame(const Command& command)
 	{
 		Snapshot snapshot;
@@ -1319,6 +1374,7 @@ private:
 			return Failure(game->problem.empty() ? "the image is damaged or unlaunchable" : game->problem);
 		if (!snapshot.bios.present && !BuildOverlay().bios.present)
 			return Failure("a BIOS is required before launch");
+		LogModernControlsForLaunch(*game);
 		ConsoleLaunchRequest request;
 		request.kind = ConsoleLaunchRequest::Kind::Game;
 		request.game_id = game->id;
@@ -1610,6 +1666,13 @@ private:
 	// per-game state) into one Toggle row per group the game's downloaded file(s) actually contain, the same
 	// state the companion web panel reads and writes (fe_settings.cpp PatchGroups / Patches::Enable list lines).
 	// A group still listed as enabled whose file is gone stays visible too, so it can be turned off.
+	//
+	// A found group the list_patch_groups hook marks modern_controls (fe::IsModernControlsGroup; see
+	// docs/research/modern-controls.md) goes into its own "Modern controls" category instead of "Patches"/
+	// "Cheats", reusing the same Patches/Enable or Cheats/Enable toggle id so SetPatchMember needs no changes.
+	// That category is appended only when at least one such group exists for this game, so it is simply absent
+	// everywhere else rather than showing an always-present empty placeholder. An orphaned enabled group (file
+	// gone) is left in its original category: by definition no matching patch exists for it any more.
 	void BuildPatchAndCheatRows(const GameEntry& game, const settings::DocumentState& game_doc, const std::string& game_key,
 		std::vector<SettingCategory>* settings)
 	{
@@ -1628,6 +1691,7 @@ private:
 			{"cheats", "Cheats/Enable", true, &game_doc.cheats, "No cheat file is installed for this game.",
 				"No cheat file has this group."},
 		};
+		std::vector<SettingItem> modern_items;
 		for (const Kind& kind : kinds)
 		{
 			auto category_it = std::find_if(settings->begin(), settings->end(),
@@ -1652,8 +1716,8 @@ private:
 				item.value = on ? "true" : "false";
 				item.modified = on;
 				item.game_scoped = false; // the id already carries the game scope
-				category_it->items.push_back(std::move(item));
 				seen.push_back(group.name);
+				(group.modern_controls ? modern_items : category_it->items).push_back(std::move(item));
 			}
 			for (const std::string& name : *kind.enabled)
 			{
@@ -1678,6 +1742,14 @@ private:
 				placeholder.kind = SettingKind::Text;
 				category_it->items.push_back(std::move(placeholder));
 			}
+		}
+		if (!modern_items.empty())
+		{
+			SettingCategory modern_category;
+			modern_category.id = "modern-controls";
+			modern_category.label = "Modern controls";
+			modern_category.items = std::move(modern_items);
+			settings->push_back(std::move(modern_category));
 		}
 	}
 

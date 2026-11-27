@@ -165,6 +165,14 @@ The static choice rows are not the whole user-facing settings surface. The regis
 - `Patches/Enable` and `Cheats/Enable` — repeated group-list keys. Enabled groups whose files later
   disappear must remain visible so users can disable them.
 - `EmuCore/EnableCheats` — hidden master switch coordinated by cheat rows; not a separate user row.
+- `modern-controls` category — not part of the static schema at all; `console_backend.cpp`
+  `BuildPatchAndCheatRows` moves any `Patches/Enable`/`Cheats/Enable` row whose group name matches
+  `fe::IsModernControlsGroup` (`ps5/frontend/fe_modern_controls.cpp`; see
+  `docs/research/modern-controls.md`) out of `patches`/`cheats` and into this category instead, using
+  the identical toggle id so `SetPatchMember` needs no changes. The category itself is appended to the
+  projection only when a game actually has such a group, so most games show no trace of it. An
+  orphaned enabled group (file gone) stays in its original category, since there is no file left to
+  re-match by name.
 - Accessibility additions `Caliza/UiTextScalePercent`, `Caliza/UiHighContrast`,
   `Caliza/UiReduceMotion` and `Caliza/UiLargeFocus` — new global immediate-UI settings with no
   pre-transition counterpart. They are absent from `LegacyKeyMigrations()`. Integration must include

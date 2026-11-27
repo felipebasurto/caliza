@@ -47,6 +47,9 @@ function settings(id) {
     is_recommended: false,
     patches: isGlobal ? [] : [{ name: "widescreen", file: "FIX-00001.pnach", description: "Fixture widescreen patch", enabled: false }],
     cheats: isGlobal ? [] : [],
+    modern_controls: isGlobal
+      ? []
+      : [{ name: "Modern analog controls", file: "FIX-00001_cafefeed.pnach", description: "Fixture modern-controls patch", enabled: false, kind: "patch" }],
     gamefixes: isGlobal ? undefined : { UserHacks_HalfPixelOffset: "1" },
   };
   settingsCache.set(id, data);
@@ -111,8 +114,8 @@ export function createHarnessServer() {
             const eq = line.indexOf("=");
             data.values[line.slice(4, eq)] = line.slice(eq + 1);
           } else if (line.startsWith("unset ")) delete data.values[line.slice(6)];
-          else if (line.startsWith("patch+ ")) data.patches.forEach((p) => { if (p.name === line.slice(7)) p.enabled = true; });
-          else if (line.startsWith("patch- ")) data.patches.forEach((p) => { if (p.name === line.slice(7)) p.enabled = false; });
+          else if (line.startsWith("patch+ ")) data.patches.concat(data.modern_controls).forEach((p) => { if (p.name === line.slice(7)) p.enabled = true; });
+          else if (line.startsWith("patch- ")) data.patches.concat(data.modern_controls).forEach((p) => { if (p.name === line.slice(7)) p.enabled = false; });
         }
       } else Object.assign(data.values, data.recommended.values);
       return json(res, data);

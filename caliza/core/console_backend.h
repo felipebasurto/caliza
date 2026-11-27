@@ -20,6 +20,11 @@ struct ConsolePatchGroup
 	std::string name;
 	std::string file;
 	std::string description;
+	// Set by the list_patch_groups hook (fe::IsModernControlsGroup; see docs/research/modern-controls.md) when
+	// the group's name identifies it as remapping old-style controls to modern dual-stick controls. The
+	// settings projection surfaces a matching group under its own "Modern controls" category instead of
+	// "Patches"/"Cheats"; a game with no such group gets no such category at all.
+	bool modern_controls = false;
 };
 
 // Production services owned outside the presentation layer. console_backend.cpp validates and serializes
@@ -38,6 +43,9 @@ struct ConsoleSettingsHooks
 	using BiosStatus = std::function<caliza::BiosStatus()>;
 	using DynamicChoices = std::function<std::vector<settings::Choice>(const settings::SettingDef& definition)>;
 	using WebPanelUrl = std::function<std::string()>;
+	// One line for /data/caliza/logs/boot.log, following the shell's existing "[boot] ..." convention. Unset
+	// in host tests, which observe behavior through the snapshot instead of log text.
+	using BootLog = std::function<void(const std::string& line)>;
 	// The patch or cheat groups a game's downloaded file(s) actually contain, read live so the settings
 	// projection never shows a stale or empty row. `cheats` selects the cheats folder over the patches one.
 	using ListPatchGroups = std::function<std::vector<ConsolePatchGroup>(const GameEntry& game, bool cheats)>;
@@ -62,6 +70,7 @@ struct ConsoleSettingsHooks
 	BiosStatus bios_status;
 	DynamicChoices dynamic_choices;
 	WebPanelUrl web_panel_url;
+	BootLog boot_log;
 	ListPatchGroups list_patch_groups;
 	FetchOnlinePatches fetch_online_patches;
 	DownloadTexturePack download_texture_pack;
