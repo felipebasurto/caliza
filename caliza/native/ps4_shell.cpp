@@ -784,7 +784,10 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			input.r2 = (pad_data.buttons & kPadR2) || pad_data.r2 > 160;
 		}
 		const std::vector<caliza::CommandEvent> events = backend.PollEvents();
-		const double refresh_period = snapshot.scan.active ? 0.10 : 0.25;
+		const bool scan_active =
+			snapshot.scan.state == caliza::ScanState::Scanning ||
+			snapshot.scan.state == caliza::ScanState::Cancelling;
+		const double refresh_period = scan_active ? 0.10 : 0.25;
 		if (!events.empty() || (frame_start - last_snapshot_at) >= refresh_period)
 		{
 			snapshot = backend.GetSnapshot();
