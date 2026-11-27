@@ -13,6 +13,7 @@
 #include "../../ps5/frontend/fe_bios.h"
 #include "../../ps5/frontend/fe_covers.h"
 #include "../../ps5/frontend/fe_games.h"
+#include "../../ps5/frontend/fe_modern_controls.h"
 #include "../../ps5/frontend/fe_settings.h"
 #include "../../ps5/frontend/fe_texpacks.h"
 #include "../../ps5/frontend/fe_patchdl.h"
@@ -371,8 +372,14 @@ std::vector<caliza::ConsolePatchGroup> ListPatchGroups(const OrbisFrontendPaths&
 	std::vector<caliza::ConsolePatchGroup> out;
 	const std::string& dir = cheats ? paths.cheats_dir : paths.patches_dir;
 	for (const fe::settings::PatchGroup& group : fe::settings::PatchGroups(dir, game.serial))
-		out.push_back({group.name, group.file, group.description});
+		out.push_back({group.name, group.file, group.description, fe::IsModernControlsGroup(group.name)});
 	return out;
+}
+
+void BootLog(const std::string& line)
+{
+	std::printf("[boot] %s\n", line.c_str());
+	std::fflush(stdout);
 }
 
 bool EditSettings(const std::string& path, const std::vector<caliza::settings::Mutation>& mutations, std::string* summary, std::string* error)
@@ -653,6 +660,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	};
 	options.hooks.dynamic_choices = [&paths](const caliza::settings::SettingDef& definition) { return DynamicChoices(paths, definition); };
 	options.hooks.list_patch_groups = [&paths](const caliza::GameEntry& game, bool cheats) { return ListPatchGroups(paths, game, cheats); };
+	options.hooks.boot_log = [](const std::string& line) { BootLog(line); };
 	options.hooks.web_panel_url = [] {
 		std::string url, shown;
 		return orbis_web_browser_url(url, shown) ? shown : std::string();
