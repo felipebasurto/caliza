@@ -4,6 +4,12 @@ All notable changes to Caliza are documented in this file.
 
 Caliza is free software under the GNU General Public License, version 3 or later (`COPYING.GPLv3`), based on modified PCSX2 code. Caliza does not include BIOS files, firmware, decryption keys, or games.
 
+## [Unreleased]
+
+### Interface and library
+
+- **Modern controls per game:** A game whose `patches/` or `cheats/` folder has a group named like a dual-stick control remap (for example `Modern Control Profiles`) now shows it under its own "Modern controls" toggle, off by default, in both Estratos and the companion web panel, instead of mixed in with every other patch or cheat. Caliza bundles and downloads none of this content itself; see `docs/research/modern-controls.md` for the research behind the detection rule and the licensing reasons. Boot.log now reports whether a matching patch was applied, available but off, or absent for the game being launched.
+
 ## [0.3.0] - 2026-11-27
 
 > Host-tested build; on-console PS4 testing is pending.
