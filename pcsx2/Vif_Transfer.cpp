@@ -7,6 +7,20 @@
 #include "MTVU.h" // vk-285-84: VU_Thread kick batching
 #include "OrbisEEDiag.h" // vk-285-100
 
+#include <atomic>
+#include <cstdio>
+
+static void OrbisLogVif1UnpackBoundsOnce(u32 cmd, u32 words, u32 left)
+{
+	static std::atomic<bool> s_logged{false};
+	if (!s_logged.exchange(true, std::memory_order_relaxed))
+	{
+		printf("[perf-fallback] vif1_fast_and_mpg_skip: unexpected VIF1 unpack size (cmd=0x%02x words=%u left=%u), falling back to slow handler\n",
+			cmd, words, left);
+		fflush(stdout);
+	}
+}
+
 //------------------------------------------------------------------
 // VifCode Transfer Interpreter (Vif0/Vif1)
 //------------------------------------------------------------------
@@ -110,6 +124,12 @@ _vifT void vifTransferLoop(u32* &data) {
 						d += 1;
 						left -= 1;
 						const u32 words = vifX.tag.size;
+						constexpr u32 kMaxWholeUnpackWords = sizeof(nVif[idx].buffer) / sizeof(u32);
+						if (words > kMaxWholeUnpackWords) [[unlikely]]
+						{
+							OrbisLogVif1UnpackBoundsOnce(cmd, words, left);
+							break;
+						}
 						if (words <= left && !vifX.vifstalled.enabled)
 						{
 							vu1Thread.VifUnpack(vifX, vifXRegs, reinterpret_cast<const u8*>(d), (words << 2) + 4);
@@ -173,6 +193,8 @@ _vifT void vifTransferLoop(u32* &data) {
 			}
 			data  += 1;
 			pSize -= 1;
+			if constexpr (idx == 1)
+				g_orbis_vif1_fast_codes++;
 			continue;
 		}
 
@@ -220,6 +242,8 @@ _vifT void vifTransferLoop(u32* &data) {
 				vifX.cmd = 0;
 				data += 1;
 				pSize -= 1;
+				if constexpr (idx == 1)
+					g_orbis_vif1_fast_codes++;
 				continue;
 			}
 		}
@@ -230,6 +254,12 @@ _vifT void vifTransferLoop(u32* &data) {
 			data += 1;
 			pSize -= 1;
 			const u32 words = vifX.tag.size;
+			constexpr u32 kMaxWholeUnpackWords = sizeof(nVif[idx].buffer) / sizeof(u32);
+			if (words > kMaxWholeUnpackWords) [[unlikely]]
+			{
+				OrbisLogVif1UnpackBoundsOnce(vifX.cmd, words, pSize);
+				continue;
+			}
 			if (words <= pSize && !vifX.vifstalled.enabled)
 			{
 				vu1Thread.VifUnpack(vifX, vifXRegs, reinterpret_cast<const u8*>(data), (words << 2) + 4);
@@ -239,11 +269,15 @@ _vifT void vifTransferLoop(u32* &data) {
 				vifXRegs.num = 0;
 				data += words;
 				pSize -= words;
+				if constexpr (idx == 1)
+					g_orbis_vif1_fast_codes++;
 				g_orbis_vif1_whole_unpacks++;
 			}
 			continue;
 		}
 
+		if constexpr (idx == 1)
+			g_orbis_vif1_slow_codes++;
 		ret = vifCmdHandler[idx][vifX.cmd & 0x7f](vifX.pass, data);
 		data   += ret;
 		pSize  -= ret;

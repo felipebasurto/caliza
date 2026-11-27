@@ -40,9 +40,13 @@ struct MockCop0State
 	bool eret_fast = true;
 
 	u64 eret_skips = 0;
+	u64 eret_forced = 0;
 	u64 ei_skips = 0;
+	u64 ei_forced = 0;
 	u64 status_skips = 0;
+	u64 status_forced = 0;
 	u64 timer_sched = 0;
+	u64 neg_delta_fallbacks = 0;
 	u64 eret_block[4] = {};
 
 	void SetNextEventDelta(s32 delta)
@@ -60,14 +64,23 @@ struct MockCop0State
 		bool timer = false;
 		if (ints_enabled && (status & 0x8000u) != 0)
 		{
-			const u32 now = count + static_cast<u32>(cycle - last_cop0_cycle);
-			const s32 until = static_cast<s32>(compare - now);
-			if (until <= 4)
-				timer = (until > -1000);
+			const s32 elapsed = static_cast<s32>(cycle - last_cop0_cycle);
+			if (elapsed < 0)
+			{
+				neg_delta_fallbacks++;
+				timer = true;
+			}
 			else
 			{
-				SetNextEventDelta(until);
-				timer_sched++;
+				const u32 now = count + static_cast<u32>(elapsed);
+				const s32 until = static_cast<s32>(compare - now);
+				if (until <= 4)
+					timer = (until > -1000);
+				else
+				{
+					SetNextEventDelta(until);
+					timer_sched++;
+				}
 			}
 		}
 		const bool vu0 = (vpu_stat & 1u) != 0;
@@ -87,7 +100,10 @@ struct MockCop0State
 		if (eret_fast && !NeedsImmediateEvent(false))
 			status_skips++;
 		else
+		{
+			status_forced++;
 			SetNextEventDelta(4);
+		}
 	}
 
 	void RecERET()
@@ -95,15 +111,11 @@ struct MockCop0State
 		if (!eret_fast)
 			next_event_cycle = cycle;
 		status &= ~0x2u; // clear EXL
-		if (eret_fast)
-		{
-			if (!NeedsImmediateEvent(true))
-				eret_skips++;
-			else
-				SetNextEventDelta(4);
-		}
+		if (eret_fast && !NeedsImmediateEvent(true))
+			eret_skips++;
 		else
 		{
+			eret_forced++;
 			SetNextEventDelta(4);
 		}
 	}
@@ -116,7 +128,10 @@ struct MockCop0State
 		if (eret_fast && !NeedsImmediateEvent(false))
 			ei_skips++;
 		else
+		{
+			ei_forced++;
 			SetNextEventDelta(4);
+		}
 	}
 };
 
@@ -621,14 +636,24 @@ void TestVif1ClassifierAndFastLoop()
 }
 
 // ---------------------------------------------------------------------------
-// 3. MTVU_VU_WRITE_MICRO unchanged-microcode skip test
+// 3. MTVU_VU_WRITE_MICRO unchanged-microcode skip & safety fallback test
 // ---------------------------------------------------------------------------
-bool MtvuWriteMicroSkip(u8 (&vu_micro)[0x4000], u32 addr, const u8* src, u32 size, u32& clears)
+bool MtvuWriteMicroSkip(u8 (&vu_micro)[0x4000], u32 addr, const u8* src, u32 size, bool vif_fast,
+	s32 read_pos, s32 ring_words, u32& clears, u32& bounds_fallbacks)
 {
-	if (size > 0 && addr <= sizeof(vu_micro) && size <= sizeof(vu_micro) - addr &&
-		std::memcmp(&vu_micro[addr], src, size) == 0)
+	if (vif_fast && size > 0)
 	{
-		return true; // skipped Clear + copy
+		const u32 words = (size + 3u) >> 2;
+		const bool vu_ok = addr <= sizeof(vu_micro) && size <= sizeof(vu_micro) - addr;
+		const bool ring_ok = read_pos >= 0 && words <= static_cast<u32>(ring_words - read_pos);
+		if (!vu_ok || !ring_ok)
+		{
+			bounds_fallbacks++;
+		}
+		else if (std::memcmp(&vu_micro[addr], src, size) == 0)
+		{
+			return true; // skipped Clear + copy
+		}
 	}
 	clears++;
 	if (size > 0 && addr <= sizeof(vu_micro) && size <= sizeof(vu_micro) - addr)
@@ -644,25 +669,49 @@ void TestMtvuMicroSkip()
 	for (u32 i = 0; i < sizeof(prog); ++i)
 		prog[i] = static_cast<u8>((i * 37u) ^ 0x5au);
 
+	constexpr s32 kRingWords = 4096;
 	u32 clears = 0;
+	u32 fallbacks = 0;
+
 	// Initial upload differs -> must Clear and copy.
-	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), clears));
-	assert(clears == 1);
+	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), true, 0, kRingWords, clears, fallbacks));
+	assert(clears == 1 && fallbacks == 0);
 	assert(std::memcmp(&vu_micro[0x200], prog, sizeof(prog)) == 0);
 
 	// Repeated identical upload -> must skip Clear.
-	assert(MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), clears));
-	assert(clears == 1);
+	assert(MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), true, 0, kRingWords, clears, fallbacks));
+	assert(clears == 1 && fallbacks == 0);
+
+	// flags/vifslow (vif_fast == false) -> disables unchanged-MPG skip and forces Clear+copy.
+	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), false, 0, kRingWords, clears, fallbacks));
+	assert(clears == 2 && fallbacks == 0);
 
 	// Single-byte difference at end -> must Clear and update.
 	prog[sizeof(prog) - 1] ^= 0x01u;
-	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), clears));
-	assert(clears == 2);
+	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), true, 0, kRingWords, clears, fallbacks));
+	assert(clears == 3 && fallbacks == 0);
 	assert(vu_micro[0x200 + sizeof(prog) - 1] == prog[sizeof(prog) - 1]);
 
-	// Overflow-safe bounds guard: addr near end + wrapping size must not match or crash.
-	assert(!MtvuWriteMicroSkip(vu_micro, 0x3f00, prog, 0x200, clears));
-	assert(clears == 3);
+	// Overflow-safe VU bounds guard: addr near end + wrapping size must trip fallback and not crash.
+	assert(!MtvuWriteMicroSkip(vu_micro, 0x3f00, prog, 0x200, true, 0, kRingWords, clears, fallbacks));
+	assert(clears == 4 && fallbacks == 1);
+
+	// Ring-buffer bounds guard: read_pos near end of ring must trip fallback instead of out-of-bounds memcmp.
+	assert(!MtvuWriteMicroSkip(vu_micro, 0x200, prog, sizeof(prog), true, kRingWords - 16, kRingWords, clears, fallbacks));
+	assert(clears == 5 && fallbacks == 2);
+
+	// COP0 negative cycle-delta fallback test: cycle < last_cop0_cycle must force immediate event test.
+	{
+		MockCop0State c;
+		c.status = 0x18003u; // EIE=1, IM7=1, EXL=1, IE=1
+		c.cycle = 1000;
+		c.last_cop0_cycle = 1050; // stale/future lastCOP0Cycle
+		c.next_event_cycle = 50000;
+		c.RecERET();
+		assert(c.neg_delta_fallbacks == 1);
+		assert(c.eret_skips == 0 && c.eret_forced == 1);
+		assert(c.next_event_cycle == 1004);
+	}
 }
 
 } // namespace

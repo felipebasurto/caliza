@@ -5,6 +5,8 @@
 #include "COP0.h"
 #include "VUmicro.h" // vk-285-102: VPU_STAT for ERET
 #include "OrbisEEHle.h" // vk-285-102
+#include <atomic>
+#include <cstdio>
 extern u64 g_orbis_eret_block[4]; // vk-285-103 (OrbisEEDiag.cpp)
 
 // Adapted from Forja SX2 (josephguerra562-ux/forja-sx2, GPLv3) with exact R5900 Status deliverability checks.
@@ -22,14 +24,29 @@ static __fi bool OrbisCop0NeedsImmediateEvent(bool record_eret_block)
 	bool timer = false;
 	if (ints_enabled && (status & 0x8000u) != 0)
 	{
-		const u32 now = cpuRegs.CP0.n.Count + static_cast<u32>(cpuRegs.cycle - cpuRegs.lastCOP0Cycle);
-		const s32 until = static_cast<s32>(cpuRegs.CP0.n.Compare - now);
-		if (until <= 4)
-			timer = (until > -1000);
+		const s32 elapsed = static_cast<s32>(cpuRegs.cycle - cpuRegs.lastCOP0Cycle);
+		if (elapsed < 0) [[unlikely]]
+		{
+			static std::atomic<bool> s_logged_neg{false};
+			if (!s_logged_neg.exchange(true, std::memory_order_relaxed))
+			{
+				printf("[perf-fallback] cop0_event_gating: negative cycle delta (cycle=%u lastCOP0Cycle=%u), forcing immediate event test\n",
+					cpuRegs.cycle, cpuRegs.lastCOP0Cycle);
+				fflush(stdout);
+			}
+			timer = true;
+		}
 		else
 		{
-			cpuSetNextEventDelta(until);
-			g_orbis_cop0_timer_sched++;
+			const u32 now = cpuRegs.CP0.n.Count + static_cast<u32>(elapsed);
+			const s32 until = static_cast<s32>(cpuRegs.CP0.n.Compare - now);
+			if (until <= 4)
+				timer = (until > -1000);
+			else
+			{
+				cpuSetNextEventDelta(until);
+				g_orbis_cop0_timer_sched++;
+			}
 		}
 	}
 	const bool vu0 = (VU0.VI[REG_VPU_STAT].UL & 1) != 0;
@@ -66,7 +83,10 @@ void WriteCP0Status(u32 value)
 	if (g_orbis_eret_fast.load(std::memory_order_relaxed) && !OrbisCop0NeedsImmediateEvent(false))
 		g_orbis_status_skips++;
 	else
+	{
+		g_orbis_status_forced++;
 		cpuSetNextEventDelta(4);
+	}
 }
 
 void WriteCP0Config(u32 value)
@@ -710,15 +730,13 @@ cpuRegs.PERF.n.pccr, cpuRegs.PERF.n.pcr0, cpuRegs.PERF.n.pcr1, _Imm_ & 0x3F);*/
 		// test that runs the IOP a few cycles. Needs proper testing.
 		// vk-285-103: vk-285-102 never skipped one in Shadow of the Colossus; [eefast] counts which condition
 		// kept each event test (INTC, DMAC, the COP0 timer's mask bit, VU0).
-		if (g_orbis_eret_fast.load(std::memory_order_relaxed))
-		{
-			if (!OrbisCop0NeedsImmediateEvent(true))
-				g_orbis_eret_skips++;
-			else
-				cpuSetNextEventDelta(4);
-		}
+		if (g_orbis_eret_fast.load(std::memory_order_relaxed) && !OrbisCop0NeedsImmediateEvent(true))
+			g_orbis_eret_skips++;
 		else
+		{
+			g_orbis_eret_forced++;
 			cpuSetNextEventDelta(4);
+		}
 		intSetBranch();
 	}
 
@@ -743,7 +761,10 @@ cpuRegs.PERF.n.pccr, cpuRegs.PERF.n.pcr0, cpuRegs.PERF.n.pcr1, _Imm_ & 0x3F);*/
 			if (g_orbis_eret_fast.load(std::memory_order_relaxed) && !OrbisCop0NeedsImmediateEvent(false))
 				g_orbis_ei_skips++;
 			else
+			{
+				g_orbis_ei_forced++;
 				cpuSetNextEventDelta(4);
+			}
 		}
 	}
 

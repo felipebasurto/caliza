@@ -24,6 +24,7 @@
 #include "IopBios.h"
 #include "MTGS.h"
 #include "MTVU.h"
+#include "OrbisEEDiag.h"
 #include "PINE.h"
 #include "Patch.h"
 #include "PerformanceMetrics.h"
@@ -2780,10 +2781,22 @@ void VMManager::InitializeCPUProviders()
 
 	const bool code_exec = SysMemory::IsCodeMemoryExecutable();
 	const bool vifrec_off = ::OrbisFlag("novifrec");
+	const bool eretfast_off = ::OrbisFlag("noeretfast");
+	const bool vifslow_off = ::OrbisFlag("vifslow");
+
 	newVifDynaRec = code_exec && !vifrec_off;
-	printf("[vifrec] VIF unpack recompiler: %s (%s)\n",
+	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_vif_fast.store(vifslow_off ? 0 : 1, std::memory_order_relaxed);
+
+	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
-		!code_exec ? "non-executable code memory" : (vifrec_off ? "flags/novifrec" : "runtime code cache"));
+		!code_exec ? "non-executable code memory" : (vifrec_off ? "flags/novifrec" : "default"));
+	printf("[perf] cop0_event_gating: %s (%s)\n",
+		eretfast_off ? "off" : "on",
+		eretfast_off ? "flags/noeretfast" : "default");
+	printf("[perf] vif1_fast_and_mpg_skip: %s (%s)\n",
+		vifslow_off ? "off" : "on",
+		vifslow_off ? "flags/vifslow" : "default");
 	fflush(stdout);
 
 	if (code_exec)

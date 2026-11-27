@@ -65,3 +65,48 @@ Logs: attached report
 2. Open the companion panel's **Diagnostics** page.
 3. Write what happened in the note field, press **Add note**, then **Download report**.
 4. Send the downloaded report file. It contains the timeline, current and previous session logs, settings and hardware evidence.
+
+## Broken game? Bisecting CPU/VIF fast paths with `boot.log`
+
+If a game crashes, hangs, desyncs, or shows corrupted 3D geometry after an update, check these lines in `/data/caliza/boot.log` (or the downloaded diagnostic report) to isolate which CPU/VIF fast path was active.
+
+### 1. Boot status lines (printed once per game launch)
+
+```text
+[perf] vif_unpack_rec: on (default)
+[perf] cop0_event_gating: on (default)
+[perf] vif1_fast_and_mpg_skip: on (default)
+```
+
+Each line prints `on` or `off` and the reason: `default`, `non-executable code memory`, or the exact flag file that disabled it.
+
+### 2. Safety fallback lines (printed at most once if a guard trips)
+
+```text
+[perf-fallback] <change_name>: <reason>, falling back to ...
+```
+
+If any `[perf-fallback]` line appears, Caliza detected an unexpected buffer/bounds or cycle-delta condition in that optimization and fell back to the original path. Always include any `[perf-fallback]` line in bug reports.
+
+### 3. Periodic telemetry line (folded into `[eefast]`, once per second when counters move)
+
+```text
+[eefast] per s: ... | dvif compile=C hit=H fallback=F | cop0 skip/forced: ERET=Es/Ef EI=Is/If status=Ss/Sf tmr=T (kept intc=I dmac=D tmr=M vu0=V) | vif1 fast=Vf slow=Vs whole_upk=Wu | vu1 mpg same=Ms/Mt | ...
+```
+
+- `dvif compile / hit / fallback`: VIF unpack blocks compiled, cache hits, and fallbacks to the interpreter unpack (e.g. VU memory wraparound or compile fallback).
+- `cop0 skip/forced`: `ERET`, `EI`, and `WriteCP0Status` event tests skipped vs forced (`cpuSetNextEventDelta(4)`), `tmr` exact Count/Compare reschedules, and which source kept `ERET` event tests (`intc`, `dmac`, `tmr`, `vu0`).
+- `vif1 fast / slow / whole_upk`: VIF1 codes handled by the fast loop vs `vifCmdHandler`, and whole-packet MTVU unpacks dispatched directly.
+- `vu1 mpg same=Ms/Mt`: VU1 microprogram uploads skipped as unchanged (`Ms`) out of total uploads (`Mt`).
+
+### 4. Disabling one change at a time (flag files)
+
+Create an empty file under `/data/caliza/flags/` and relaunch the game to isolate which change caused a regression (remove the file afterwards to re-enable):
+
+| Change | Boot line | Disable flag file | What it turns off |
+|---|---|---|---|
+| VIF unpack recompiler | `[perf] vif_unpack_rec:` | `/data/caliza/flags/novifrec` | Falls back from `dVifUnpack` to the SSE/C unpack loop (`_nVifUnpack`). Requires relaunch. |
+| COP0 event-test gating | `[perf] cop0_event_gating:` | `/data/caliza/flags/noeretfast` | Forces immediate event tests on every `ERET`, `EI`, and `WriteCP0Status` (including JIT `recERET`/`recEI`). |
+| VIF1 fast loop + unchanged MPG skip | `[perf] vif1_fast_and_mpg_skip:` | `/data/caliza/flags/vifslow` | Disables the VIF1 register-resident fast loop, whole-UNPACK MTVU direct dispatch, and unchanged-microcode `MTVU_VU_WRITE_MICRO` skip. |
+
+When reporting a broken game, include all three `[perf]` lines, any `[perf-fallback]` lines, the last 3–5 `[eefast]` and `[load]` lines before the issue, and which flag file (if any) made the game work.

@@ -39,12 +39,24 @@ extern u64 g_orbis_vif1_fused; // vif1Interrupt passes that continued in place (
 extern bool g_orbis_instant_dma_loop; // inside _cpuEventTest_Shared's Instant DMA loop (R5900.cpp)
 extern u64 g_orbis_hle_flushes; // FlushCache/iFlushCache calls answered without the kernel (EE thread)
 // vk-285-102 (EE thread): GetThreadId answered from the cache, checked against the kernel's answer while the
-// cache is off (a call the cache could have answered), and the mismatches; COP0 event tests skipped and VIF1 fast-path counts.
-extern u64 g_orbis_tid_hits, g_orbis_tid_checks, g_orbis_tid_mismatches, g_orbis_eret_skips;
-extern u64 g_orbis_ei_skips, g_orbis_status_skips, g_orbis_cop0_timer_sched;
-extern u64 g_orbis_vif1_fast_codes, g_orbis_vif1_whole_unpacks;
+// cache is off (a call the cache could have answered), and the mismatches; COP0 event tests skipped/forced
+// and VIF1 fast-path vs slow-path counts.
+extern u64 g_orbis_tid_hits, g_orbis_tid_checks, g_orbis_tid_mismatches;
+extern u64 g_orbis_eret_skips, g_orbis_eret_forced;
+extern u64 g_orbis_ei_skips, g_orbis_ei_forced;
+extern u64 g_orbis_status_skips, g_orbis_status_forced, g_orbis_cop0_timer_sched;
+extern u64 g_orbis_vif1_fast_codes, g_orbis_vif1_slow_codes, g_orbis_vif1_whole_unpacks;
 // MTVU thread counters (defined in MTVU.cpp on their own cache line).
 extern std::atomic<u64> g_orbis_vu1_mpg_total, g_orbis_vu1_mpg_same;
+// VIF unpack recompiler counters, split per VIF channel on separate cache lines so VIF0 (EE thread)
+// and VIF1 (MTVU thread when MTVU is on) never contend on the same line.
+struct alignas(64) OrbisDvifStats
+{
+	std::atomic<u64> compiled{0};
+	std::atomic<u64> cache_hits{0};
+	std::atomic<u64> interp_fallbacks{0};
+};
+extern OrbisDvifStats g_orbis_dvif_stats[2];
 // vk-285-126: the EE recompiler's wait-loop rule also trusts a register loaded through a base the loop never writes
 // (iR5900.cpp); 1 unless flags/waitloop_upstream (read when a block is compiled). Blocks that only the wider rule
 // fast-forwards, and how often they did (EE thread).

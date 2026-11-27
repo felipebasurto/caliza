@@ -3,8 +3,17 @@
 
 #include "Vif_UnpackSSE.h"
 #include "MTVU.h"
+#include "OrbisEEDiag.h"
 #include "common/Perf.h"
 #include "common/StringUtil.h"
+
+#include <atomic>
+#include <cstdio>
+
+static __fi void OrbisDvifCount(std::atomic<u64>& counter)
+{
+	counter.store(counter.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+}
 
 void dVifReset(int idx)
 {
@@ -425,12 +434,25 @@ _vifT __fi nVifBlock* dVifCompile(nVifBlock& block, bool isFill)
 	nVifStruct& v = nVif[idx];
 
 	// Check size before the compilation (and lazily initialize if resetNewVif was not called yet)
-	if (!v.recWritePtr || v.recWritePtr >= v.recEndPtr)
+	if (!v.recWritePtr || !v.recEndPtr || v.recWritePtr >= v.recEndPtr)
 	{
 		if (v.recWritePtr)
 			DevCon.WriteLn("nVif Recompiler Cache Reset! [0x%016" PRIXPTR " > 0x%016" PRIXPTR "]",
 				v.recWritePtr, v.recEndPtr);
 		dVifReset(idx);
+	}
+
+	if (!v.recWritePtr || !v.recEndPtr || v.recWritePtr >= v.recEndPtr) [[unlikely]]
+	{
+		static std::atomic<bool> s_logged_buf{false};
+		if (!s_logged_buf.exchange(true, std::memory_order_relaxed))
+		{
+			printf("[perf-fallback] vif_unpack_rec: code buffer unavailable (VIF%d ptr=%p end=%p), disabling recompiler and falling back to interpreter unpack\n",
+				idx, static_cast<void*>(v.recWritePtr), static_cast<void*>(v.recEndPtr));
+			fflush(stdout);
+		}
+		newVifDynaRec = false;
+		return nullptr;
 	}
 
 	// Compile the block now
@@ -439,12 +461,30 @@ _vifT __fi nVifBlock* dVifCompile(nVifBlock& block, bool isFill)
 
 	block.startPtr = (uptr)xGetAlignedCallTarget();
 	block.length = dVifComputeLength(block.cl, block.wl, block.num, isFill);
-	v.vifBlocks.add(block);
 
 	VifUnpackSSE_Dynarec(v, block).CompileRoutine();
 
-	Perf::vif.RegisterPC(v.recWritePtr, xGetPtr() - v.recWritePtr, block.upkType /* FIXME ideally a key*/);
-	v.recWritePtr = xGetPtr();
+	u8* const endPtr = xGetPtr();
+	u8* const hardEnd = v.recEndPtr + _256kb;
+	if (!block.startPtr || block.length == 0 || endPtr <= reinterpret_cast<u8*>(block.startPtr) || endPtr > hardEnd) [[unlikely]]
+	{
+		static std::atomic<bool> s_logged_bounds{false};
+		if (!s_logged_bounds.exchange(true, std::memory_order_relaxed))
+		{
+			printf("[perf-fallback] vif_unpack_rec: compile bounds check failed (VIF%d start=%p end=%p limit=%p len=%u upk=0x%02x num=%u), disabling recompiler and falling back to interpreter unpack\n",
+				idx, reinterpret_cast<void*>(block.startPtr), static_cast<void*>(endPtr),
+				static_cast<void*>(hardEnd), static_cast<unsigned>(block.length),
+				static_cast<unsigned>(block.upkType), static_cast<unsigned>(block.num));
+			fflush(stdout);
+		}
+		newVifDynaRec = false;
+		return nullptr;
+	}
+
+	v.vifBlocks.add(block);
+	Perf::vif.RegisterPC(v.recWritePtr, endPtr - v.recWritePtr, block.upkType /* FIXME ideally a key*/);
+	v.recWritePtr = endPtr;
+	OrbisDvifCount(g_orbis_dvif_stats[idx].compiled);
 
 	return &block;
 }
@@ -489,8 +529,17 @@ _vifT __fi void dVifUnpack(const u8* data, bool isFill)
 
 	// Seach in cache before trying to compile the block
 	nVifBlock* b = v.vifBlocks.find(block);
-	if (!b) [[unlikely]]
+	if (b) [[likely]]
+		OrbisDvifCount(g_orbis_dvif_stats[idx].cache_hits);
+	else
 		b = dVifCompile<idx>(block, isFill);
+
+	if (!b || !b->startPtr) [[unlikely]]
+	{
+		OrbisDvifCount(g_orbis_dvif_stats[idx].interp_fallbacks);
+		_nVifUnpack(idx, data, vifRegs.mode, isFill);
+		return;
+	}
 
 	{ // Execute the block
 		const VURegs& VU = vuRegs[idx];
@@ -508,6 +557,7 @@ _vifT __fi void dVifUnpack(const u8* data, bool isFill)
 		{
 			VIF_LOG("Running Interpreter Block: nVif%x - VU Mem Ptr Overflow; falling back to interpreter. Start = %x End = %x num = %x, wl = %x, cl = %x",
 				v.idx, vif.tag.addr, vif.tag.addr + (block.num * 16), block.num, block.wl, block.cl);
+			OrbisDvifCount(g_orbis_dvif_stats[idx].interp_fallbacks);
 			_nVifUnpack(idx, data, vifRegs.mode, isFill);
 		}
 	}
