@@ -1644,20 +1644,11 @@ static void PreBlockCheck(u32 blockpc)
 
 static void iopRecRecompile(const u32 startpc)
 {
-	if (0) printf("[dbg] iop: recRecompile pc=%08x\n", startpc); // Orbis: no fflush (hot path; ticker flushes 1/s)
+	if (ps5::debug::active())
 	{
 		static unsigned iop_probe = 0;
 		const unsigned n = iop_probe++;
 		ps5::debug::set_line(6, "iop[%u] pc=%08x", n, startpc);
-		(void)n;
-		{
-			unsigned long long sp = 0;
-			asm volatile("mov %%rsp, %0" : "=r"(sp));
-			static unsigned long long last_sp = 0;
-			if (sp < 0x1000000000ULL && last_sp >= 0x1000000000ULL)
-				printf("[dbg] RSP-WILD iop pc=%08x rsp=%llx\n", startpc, sp);
-			last_sp = sp;
-		}
 	}
 	u32 i;
 	u32 link_next_block = 0;

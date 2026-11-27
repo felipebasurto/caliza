@@ -427,30 +427,6 @@ static const void* UnmappedRecLUTPage = nullptr;
 
 static void recEventTest()
 {
-	{
-		static unsigned evt_probe = 0;
-		if ((evt_probe & 4095) == 0)
-		{
-			// Orbis: RSP canary. Main-thread stack lives ~32GB; anything
-			// below 64GB here means the stack pointer went wild. Print once
-			// per crossing so the log brackets the pivot, then carry on.
-			unsigned long long sp = 0;
-			asm volatile("mov %%rsp, %0" : "=r"(sp));
-			static unsigned long long last_sp = 0;
-			if (sp < 0x1000000000ULL && last_sp >= 0x1000000000ULL)
-				printf("[dbg] RSP-WILD ee pc=%08x cy=%u rsp=%llx\n", cpuRegs.pc, (unsigned)cpuRegs.cycle, sp);
-			last_sp = sp;
-		}
-		if ((evt_probe & 65535) == 0)
-		{
-			// Orbis: execution heartbeat (event tests run constantly during
-			// execution, unlike compiles). Brackets the true crash site.
-			unsigned long long sp = 0;
-			asm volatile("mov %%rsp, %0" : "=r"(sp));
-			if (0) printf("[dbg] evthb ev=%u pc=%08x cy=%u rsp=%llx\n", evt_probe, cpuRegs.pc, (unsigned)cpuRegs.cycle, sp);
-		}
-		evt_probe++;
-	}
 	_cpuEventTest_Shared();
 
 	if (eeRecExitRequested)
@@ -2519,24 +2495,12 @@ static bool recSkipTimeoutLoop(s32 reg, bool is_timeout_loop)
 
 static void recRecompile(const u32 startpc)
 {
-	if (0) printf("[dbg] rec: recRecompile pc=%08x\n", startpc); // Orbis: no fflush (hot path; ticker flushes 1/s)
+	if (ps5::debug::active())
 	{
 		static unsigned rec_probe = 0;
 		const unsigned n = rec_probe++;
-		if (n < 8)
-		{
-			void* rsp_now = nullptr;
-#if defined(__x86_64__)
-			asm volatile("mov %%rsp, %0" : "=r"(rsp_now));
-#endif
-			printf("[dbg] rec: recompile[%u] pc=%08x rsp=%p\n", n, startpc, rsp_now);
-			fflush(stdout);
-		}
-		if (ps5::debug::active())
-		{
-			ps5::debug::set_line(4, "rec[%u] pc=%08x", n, startpc);
-			ps5::debug::set_line(5, "pc=%08x cy=%u", cpuRegs.pc, (unsigned)cpuRegs.cycle);
-		}
+		ps5::debug::set_line(4, "rec[%u] pc=%08x", n, startpc);
+		ps5::debug::set_line(5, "pc=%08x cy=%u", cpuRegs.pc, (unsigned)cpuRegs.cycle);
 	}
 	u32 i = 0;
 	u32 willbranch3 = 0;
@@ -3141,23 +3105,6 @@ StartRecomp:
 #endif
 	Perf::ee.RegisterPC((void*)s_pCurBlockEx->fnptr, s_pCurBlockEx->x86size, s_pCurBlockEx->startpc);
 
-	if (0) printf("[dbg] blk: pc=%08x fnptr=%p x86size=%u insns=%u\n", s_pCurBlockEx->startpc, (void*)s_pCurBlockEx->fnptr, s_pCurBlockEx->x86size, s_pCurBlockEx->size);
-	if (s_pCurBlockEx->startpc == 0x00001000 || s_pCurBlockEx->startpc == 0x00005c30 ||
-	    s_pCurBlockEx->startpc == 0x0000e530 || s_pCurBlockEx->startpc == 0x0000e4f8)
-	{
-		const u32* ew = (const u32*)PSM(s_pCurBlockEx->startpc);
-		for (u32 w = 0; w < s_pCurBlockEx->size; w++)
-			printf("[dbg] eew+%02x: %08x\n", w * 4, ew[w]);
-		const u8* xb = (const u8*)s_pCurBlockEx->fnptr;
-		u32 xn = s_pCurBlockEx->x86size;
-		for (u32 o = 0; o < xn; o += 16)
-		{
-			printf("[dbg] xb+%03x:", o);
-			for (u32 k = 0; k < 16 && o + k < xn; k++)
-				printf(" %02x", xb[o + k]);
-			printf("\n");
-		}
-	}
 	recPtr = xGetPtr();
 
 	pxAssert((g_cpuHasConstReg & g_cpuFlushedConstReg) == g_cpuHasConstReg);
