@@ -322,6 +322,13 @@ static void orbis_migrate_one_data_root(const std::string& source, const char* l
 // older PCSX2 root second as a gap filler. Migration is safe to retry after interruption.
 static void orbis_migrate_legacy_data()
 {
+  static bool s_legacy_migration_done = false;
+  if (s_legacy_migration_done)
+    return;
+  struct stat data_st = {};
+  if (stat("/data", &data_st) != 0 || !S_ISDIR(data_st.st_mode))
+    return; // retry once /data becomes visible after jailbreak
+  s_legacy_migration_done = true;
   orbis_migrate_one_data_root(caliza::legacy::RetiredDataRoot(), "previous installation");
   orbis_migrate_one_data_root(kOrbisLegacyDataRoot, "PCSX2 data");
 }
@@ -1926,9 +1933,10 @@ void orbis_reload_gs_ini_cpu()
     extern std::atomic<int> g_orbis_mtvu_spin;
     extern std::atomic<int> g_orbis_mtvu_batch;
     extern std::atomic<u32> g_orbis_mtvu_ring_kb;
-    printf("[gsini] applied: EECycleRate=%d FrameratePAL=%.2f extrathreads=%d TVShader=%d vuThread=%d vu1Instant=%d vu1Speed=%u mtvuSpin=%d mtvuBatch=%d mtvuRingKB=%u\n",
-      (int)EmuConfig.Speedhacks.EECycleRate, (double)EmuConfig.GS.FrameratePAL, (int)EmuConfig.GS.SWExtraThreads,
-      (int)EmuConfig.GS.TVShader, (int)EmuConfig.Speedhacks.vuThread, (int)EmuConfig.Speedhacks.vu1Instant,
+    printf("[gsini] applied: EECycleRate=%d EECycleSkip=%d FrameratePAL=%.2f extrathreads=%d TVShader=%d vuThread=%d vu1Instant=%d vuClamp=%u vu1Speed=%u mtvuSpin=%d mtvuBatch=%d mtvuRingKB=%u\n",
+      (int)EmuConfig.Speedhacks.EECycleRate, (int)EmuConfig.Speedhacks.EECycleSkip, (double)EmuConfig.GS.FrameratePAL,
+      (int)EmuConfig.GS.SWExtraThreads, (int)EmuConfig.GS.TVShader, (int)EmuConfig.Speedhacks.vuThread,
+      (int)EmuConfig.Speedhacks.vu1Instant, EmuConfig.Cpu.Recompiler.GetVUClampMode(),
       g_orbis_vu1_speed.load(std::memory_order_relaxed), g_orbis_mtvu_spin.load(std::memory_order_relaxed),
       g_orbis_mtvu_batch.load(std::memory_order_relaxed), g_orbis_mtvu_ring_kb.load(std::memory_order_relaxed)); // vk-285-84/90
   }
@@ -4280,6 +4288,11 @@ int main()
   // vk-285-47: the game's name and how it runs, instead of "VM init OK".
   if (res == VMBootResult::StartupSuccess)
   {
+    printf("[boot] runtime perf: EECycleRate=%d EECycleSkip=%d vuThread=%d vu1Instant=%d vuClamp=%u (override=%d)\n",
+      (int)EmuConfig.Speedhacks.EECycleRate, (int)EmuConfig.Speedhacks.EECycleSkip, (int)EmuConfig.Speedhacks.vuThread,
+      (int)EmuConfig.Speedhacks.vu1Instant, EmuConfig.Cpu.Recompiler.GetVUClampMode(),
+      s_base_si.GetIntValue("Caliza", "VUClampMode", -1));
+    fflush(stdout);
     std::string title = VMManager::GetTitle(true);
     if (title.empty() && system_menu)
       title = "PS2 system menu"; // 2026-10-08

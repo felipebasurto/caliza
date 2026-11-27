@@ -662,11 +662,33 @@ void VMManager::ReloadInputBindings(bool force)
 	LoadInputBindings(*si, lock);
 }
 
+namespace
+{
+int s_caliza_vu_clamp_override = -1;
+
+void ApplyCalizaVUClampOverride(bool from_gamedb)
+{
+	if (s_caliza_vu_clamp_override < 0 || s_caliza_vu_clamp_override > 3)
+		return;
+	const int mode = s_caliza_vu_clamp_override;
+	EmuConfig.Cpu.Recompiler.vu0Overflow = (mode >= 1);
+	EmuConfig.Cpu.Recompiler.vu0ExtraOverflow = (mode >= 2);
+	EmuConfig.Cpu.Recompiler.vu0SignOverflow = (mode >= 3);
+	EmuConfig.Cpu.Recompiler.vu1Overflow = (mode >= 1);
+	EmuConfig.Cpu.Recompiler.vu1ExtraOverflow = (mode >= 2);
+	EmuConfig.Cpu.Recompiler.vu1SignOverflow = (mode >= 3);
+	if (from_gamedb)
+		Console.WriteLn("Caliza: Overriding GameDB VU clamp mode to %d (Caliza/VUClampMode)", mode);
+}
+} // namespace
+
 void VMManager::LoadCoreSettings(SettingsInterface& si)
 {
 	SettingsLoadWrapper slw(si);
 	EmuConfig.LoadSave(slw);
 	Patch::ApplyPatchSettingOverrides();
+	s_caliza_vu_clamp_override = si.GetIntValue("Caliza", "VUClampMode", -1);
+	ApplyCalizaVUClampOverride(false);
 
 	// Achievements hardcore mode disallows setting some configuration options.
 	EnforceAchievementsChallengeModeSettings();
@@ -751,6 +773,7 @@ void VMManager::ApplyGameFixes()
 		return;
 
 	game->applyGameFixes(EmuConfig, EmuConfig.EnableGameFixes);
+	ApplyCalizaVUClampOverride(true);
 	game->applyGSHardwareFixes(EmuConfig.GS);
 
 	// Re-remove upscaling fixes, make sure they don't apply at native res.

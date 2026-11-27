@@ -52,6 +52,7 @@ const char* const kCompatibilityKeys[] = {
 	"EmuCore/Speedhacks/EECycleRate",
 	"EmuCore/Speedhacks/EECycleSkip",
 	"EmuCore/Speedhacks/vuThread",
+	"Caliza/VUClampMode",
 	"EmuCore/Speedhacks/OrbisMTVUSpin",
 	"EmuCore/Speedhacks/OrbisMTVUBatch",
 	"EmuCore/Speedhacks/OrbisMTVURingKB",
@@ -262,9 +263,9 @@ void TestInventory()
 	using namespace caliza::settings;
 	CHECK(kSchemaVersion == 1);
 	CHECK(Groups().size() == 21);
-	CHECK(Settings().size() == 116);
+	CHECK(Settings().size() == 117);
 	CHECK(Actions().size() == 49);
-	CheckHash(SettingsInventoryHash(), 0x6212791117f35040ull, "settings");
+	CheckHash(SettingsInventoryHash(), 0xc2a87cb133ff87baull, "settings");
 	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
@@ -334,6 +335,17 @@ void TestInventory()
 		CHECK(mtvu->apply_timing == ApplyTiming::NextLaunch);
 		CHECK(mtvu->default_value == "true");
 		CHECK(!mtvu->player_owned);
+	}
+
+	const SettingDef* vu_clamp = FindSettingByKey("Caliza/VUClampMode");
+	CHECK(vu_clamp != nullptr);
+	if (vu_clamp)
+	{
+		CHECK(vu_clamp->default_value == "-1");
+		CHECK(vu_clamp->choices.size() == 5);
+		CHECK(vu_clamp->apply_timing == ApplyTiming::Live);
+		CHECK(HasScope(vu_clamp->scopes, ScopeMask::Global) && HasScope(vu_clamp->scopes, ScopeMask::Game));
+		CHECK(vu_clamp->player_owned);
 	}
 
 	const SettingDef* spin = FindSettingByKey("EmuCore/Speedhacks/OrbisMTVUSpin");
@@ -434,7 +446,8 @@ void TestLegacyKeyMigration()
 	CHECK(migrations.size() == 69);
 	size_t migratable_canonical_keys = 0;
 	for (const SettingDef& def : Settings())
-		if (def.compatibility_key.compare(0, 7, "Caliza/") == 0 && def.compatibility_key.compare(0, 9, "Caliza/Ui") != 0)
+		if (def.compatibility_key.compare(0, 7, "Caliza/") == 0 && def.compatibility_key.compare(0, 9, "Caliza/Ui") != 0 &&
+			def.compatibility_key != "Caliza/VUClampMode")
 			++migratable_canonical_keys;
 	CHECK(migratable_canonical_keys == migrations.size());
 	std::set<std::string> legacy_keys, canonical_keys;

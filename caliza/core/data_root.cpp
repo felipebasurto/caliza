@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <iomanip>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
@@ -222,6 +223,17 @@ void SyncDirectory(const std::string& path)
 	}
 }
 
+bool IsUnsupportedSyscallErrno(int err)
+{
+	if (err == ENOSYS || err == EOPNOTSUPP || err == ENOTSUP || err == EINVAL)
+		return true;
+#if defined(ORBIS_PS4) || defined(__ORBIS__)
+	if (err == EPERM)
+		return true;
+#endif
+	return false;
+}
+
 class MigrationLock
 {
 public:
@@ -239,10 +251,17 @@ public:
 			*error = mkdir_error;
 			return false;
 		}
+		if (!m_process_guard.try_lock())
+		{
+			*error = "another migration operation holds the destination lock";
+			return false;
+		}
 		m_fd = open(path.c_str(), O_RDWR | O_CREAT, 0666);
 		if (m_fd < 0)
 		{
-			*error = ErrnoString("can't open migration lock " + path, errno);
+			const int saved = errno;
+			m_process_guard.unlock();
+			*error = ErrnoString("can't open migration lock " + path, saved);
 			return false;
 		}
 		struct flock lock = {};
@@ -253,8 +272,13 @@ public:
 		if (fcntl(m_fd, F_SETLK, &lock) != 0)
 		{
 			const int saved = errno;
+			// On Orbis/PS4 the kernel does not implement POSIX record locking (F_SETLK); fall back to the
+			// in-process mutex while keeping EACCES/EAGAIN contention failures intact on desktop POSIX hosts.
+			if (IsUnsupportedSyscallErrno(saved))
+				return true;
 			close(m_fd);
 			m_fd = -1;
+			m_process_guard.unlock();
 			if (saved == EACCES || saved == EAGAIN)
 				*error = "another migration process holds the destination lock";
 			else
@@ -265,8 +289,12 @@ public:
 	}
 
 private:
+	static std::mutex s_process_mutex;
+	std::unique_lock<std::mutex> m_process_guard{s_process_mutex, std::defer_lock};
 	int m_fd = -1;
 };
+
+std::mutex MigrationLock::s_process_mutex;
 
 void RemoveOwnedTempFiles(const std::string& temp_dir)
 {
@@ -311,7 +339,7 @@ bool AppendJournal(const std::string& journal_path, const MigrationItem& item, s
 		}
 		written += static_cast<size_t>(n);
 	}
-	if (fsync(fd) != 0)
+	if (fsync(fd) != 0 && !IsUnsupportedSyscallErrno(errno))
 	{
 		const int saved = errno;
 		close(fd);
@@ -855,7 +883,7 @@ PublishOutcome CopyFileAtomicNoOverwrite(const MigrationItem& item, const struct
 	if (!failed && !interrupted)
 	{
 		(void)fchmod(temp_fd, source_stat.st_mode & 07777);
-		if (fsync(temp_fd) != 0)
+		if (fsync(temp_fd) != 0 && !IsUnsupportedSyscallErrno(errno))
 		{
 			outcome.result = PublishResult::WriteError;
 			outcome.message = ErrnoString("can't flush migration temporary file", errno);
@@ -884,8 +912,9 @@ PublishOutcome CopyFileAtomicNoOverwrite(const MigrationItem& item, const struct
 	}
 
 	// Publish with link(2), which atomically fails when the destination name exists instead of overwriting it.
-	// Filesystems that cannot hardlink cannot provide a portable no-overwrite rename; fail closed there rather
-	// than racing an unrelated writer and violating the collision guarantee. needs proper testing on OpenOrbis.
+	// On consoles where link(2) is unsupported (ENOSYS/EOPNOTSUPP/ENOTSUP, or EPERM under Orbis), verify via
+	// lstat(2) under MigrationLock that the destination does not exist before renaming temp into place; if it
+	// exists, enter the identical-vs-collision check so differing data is never overwritten.
 	if (link(temp.c_str(), item.destination_path.c_str()) == 0)
 	{
 		unlink(temp.c_str());
@@ -898,12 +927,44 @@ PublishOutcome CopyFileAtomicNoOverwrite(const MigrationItem& item, const struct
 		outcome.bytes = memory_payload ? memory_payload->size() : item.bytes;
 		return outcome;
 	}
-	if (errno != EEXIST)
+	const int link_errno = errno;
+	if (link_errno != EEXIST && IsUnsupportedSyscallErrno(link_errno))
 	{
-		const int saved = errno;
+		struct stat existing_stat = {};
+		if (lstat(item.destination_path.c_str(), &existing_stat) != 0)
+		{
+			if (errno == ENOENT)
+			{
+				if (rename(temp.c_str(), item.destination_path.c_str()) == 0)
+				{
+					struct utimbuf times = {};
+					times.actime = source_stat.st_atime;
+					times.modtime = source_stat.st_mtime;
+					(void)utime(item.destination_path.c_str(), &times);
+					SyncDirectory(storage::fs::DirName(item.destination_path));
+					outcome.result = PublishResult::Copied;
+					outcome.bytes = memory_payload ? memory_payload->size() : item.bytes;
+					return outcome;
+				}
+				const int saved = errno;
+				unlink(temp.c_str());
+				outcome.result = PublishResult::WriteError;
+				outcome.message = ErrnoString("can't publish migration file", saved);
+				return outcome;
+			}
+			const int saved = errno;
+			unlink(temp.c_str());
+			outcome.result = PublishResult::ReadError;
+			outcome.message = ErrnoString("can't inspect destination before migration publish", saved);
+			return outcome;
+		}
+		// Destination already exists: fall through to the identical-vs-collision check below.
+	}
+	else if (link_errno != EEXIST)
+	{
 		unlink(temp.c_str());
 		outcome.result = PublishResult::WriteError;
-		outcome.message = ErrnoString("can't publish migration file without overwriting", saved) +
+		outcome.message = ErrnoString("can't publish migration file without overwriting", link_errno) +
 			"; no overwrite-capable rename fallback was attempted";
 		return outcome;
 	}
