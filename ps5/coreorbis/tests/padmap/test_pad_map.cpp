@@ -419,6 +419,178 @@ int main()
 		CHECK(w.Update(c.fast, c.hold_ms, st, 0, block) && !w.Update(c.fast, c.hold_ms, st, 10, block));
 	}
 
+	// Pause menu trigger: defaults to single-button Touchpad click (Touchpad + None, never Share/Create
+	// bit 0x1), remappable to any single button or 2-button combo, and migrates legacy Share/Create
+	// values automatically so GoldHEN never clashes.
+	{
+		const Config def = From({});
+		CHECK(def.pause_trigger == PT_L3_R3);
+		CHECK(std::string(PauseTriggerName(def.pause_trigger)) == "l3_r3");
+		CHECK(std::string(PauseTriggerLabel(def.pause_trigger)) == "L3 + R3");
+		CHECK(def.IsDefault());
+
+		// 1. Default preset PT_L3_R3: triggers on RELEASE of L3+R3 only if no other button was pressed
+		// during the hold, so L3+R3+D-pad quick save/load/disc shortcuts keep working untouched.
+		PauseTriggerWatch pw;
+		ComboWatch save_w;
+		ComboState st;
+		uint32_t block = 0;
+
+		// Share/Create bit 0x1 alone never fires pause.
+		st.buttons = 0x00000001u;
+		CHECK(!pw.Update(PT_L3_R3, st, 0, false).fired);
+		CHECK(!pw.Update(PT_L3_R3, st, 2500, false).fired);
+
+		// Clean press & release of L3+R3 (including staggered press and staggered release): fires on release.
+		st.buttons = 0x00000002u; // L3 first
+		CHECK(!pw.Update(PT_L3_R3, st, 3000, false).fired);
+		st.buttons = 0x00000006u; // L3 + R3 held -> does NOT fire while held
+		CHECK(!pw.Update(PT_L3_R3, st, 3020, false).fired);
+		CHECK(!pw.Update(PT_L3_R3, st, 3200, false).fired);
+		st.buttons = 0x00000004u; // L3 released first, R3 still held -> wait for both released
+		CHECK(!pw.Update(PT_L3_R3, st, 3210, false).fired);
+		st.buttons = 0; // both released -> fires!
+		CHECK(pw.Update(PT_L3_R3, st, 3220, false).fired);
+		CHECK(!pw.Update(PT_L3_R3, st, 3230, false).fired);
+
+		// L3+R3 + D-pad Up (quick save): save fires, and releasing L3+R3 MUST NOT fire pause!
+		st.buttons = 0x00000006u;
+		CHECK(!pw.Update(PT_L3_R3, st, 4000, false).fired);
+		st.buttons = 0x00000006u | 0x00000010u; // + Up
+		CHECK(!pw.Update(PT_L3_R3, st, 4010, false).fired);
+		CHECK(save_w.Update(def.save, def.hold_ms, st, 4010, block));
+		st.buttons = 0x00000006u; // Up released while L3+R3 still held
+		CHECK(!pw.Update(PT_L3_R3, st, 4050, false).fired);
+		st.buttons = 0; // L3+R3 released -> dirty, so pause MUST NOT fire!
+		CHECK(!pw.Update(PT_L3_R3, st, 4060, false).fired);
+
+		// L3+R3 + Cross (or L2 trigger) also marks dirty and prevents pause on release.
+		st.buttons = 0x00000006u;
+		CHECK(!pw.Update(PT_L3_R3, st, 4100, false).fired);
+		st.l2 = 220;
+		CHECK(!pw.Update(PT_L3_R3, st, 4110, false).fired);
+		st.l2 = 0;
+		st.buttons = 0;
+		CHECK(!pw.Update(PT_L3_R3, st, 4120, false).fired);
+
+		// 2. PT_TOUCHPAD: opens immediately on Touchpad click and suppresses PS2 Select while held.
+		pw.Reset();
+		st = ComboState();
+		st.buttons = 0x00100000u;
+		PauseTriggerResult r = pw.Update(PT_TOUCHPAD, st, 5000, false);
+		CHECK(r.fired && (r.suppress_bits & 0x00100000u) != 0 && r.inject_bits == 0);
+		r = pw.Update(PT_TOUCHPAD, st, 5020, false);
+		CHECK(!r.fired && (r.suppress_bits & 0x00100000u) != 0);
+		st.buttons = 0;
+		r = pw.Update(PT_TOUCHPAD, st, 5040, false);
+		CHECK(!r.fired && r.suppress_bits == 0);
+
+		// 3. PT_L3_R3_L1: fires on L3+R3+L1 and suppresses L1 until released; Touchpad stays Select.
+		pw.Reset();
+		st = ComboState();
+		st.buttons = 0x00100000u; // Touchpad alone does nothing
+		r = pw.Update(PT_L3_R3_L1, st, 6000, false);
+		CHECK(!r.fired && r.suppress_bits == 0);
+		st.buttons = 0x00000406u; // L3 + R3 + L1
+		r = pw.Update(PT_L3_R3_L1, st, 6020, false);
+		CHECK(r.fired && (r.suppress_bits & 0x00000400u) != 0);
+		st.buttons = 0;
+		CHECK(pw.Update(PT_L3_R3_L1, st, 6040, false).suppress_bits == 0);
+
+		// 4. PT_TOUCHPAD_HOLD: short tap (< 500 ms) sends Select pulse on release; hold >= 500 ms pauses with zero Select leak.
+		pw.Reset();
+		st = ComboState();
+		st.buttons = 0x00100000u;
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 7000, false);
+		CHECK(!r.fired && (r.suppress_bits & 0x00100000u) != 0 && r.inject_bits == 0);
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 7200, false);
+		CHECK(!r.fired && (r.suppress_bits & 0x00100000u) != 0 && r.inject_bits == 0);
+		st.buttons = 0; // short tap released at 200 ms -> pulses PS2 Select!
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 7220, false);
+		CHECK(!r.fired && r.suppress_bits == 0 && (r.inject_bits & 0x00100000u) != 0);
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 7350, false); // pulse expired
+		CHECK(!r.fired && r.inject_bits == 0);
+		// Now hold >= 500 ms -> fires pause with zero Select pulse on release!
+		st.buttons = 0x00100000u;
+		CHECK(!pw.Update(PT_TOUCHPAD_HOLD, st, 8000, false).fired);
+		CHECK(!pw.Update(PT_TOUCHPAD_HOLD, st, 8499, false).fired);
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 8500, false);
+		CHECK(r.fired && (r.suppress_bits & 0x00100000u) != 0 && r.inject_bits == 0);
+		st.buttons = 0;
+		r = pw.Update(PT_TOUCHPAD_HOLD, st, 8550, false);
+		CHECK(!r.fired && r.inject_bits == 0);
+
+		// 5. PT_L1_R1_TOUCHPAD: single Touchpad passes through as Select; L1+R1+Touchpad opens pause and suppresses Select.
+		pw.Reset();
+		st = ComboState();
+		st.buttons = 0x00100000u; // single Touchpad click -> passes straight to game as Select
+		r = pw.Update(PT_L1_R1_TOUCHPAD, st, 9000, false);
+		CHECK(!r.fired && r.suppress_bits == 0);
+		st.buttons = 0x00000C00u | 0x00100000u; // L1 + R1 + Touchpad
+		r = pw.Update(PT_L1_R1_TOUCHPAD, st, 9050, false);
+		CHECK(r.fired && (r.suppress_bits & 0x00100000u) != 0);
+
+		// 6. PT_OPTIONS_HOLD: short tap (< 500 ms) pulses Start on release; hold >= 500 ms pauses with zero Start leak.
+		pw.Reset();
+		st = ComboState();
+		st.buttons = 0x00000008u; // Options
+		r = pw.Update(PT_OPTIONS_HOLD, st, 10000, false);
+		CHECK(!r.fired && (r.suppress_bits & 0x00000008u) != 0);
+		st.buttons = 0; // short tap at 150 ms -> pulses PS2 Start!
+		r = pw.Update(PT_OPTIONS_HOLD, st, 10150, false);
+		CHECK(!r.fired && (r.inject_bits & 0x00000008u) != 0);
+		r = pw.Update(PT_OPTIONS_HOLD, st, 10300, false);
+		CHECK(r.inject_bits == 0);
+		st.buttons = 0x00000008u;
+		CHECK(!pw.Update(PT_OPTIONS_HOLD, st, 11000, false).fired);
+		r = pw.Update(PT_OPTIONS_HOLD, st, 11500, false);
+		CHECK(r.fired && (r.suppress_bits & 0x00000008u) != 0 && r.inject_bits == 0);
+
+		// FromSettings parsing for all 6 PauseTrigger presets.
+		for (int i = 0; i < PT_COUNT; ++i)
+		{
+			const PauseTrigger expected = static_cast<PauseTrigger>(i);
+			bool m = true;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseTrigger") { v = PauseTriggerName(expected); return true; }
+				return false;
+			}, &m);
+			CHECK(!m);
+			CHECK(c.pause_trigger == expected);
+		}
+		CHECK(Describe(From({{"PauseTrigger", "touchpad_hold"}})) == "pause menu on Hold Touchpad (0.5 s)");
+
+		// Legacy PauseButton1/2 migration in FromSettings.
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = "L3R3"; return true; }
+				if (std::string(key) == "PauseButton2") { v = "L1"; return true; }
+				return false;
+			}, &m);
+			CHECK(m && c.pause_trigger == PT_L3_R3_L1);
+		}
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = "Touchpad"; return true; }
+				if (std::string(key) == "PauseButton2") { v = "None"; return true; }
+				return false;
+			}, &m);
+			CHECK(m && c.pause_trigger == PT_TOUCHPAD);
+		}
+		// Legacy Share/Create falls back safely to PT_L3_R3 at runtime.
+		for (const char* legacy : {"Share", "Create", "sharehold", "CreateHold", "ShareLong", "CreateLong"})
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = legacy; return true; }
+				return false;
+			}, &m);
+			CHECK(m && c.pause_trigger == PT_L3_R3);
+		}
+	}
+
 	if (s_failures == 0)
 		printf("test_pad_map: all checks passed\n");
 	return s_failures == 0 ? 0 : 1;

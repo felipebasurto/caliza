@@ -621,6 +621,67 @@ void TestModernControlsCategoryAndBootLog()
 	CHECK_TRUE(!boot_lines.empty() && boot_lines.back().find("no matching patch") != std::string::npos);
 }
 
+void TestLegacyPauseComboMigration()
+{
+	auto find_item = [](const Snapshot& snap, const std::string& id) -> const SettingItem* {
+		for (const SettingCategory& category : snap.settings)
+			for (const SettingItem& item : category.items)
+				if (item.id == id)
+					return &item;
+		return nullptr;
+	};
+
+	// 1. Fresh install has no PauseTrigger yet: pause_trigger_chosen is false; saving l3_r3 persists across reload.
+	{
+		TempDir root;
+		ConsoleBackendOptions options = TestOptions(root);
+		ConsoleBackend backend(options);
+		EventLog log;
+		const Snapshot fresh = backend.GetSnapshot();
+		CHECK_TRUE(!fresh.pause_trigger_chosen);
+		const SettingItem* pt = find_item(fresh, "Caliza/PauseTrigger");
+		CHECK_TRUE(pt != nullptr && pt->value == "l3_r3");
+
+		const CommandEvent saved = WaitTerminal(backend, log,
+			backend.Post(MakeCommand(CommandType::SetSetting, "buttons.pause-trigger", "", "l3_r3")));
+		CHECK_EQ(static_cast<int>(saved.status), static_cast<int>(CommandStatus::Succeeded));
+		CHECK_TRUE(backend.GetSnapshot().pause_trigger_chosen);
+		CHECK_TRUE(ReadFile(options.global_settings_path).find("Caliza/PauseTrigger=l3_r3") != std::string::npos);
+
+		ConsoleBackend reloaded(options);
+		CHECK_TRUE(reloaded.GetSnapshot().pause_trigger_chosen);
+	}
+
+	// 2. Legacy gs.ini with Share/Create migrates to "not chosen" (removes legacy keys, leaves PauseTrigger unset).
+	{
+		TempDir root;
+		ConsoleBackendOptions options = TestOptions(root);
+		CHECK_TRUE(WriteFile(options.global_settings_path, "Caliza/PauseButton1=Share\nCaliza/PauseButton2=None\n"));
+		ConsoleBackend backend(options);
+		const Snapshot snap = backend.GetSnapshot();
+		CHECK_TRUE(!snap.pause_trigger_chosen);
+		const std::string on_disk = ReadFile(options.global_settings_path);
+		CHECK_TRUE(on_disk.find("Share") == std::string::npos);
+		CHECK_TRUE(on_disk.find("PauseButton1") == std::string::npos);
+		CHECK_TRUE(on_disk.find("PauseTrigger") == std::string::npos);
+	}
+
+	// 3. Legacy gs.ini with non-Share PauseButton1/2 migrates on disk to closest PauseTrigger preset.
+	{
+		TempDir root;
+		ConsoleBackendOptions options = TestOptions(root);
+		CHECK_TRUE(WriteFile(options.global_settings_path, "Caliza/PauseButton1=L3R3\nCaliza/PauseButton2=L1\n"));
+		ConsoleBackend backend(options);
+		const Snapshot snap = backend.GetSnapshot();
+		CHECK_TRUE(snap.pause_trigger_chosen);
+		const SettingItem* pt = find_item(snap, "Caliza/PauseTrigger");
+		CHECK_TRUE(pt != nullptr && pt->value == "l3_r3_l1");
+		const std::string on_disk = ReadFile(options.global_settings_path);
+		CHECK_TRUE(on_disk.find("Caliza/PauseTrigger=l3_r3_l1") != std::string::npos);
+		CHECK_TRUE(on_disk.find("PauseButton1") == std::string::npos);
+	}
+}
+
 } // namespace
 
 int main()
@@ -635,6 +696,7 @@ int main()
 	TestAsyncProjectionRefreshOffRenderThread();
 	TestPatchAndCheatTogglePersistence();
 	TestModernControlsCategoryAndBootLog();
+	TestLegacyPauseComboMigration();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");

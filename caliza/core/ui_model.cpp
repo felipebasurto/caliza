@@ -3,6 +3,8 @@
 
 #include "ui_model.h"
 
+#include "pause_presets.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -473,6 +475,7 @@ void UiModel::Dispatch(const LogicalInput& in)
 		case Screen::GameDetail: HandleGameDetail(in); break;
 		case Screen::TexturePacks: HandleTexturePacks(in); break;
 		case Screen::PauseOverlay: HandlePause(in); break;
+		case Screen::PauseTriggerSetup: HandlePauseTriggerSetup(in); break;
 		case Screen::MemoryCards: HandleMemoryCards(in); break;
 		case Screen::Settings: HandleSettings(in); break;
 		case Screen::Controls: HandleControls(in); break;
@@ -491,6 +494,7 @@ void UiModel::SyncAfterSnapshot()
 	SyncLibraryFocus();
 	m_detail_index = ClampIndex(m_detail_index, static_cast<int>(DetailActions(FindGame(m_detail_game_id), m_snapshot.bios, m_snapshot.operations).size()));
 	m_pause_index = ClampIndex(m_pause_index, 5);
+	m_pause_setup_index = ClampIndex(m_pause_setup_index, static_cast<int>(kPausePresetCount));
 	m_memory_slot = std::max(0, std::min(1, m_memory_slot));
 	m_memory_index = std::max(0, m_memory_index);
 	SyncSettingsFocus();
@@ -786,7 +790,7 @@ void UiModel::ActivateHome(int index)
 		return;
 	const std::string& id = actions[static_cast<size_t>(ClampIndex(index, static_cast<int>(actions.size())))].id;
 	if (id == "continue")
-		Post(CommandType::LaunchGame, m_snapshot.continue_game_id);
+		RequestLaunchGame(m_snapshot.continue_game_id);
 	else if (id == "library")
 		OpenLibrary();
 	else if (id == "system-menu")
@@ -920,7 +924,7 @@ void UiModel::ActivateLibraryTile()
 	const GameEntry& game = *games[static_cast<size_t>(ClampIndex(m_grid_index, static_cast<int>(games.size())))];
 	m_library_focus_game_id = game.id;
 	if (GameLaunchable(game))
-		Post(CommandType::LaunchGame, game.id);
+		RequestLaunchGame(game.id);
 	else
 		OpenGameDetail(game.id);
 }
@@ -956,9 +960,9 @@ void UiModel::ActivateGameDetail(int index)
 	const std::vector<NamedAction> actions = DetailActions(game, m_snapshot.bios, m_snapshot.operations);
 	const std::string& id = actions[static_cast<size_t>(ClampIndex(index, static_cast<int>(actions.size())))].id;
 	if (id == "play" && GameLaunchable(*game))
-		Post(CommandType::LaunchGame, game->id);
+		RequestLaunchGame(game->id);
 	else if (id == "smart-tune" && GameLaunchable(*game))
-		Post(CommandType::LaunchSmartTune, game->id);
+		RequestLaunchGame(game->id, true);
 	else if (id == "patches")
 		Post(CommandType::FetchOnlinePatches, game->id);
 	else if (id == "textures")
@@ -1073,6 +1077,62 @@ void UiModel::ActivatePause(int index)
 	else if (action.id == "return")
 		OpenDialog(PendingAction::ReturnToLibrary, "Return to library?",
 			"The current game session closes. Unsaved progress in memory is lost.", "Return", true);
+}
+
+void UiModel::RequestLaunchGame(const std::string& game_id, bool smart_tune)
+{
+	if (m_snapshot.pause_trigger_chosen)
+	{
+		Post(smart_tune ? CommandType::LaunchSmartTune : CommandType::LaunchGame, game_id);
+		return;
+	}
+	m_pending_launch_game_id = game_id;
+	m_pending_launch_smart_tune = smart_tune;
+	m_pause_setup_return_screen = m_screen;
+	m_pause_setup_index = 0; // Pre-select default preset: L3 + R3.
+	m_screen = Screen::PauseTriggerSetup;
+}
+
+void UiModel::CompletePauseTriggerChoice(const std::string& preset_id, bool remap_r3_to_select)
+{
+	Post(CommandType::SetSetting, "buttons.pause-trigger", "", preset_id);
+	if (remap_r3_to_select)
+		Post(CommandType::SetSetting, "buttons.button-r3", "", "Select");
+	const std::string game_id = m_pending_launch_game_id;
+	const bool smart_tune = m_pending_launch_smart_tune;
+	m_pending_launch_game_id.clear();
+	m_pending_launch_smart_tune = false;
+	m_screen = m_pause_setup_return_screen;
+	if (!game_id.empty())
+		Post(smart_tune ? CommandType::LaunchSmartTune : CommandType::LaunchGame, game_id);
+}
+
+void UiModel::HandlePauseTriggerSetup(const LogicalInput& in)
+{
+	const int count = static_cast<int>(kPausePresetCount);
+	if (in.up)
+		m_pause_setup_index = MoveClamped(m_pause_setup_index, -1, count);
+	if (in.down)
+		m_pause_setup_index = MoveClamped(m_pause_setup_index, 1, count);
+	if (in.circle)
+	{
+		m_pending_launch_game_id.clear();
+		m_pending_launch_smart_tune = false;
+		m_screen = m_pause_setup_return_screen;
+		return;
+	}
+	if (!in.cross)
+		return;
+	const PausePresetInfo& preset = kPausePresets[static_cast<size_t>(ClampIndex(m_pause_setup_index, count))];
+	if (preset.warn_select)
+	{
+		OpenDialog(PendingAction::ChooseTouchpadPauseTrigger, "Touchpad acts as PS2 Select",
+			"Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it. Map R3 to PS2 Select automatically?",
+			"Map R3 to Select", false, preset.id);
+		m_dialog.cancel_label = "Keep Touchpad only";
+		return;
+	}
+	CompletePauseTriggerChoice(preset.id, false);
 }
 
 static std::vector<NamedAction> MemoryActionsForSlot(const Snapshot& snapshot, int slot)
@@ -1677,6 +1737,11 @@ void UiModel::HandleDialog(const LogicalInput& in)
 		return;
 	const DialogState closing = m_dialog;
 	m_dialog = DialogState();
+	if (closing.action == PendingAction::ChooseTouchpadPauseTrigger)
+	{
+		CompletePauseTriggerChoice(closing.id, closing.option == 1);
+		return;
+	}
 	if (closing.option == 1)
 		ExecuteDialogAction(closing);
 }
@@ -1711,6 +1776,9 @@ void UiModel::ExecuteDialogAction(const DialogState& dialog)
 			break;
 		case PendingAction::DeleteTexturePack:
 			Post(CommandType::DeleteTexturePack, dialog.id);
+			break;
+		case PendingAction::ChooseTouchpadPauseTrigger:
+			CompletePauseTriggerChoice(dialog.id, true);
 			break;
 		case PendingAction::None:
 			break;
@@ -1840,6 +1908,7 @@ static const char* ScreenName(Screen screen)
 		case Screen::GameDetail: return "game-detail";
 		case Screen::TexturePacks: return "texture-packs";
 		case Screen::PauseOverlay: return "pause";
+		case Screen::PauseTriggerSetup: return "pause-trigger-setup";
 		case Screen::MemoryCards: return "memory-cards";
 		case Screen::Settings: return "settings";
 		case Screen::Controls: return "controls";
@@ -2093,6 +2162,28 @@ UiView UiModel::BuildView() const
 			if (!m_snapshot.vm.message.empty())
 				view.status = m_snapshot.vm.message;
 			prompts({{PromptGlyph::Cross, "Select"}, {PromptGlyph::Circle, "Resume"}});
+			break;
+		}
+		case Screen::PauseTriggerSetup:
+		{
+			view.title = "Pause menu trigger";
+			view.subtitle = "Choose how to open the in-game pause menu. You can change this anytime in Controls.";
+			for (size_t i = 0; i < kPausePresetCount; ++i)
+			{
+				const PausePresetInfo& preset = kPausePresets[i];
+				UiEntry entry;
+				entry.id = preset.id;
+				entry.label = preset.label;
+				entry.value = preset.recommended ? "Recommended" : (preset.warn_select ? "Replaces Select" : (preset.warn_start ? "Uses Start" : ""));
+				entry.detail = preset.description;
+				entry.icon = (preset.warn_select || preset.warn_start) ? EntryIcon::Warning : EntryIcon::Controls;
+				entry.destructive = preset.warn_select || preset.warn_start;
+				entry.focused = static_cast<int>(i) == m_pause_setup_index;
+				if (entry.focused)
+					view.focus_id = "pause-setup:" + entry.id;
+				view.items.push_back(std::move(entry));
+			}
+			prompts({{PromptGlyph::Cross, "Choose & Play"}, {PromptGlyph::Circle, "Cancel"}});
 			break;
 		}
 		case Screen::MemoryCards:

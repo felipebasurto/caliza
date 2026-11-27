@@ -267,6 +267,7 @@ Snapshot MakeSnapshot(int game_count = 8, bool bios = true)
 	snap.revision = 1;
 	snap.build_tag = "host-test";
 	snap.data_root = "/data/caliza";
+	snap.pause_trigger_chosen = true;
 	snap.bios.present = bios;
 	snap.bios.path = bios ? "/data/caliza/BIOS" : "";
 	if (!bios)
@@ -708,6 +709,115 @@ void TestAccessibilityCommandsUseContractPayload()
 	CHECK(ctx.backend.posted.back().number == 1);
 }
 
+void TestFirstRunPauseTriggerChooser()
+{
+	// 1. When pause_trigger_chosen is false, launching a game opens the chooser pre-selected on L3 + R3.
+	{
+		Ctx ctx;
+		ctx.backend.snap = MakeSnapshot(2, true);
+		ctx.backend.snap.continue_valid = true;
+		ctx.backend.snap.continue_game_id = "game-0";
+		ctx.backend.snap.pause_trigger_chosen = false;
+		SkipBoot(ctx);
+		CHECK(ctx.model.screen() == Screen::Home);
+		// Press Cross on Continue -> opens PauseTriggerSetup instead of launching immediately.
+		Tap(ctx, &Input::cross);
+		CHECK(ctx.model.screen() == Screen::PauseTriggerSetup);
+		CHECK(!Posted(ctx, CommandType::LaunchGame));
+		const UiView view = ctx.model.BuildView();
+		CHECK(view.items.size() == 6);
+		CHECK(ctx.model.FocusIdForTest() == "pause-setup:l3_r3");
+		if (view.items.size() == 6)
+		{
+			CHECK(view.items[0].id == "l3_r3" && view.items[0].value == "Recommended");
+			CHECK(view.items[1].id == "touchpad" && view.items[1].destructive);
+			CHECK(view.items[1].detail.find("Touchpad acts as PS2 Select") != std::string::npos);
+			CHECK(view.items[5].id == "options_hold" && view.items[5].destructive);
+		}
+
+		// Circle cancels without saving or launching.
+		Tap(ctx, &Input::circle);
+		CHECK(ctx.model.screen() == Screen::Home);
+		CHECK(!Posted(ctx, CommandType::SetSetting));
+		CHECK(!Posted(ctx, CommandType::LaunchGame));
+
+		// Re-open chooser and confirm default L3 + R3 -> saves Caliza/PauseTrigger=l3_r3 then launches.
+		Tap(ctx, &Input::cross);
+		CHECK(ctx.model.screen() == Screen::PauseTriggerSetup);
+		Tap(ctx, &Input::cross);
+		CHECK(ctx.model.screen() == Screen::Home);
+		CHECK(ctx.backend.posted.size() >= 2);
+		if (ctx.backend.posted.size() >= 2)
+		{
+			const Command& set_cmd = ctx.backend.posted[ctx.backend.posted.size() - 2];
+			const Command& launch_cmd = ctx.backend.posted.back();
+			CHECK(set_cmd.type == CommandType::SetSetting && set_cmd.id == "buttons.pause-trigger" && set_cmd.value == "l3_r3");
+			CHECK(launch_cmd.type == CommandType::LaunchGame && launch_cmd.id == "game-0");
+		}
+	}
+
+	// 2. Picking Touchpad click shows the PS2 Select warning dialog offering auto-remap of R3 -> Select.
+	{
+		Ctx ctx;
+		ctx.backend.snap = MakeSnapshot(2, true);
+		ctx.backend.snap.continue_valid = true;
+		ctx.backend.snap.continue_game_id = "game-0";
+		ctx.backend.snap.pause_trigger_chosen = false;
+		SkipBoot(ctx);
+		Tap(ctx, &Input::cross);
+		CHECK(ctx.model.screen() == Screen::PauseTriggerSetup);
+		Tap(ctx, &Input::down); // focus Touchpad click
+		CHECK(ctx.model.FocusIdForTest() == "pause-setup:touchpad");
+		Tap(ctx, &Input::cross);
+		const UiView dlg = ctx.model.BuildView();
+		CHECK(dlg.dialog.open);
+		CHECK(dlg.dialog.body.find("Touchpad acts as PS2 Select") != std::string::npos);
+		CHECK(dlg.dialog.cancel_label == "Keep Touchpad only");
+		CHECK(dlg.dialog.confirm_label == "Map R3 to Select");
+
+		// Circle closes dialog and returns to chooser without posting anything.
+		Tap(ctx, &Input::circle);
+		CHECK(!ctx.model.BuildView().dialog.open);
+		CHECK(ctx.model.screen() == Screen::PauseTriggerSetup);
+		CHECK(!Posted(ctx, CommandType::SetSetting));
+
+		// Re-open dialog, choose "Map R3 to Select" (option 1) -> sets PauseTrigger, maps R3 to Select, launches.
+		Tap(ctx, &Input::cross);
+		Tap(ctx, &Input::right);
+		Tap(ctx, &Input::cross);
+		CHECK(ctx.backend.posted.size() == 3);
+		if (ctx.backend.posted.size() == 3)
+		{
+			CHECK(ctx.backend.posted[0].type == CommandType::SetSetting && ctx.backend.posted[0].id == "buttons.pause-trigger" &&
+				ctx.backend.posted[0].value == "touchpad");
+			CHECK(ctx.backend.posted[1].type == CommandType::SetSetting && ctx.backend.posted[1].id == "buttons.button-r3" &&
+				ctx.backend.posted[1].value == "Select");
+			CHECK(ctx.backend.posted[2].type == CommandType::LaunchGame && ctx.backend.posted[2].id == "game-0");
+		}
+	}
+
+	// 3. Picking Touchpad click -> "Keep Touchpad only" (option 0) sets PauseTrigger without remapping R3.
+	{
+		Ctx ctx;
+		ctx.backend.snap = MakeSnapshot(2, true);
+		ctx.backend.snap.continue_valid = true;
+		ctx.backend.snap.continue_game_id = "game-0";
+		ctx.backend.snap.pause_trigger_chosen = false;
+		SkipBoot(ctx);
+		Tap(ctx, &Input::cross);
+		Tap(ctx, &Input::down);
+		Tap(ctx, &Input::cross);
+		Tap(ctx, &Input::cross); // option 0: Keep Touchpad only
+		CHECK(ctx.backend.posted.size() == 2);
+		if (ctx.backend.posted.size() == 2)
+		{
+			CHECK(ctx.backend.posted[0].type == CommandType::SetSetting && ctx.backend.posted[0].id == "buttons.pause-trigger" &&
+				ctx.backend.posted[0].value == "touchpad");
+			CHECK(ctx.backend.posted[1].type == CommandType::LaunchGame);
+		}
+	}
+}
+
 void TestSettingsChoiceAndNestedBack()
 {
 	Ctx ctx;
@@ -743,6 +853,7 @@ int main()
 	TestMemoryCardsReturnToGameDetail();
 	TestTexturePacksUseStableIdsAndConfirmRemoval();
 	TestPauseReturnConfirmationDefaultsToCancel();
+	TestFirstRunPauseTriggerChooser();
 	TestAccessibilityCommandsUseContractPayload();
 	TestSettingsChoiceAndNestedBack();
 	if (g_failures)

@@ -16,6 +16,8 @@ constexpr double kRepeatInterval = 0.085;
 constexpr double kPauseTimeoutSeconds = 2.5;
 constexpr double kToastSeconds = 4.0;
 
+constexpr const char* kRowIds[PauseMenu::kRowCount] = {"resume", "save", "load", "disc", "return"};
+
 bool DirectionButton(const Input& in, int index)
 {
 	switch (index)
@@ -26,6 +28,12 @@ bool DirectionButton(const Input& in, int index)
 		case 3: return in.down;
 	}
 	return false;
+}
+
+bool VisibleVmChanged(const VmStatus& a, const VmStatus& b)
+{
+	return a.state != b.state || a.can_save != b.can_save || a.can_load != b.can_load ||
+	       a.occupied_slots != b.occupied_slots || a.disc_index != b.disc_index || a.disc_count != b.disc_count;
 }
 } // namespace
 
@@ -38,12 +46,72 @@ int PauseMenu::MoveClamped(int index, int delta, int count)
 	return std::max(0, std::min(count - 1, index + delta));
 }
 
+bool PauseMenu::SlotHasState(int slot) const
+{
+	if (slot < kMinSlot || slot > kMaxSlot)
+		return false;
+	if (m_vm.occupied_slots != 0)
+		return (m_vm.occupied_slots & (1u << static_cast<unsigned>(slot))) != 0;
+	return slot == kSlot && m_vm.can_load;
+}
+
+void PauseMenu::SyncTargetDisc()
+{
+	if (m_vm.disc_count < 2)
+	{
+		m_target_disc = 0;
+		return;
+	}
+	const int cur = (m_vm.disc_index >= 1 && m_vm.disc_index <= m_vm.disc_count) ? m_vm.disc_index : 1;
+	if (m_target_disc < 1 || m_target_disc > m_vm.disc_count || m_target_disc == cur)
+		m_target_disc = (cur % m_vm.disc_count) + 1;
+}
+
+void PauseMenu::StepSlot(int delta)
+{
+	int next = m_slot + delta;
+	if (next < kMinSlot)
+		next = kMaxSlot;
+	else if (next > kMaxSlot)
+		next = kMinSlot;
+	if (next != m_slot)
+	{
+		m_slot = next;
+		m_revision++;
+	}
+}
+
+void PauseMenu::StepDisc(int delta)
+{
+	if (m_vm.disc_count <= 2)
+		return;
+	const int cur = (m_vm.disc_index >= 1 && m_vm.disc_index <= m_vm.disc_count) ? m_vm.disc_index : 1;
+	SyncTargetDisc();
+	int next = m_target_disc;
+	for (int tries = 0; tries < m_vm.disc_count; tries++)
+	{
+		next += delta;
+		if (next < 1)
+			next = m_vm.disc_count;
+		else if (next > m_vm.disc_count)
+			next = 1;
+		if (next != cur)
+			break;
+	}
+	if (next != m_target_disc)
+	{
+		m_target_disc = next;
+		m_revision++;
+	}
+}
+
 void PauseMenu::Open(const std::string& title)
 {
 	if (m_open)
 		return;
 	m_open = true;
 	m_index = 0;
+	m_slot = std::max(kMinSlot, std::min(kMaxSlot, m_slot));
 	m_dialog_open = false;
 	m_dialog_focus = 0;
 	m_return_posted = false;
@@ -51,33 +119,59 @@ void PauseMenu::Open(const std::string& title)
 	m_unpaused_seconds = 0.0;
 	m_toast.clear();
 	m_toast_seconds = 0.0;
+	m_close_reason.clear();
 	m_title = title;
 	m_wait_release = true; // the press that opened the menu is not an action
 	m_previous_input = Input();
 	for (RepeatState& st : m_repeat)
 		st = RepeatState();
+	SyncTargetDisc();
 	m_revision++;
 }
 
-void PauseMenu::Close(bool resume)
+void PauseMenu::Close(bool resume, const char* reason)
 {
 	if (!m_open)
 		return;
-	if (resume && m_vm.state == VmState::Paused)
+	m_close_reason = reason ? reason : "close";
+	if (resume && (m_vm.state == VmState::Paused || m_pause_posted))
 		PostCommand(CommandType::ResumeVm);
 	m_open = false;
 	m_dialog_open = false;
+	m_pause_posted = false;
 	m_revision++;
 }
 
-void PauseMenu::PostCommand(CommandType type)
+void PauseMenu::Reset()
+{
+	m_open = false;
+	m_wait_release = false;
+	m_index = 0;
+	m_slot = kMinSlot;
+	m_target_disc = 0;
+	m_dialog_open = false;
+	m_dialog_focus = 0;
+	m_title.clear();
+	m_close_reason.clear();
+	m_vm = VmStatus();
+	m_previous_input = Input();
+	for (RepeatState& st : m_repeat)
+		st = RepeatState();
+	m_toast.clear();
+	m_toast_seconds = 0.0;
+	m_unpaused_seconds = 0.0;
+	m_return_posted = false;
+	m_pause_posted = false;
+	m_revision++;
+}
+
+void PauseMenu::PostCommand(CommandType type, int number)
 {
 	if (!m_backend)
 		return;
 	Command command;
 	command.type = type;
-	if (type == CommandType::SaveState || type == CommandType::LoadState)
-		command.number = kSlot;
+	command.number = number;
 	m_backend->Post(command);
 }
 
@@ -94,6 +188,8 @@ PauseMenu::LogicalInput PauseMenu::EvaluateInput(const Input& input, double dt)
 	out.cross = input.cross && !m_previous_input.cross;
 	out.circle = input.circle && !m_previous_input.circle;
 	out.options = input.options && !m_previous_input.options;
+	out.l1 = input.l1 && !m_previous_input.l1;
+	out.r1 = input.r1 && !m_previous_input.r1;
 
 	for (int i = 0; i < 4; i++)
 	{
@@ -134,23 +230,31 @@ PauseMenu::LogicalInput PauseMenu::EvaluateInput(const Input& input, double dt)
 
 void PauseMenu::ActivateRow()
 {
-	static const char* const ids[] = {"resume", "save", "load", "return"};
-	const std::string id = ids[std::max(0, std::min(3, m_index))];
+	const std::string id = kRowIds[std::max(0, std::min(kRowCount - 1, m_index))];
 	if (id == "resume")
 	{
-		Close(true);
+		Close(true, "resume");
 		return;
 	}
 	if (id == "save")
 	{
 		if (m_vm.can_save)
-			PostCommand(CommandType::SaveState);
+			PostCommand(CommandType::SaveState, m_slot);
 		return;
 	}
 	if (id == "load")
 	{
-		if (m_vm.can_load)
-			PostCommand(CommandType::LoadState);
+		if (SlotHasState(m_slot))
+			PostCommand(CommandType::LoadState, m_slot);
+		return;
+	}
+	if (id == "disc")
+	{
+		if (m_vm.disc_count >= 2)
+		{
+			SyncTargetDisc();
+			PostCommand(CommandType::ChangeDisc, m_target_disc);
+		}
 		return;
 	}
 	// return: destructive, the dialog opens on cancel.
@@ -169,16 +273,22 @@ void PauseMenu::ExecuteDialog()
 	}
 	PostCommand(CommandType::ReturnToLibrary);
 	m_return_posted = true;
+	m_close_reason = "return to library";
 	// The vm stops and the process re-executes into the library. The overlay closes at once:
 	// the state leaving Paused/Running would close it anyway a beat later.
 	m_dialog_open = false;
 	m_open = false;
+	m_pause_posted = false;
 	m_revision++;
 }
 
 void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events, const Input& input, double dt)
 {
+	const bool vm_changed = m_open && VisibleVmChanged(m_vm, vm);
 	m_vm = vm;
+	SyncTargetDisc();
+	if (vm_changed)
+		m_revision++;
 
 	if (m_toast_seconds > 0.0)
 	{
@@ -212,13 +322,16 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 				else
 				{
 					// A state was loaded: play continues from it. A failure keeps the overlay open.
-					Close(true);
+					Close(true, "load state");
 				}
+				break;
+			case CommandType::ChangeDisc:
+				SetToast(message);
 				break;
 			case CommandType::PauseVm:
 				// The vm stays interactive; holding its input captured is the dangerous failure mode.
 				if (failed)
-					Close(false);
+					Close(false, "pause failed");
 				break;
 			case CommandType::ResumeVm:
 				break;
@@ -239,8 +352,10 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 		(vm.state == VmState::Idle || vm.state == VmState::Unavailable || vm.state == VmState::Failed ||
 			vm.state == VmState::Stopping))
 	{
+		m_close_reason = "vm stopped";
 		m_open = false;
 		m_dialog_open = false;
+		m_pause_posted = false;
 		m_revision++;
 		m_previous_input = input;
 		return;
@@ -260,7 +375,7 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 		m_unpaused_seconds += dt;
 		if (m_unpaused_seconds >= kPauseTimeoutSeconds)
 		{
-			Close(false);
+			Close(false, "pause timeout");
 			m_previous_input = input;
 			return;
 		}
@@ -273,7 +388,7 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 	if (m_wait_release)
 	{
 		const bool any = input.cross || input.circle || input.options || input.up || input.down || input.left ||
-			input.right || input.square || input.triangle;
+			input.right || input.square || input.triangle || input.l1 || input.r1 || input.l2 || input.r2;
 		m_previous_input = input;
 		if (any)
 		{
@@ -305,7 +420,7 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 	{
 		if (in.up)
 		{
-			const int moved = MoveClamped(m_index, -1, 4);
+			const int moved = MoveClamped(m_index, -1, kRowCount);
 			if (moved != m_index)
 			{
 				m_index = moved;
@@ -314,15 +429,32 @@ void PauseMenu::Tick(const VmStatus& vm, const std::vector<CommandEvent>& events
 		}
 		if (in.down)
 		{
-			const int moved = MoveClamped(m_index, 1, 4);
+			const int moved = MoveClamped(m_index, 1, kRowCount);
 			if (moved != m_index)
 			{
 				m_index = moved;
 				m_revision++;
 			}
 		}
-		if (in.circle || in.options)
-			Close(true);
+		const std::string focused_id = kRowIds[std::max(0, std::min(kRowCount - 1, m_index))];
+		if (focused_id == "save" || focused_id == "load")
+		{
+			if (in.left || in.l1)
+				StepSlot(-1);
+			else if (in.right || in.r1)
+				StepSlot(1);
+		}
+		else if (focused_id == "disc" && m_vm.disc_count > 2)
+		{
+			if (in.left || in.l1)
+				StepDisc(-1);
+			else if (in.right || in.r1)
+				StepDisc(1);
+		}
+		if (in.circle)
+			Close(true, "circle");
+		else if (in.options)
+			Close(true, "combo");
 		else if (in.cross)
 			ActivateRow();
 	}
@@ -341,32 +473,52 @@ PauseMenuView PauseMenu::BuildView() const
 	view.title = m_title;
 	view.subtitle = m_vm.state == VmState::Paused ? "Paused" : "Pausing";
 
-	struct RowSpec
-	{
-		const char* id;
-		const char* label;
-		bool disabled;
-		const char* detail_disabled;
-		const char* detail;
-		bool destructive;
+	const bool slot_has_state = SlotHasState(m_slot);
+	const auto slot_detail = [&](bool focused) {
+		std::string s = "Slot " + std::to_string(m_slot) + (slot_has_state ? " - Saved" : " - Empty");
+		return focused ? ("< " + s + " >") : s;
 	};
-	const RowSpec specs[] = {
-		{"resume", "Resume", false, "", "Back to the game", false},
-		{"save", "Save state", !m_vm.can_save, "Unavailable right now", "Slot 1", false},
-		{"load", "Load state", !m_vm.can_load, "No state is available", "Slot 1", false},
-		{"return", "Return to library", false, "", "Unsaved progress is lost", true},
-	};
-	for (int i = 0; i < 4; i++)
+
+	const int cur_disc = (m_vm.disc_index >= 1 && m_vm.disc_index <= m_vm.disc_count) ? m_vm.disc_index : 1;
+	const int next_disc = (m_target_disc >= 1 && m_target_disc <= m_vm.disc_count && m_target_disc != cur_disc)
+		? m_target_disc
+		: (m_vm.disc_count >= 2 ? (cur_disc % m_vm.disc_count) + 1 : 0);
+
+	std::string disc_detail;
+	if (m_vm.disc_count < 2)
 	{
-		PauseMenuRow row;
-		row.id = specs[i].id;
-		row.label = specs[i].label;
-		row.detail = specs[i].disabled ? specs[i].detail_disabled : specs[i].detail;
-		row.focused = i == m_index && !m_dialog_open;
-		row.disabled = specs[i].disabled;
-		row.destructive = specs[i].destructive;
-		view.rows.push_back(std::move(row));
+		disc_detail = "Single-disc game";
 	}
+	else if (m_vm.disc_count == 2)
+	{
+		disc_detail = "Disc " + std::to_string(cur_disc) + " of 2 - Switch to Disc " + std::to_string(next_disc);
+	}
+	else
+	{
+		const bool disc_focused = (m_index == 3 && !m_dialog_open);
+		std::string body = "Disc " + std::to_string(cur_disc) + " of " + std::to_string(m_vm.disc_count) +
+			" - Switch to Disc " + std::to_string(next_disc);
+		disc_detail = disc_focused ? ("< " + body + " >") : body;
+	}
+
+	const bool save_focused = (m_index == 1 && !m_dialog_open);
+	const bool load_focused = (m_index == 2 && !m_dialog_open);
+	const bool disc_focused = (m_index == 3 && !m_dialog_open);
+
+	if (save_focused || load_focused)
+		view.picker_hint = "< > Slot";
+	else if (disc_focused && m_vm.disc_count > 2)
+		view.picker_hint = "< > Disc";
+
+	const PauseMenuRow rows[kRowCount] = {
+		{"resume", "Resume", "Back to the game", m_index == 0 && !m_dialog_open, false, false},
+		{"save", "Save state", m_vm.can_save ? slot_detail(save_focused) : "Unavailable right now", save_focused,
+			!m_vm.can_save, false},
+		{"load", "Load state", slot_detail(load_focused), load_focused, !slot_has_state, false},
+		{"disc", "Change disc", disc_detail, disc_focused, m_vm.disc_count < 2, false},
+		{"return", "Return to library", "Unsaved progress is lost", m_index == 4 && !m_dialog_open, false, true},
+	};
+	view.rows.assign(rows, rows + kRowCount);
 
 	view.dialog_open = m_dialog_open;
 	if (m_dialog_open)

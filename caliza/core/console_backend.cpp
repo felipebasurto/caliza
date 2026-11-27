@@ -161,7 +161,7 @@ bool DecodePatchMemberId(const std::string& encoded, PatchMemberRef* out)
 	return true;
 }
 
-settings::DocumentState CanonicalDocument(const settings::DocumentState& input)
+settings::DocumentState CanonicalDocument(const settings::DocumentState& input, bool* pause_migrated = nullptr)
 {
 	settings::DocumentState out;
 	for (const auto& kv : input.values)
@@ -175,6 +175,9 @@ settings::DocumentState CanonicalDocument(const settings::DocumentState& input)
 	}
 	out.patches = input.patches;
 	out.cheats = input.cheats;
+	const bool migrated = settings::MigrateLegacyPauseCombo(&out);
+	if (pause_migrated)
+		*pause_migrated = migrated;
 	return out;
 }
 
@@ -202,6 +205,7 @@ public:
 	{
 		if (!m_storage)
 			m_storage = CreateBackend(m_options.storage);
+		MigrateLegacyPauseBindingOnDisk();
 		RefreshProjection(true);
 		SyncFolderProjection();
 		m_worker = std::thread([this] { WorkerMain(); });
@@ -283,6 +287,7 @@ public:
 		out.accessibility = overlay.accessibility;
 		out.continue_game_id = overlay.continue_game_id;
 		out.continue_valid = !overlay.continue_game_id.empty();
+		out.pause_trigger_chosen = overlay.pause_trigger_chosen;
 		out.selected_game_id = overlay.selected_game_id;
 		out.operations = overlay.operations;
 		out.texture_packs = overlay.texture_packs;
@@ -332,6 +337,7 @@ private:
 		AccessibilityState accessibility;
 		std::string continue_game_id;
 		std::string selected_game_id;
+		bool pause_trigger_chosen = false;
 		std::string projection_problem;
 		std::string web_panel_url;
 		std::vector<OperationStatus> operations;
@@ -598,6 +604,36 @@ private:
 			default:
 				return Unsupported("this command");
 		}
+	}
+
+	void MigrateLegacyPauseBindingOnDisk()
+	{
+		if (!m_options.hooks.edit_settings_file || m_options.global_settings_path.empty())
+			return;
+		std::string text, read_error;
+		const bool ok = m_options.hooks.read_text_file
+			? m_options.hooks.read_text_file(m_options.global_settings_path, &text, &read_error)
+			: storage::fs::ReadFile(m_options.global_settings_path, &text, &read_error);
+		if (!ok || text.empty())
+			return;
+		const settings::DocumentState raw_doc = settings::ParseSettingsDocument(text);
+		bool migrated = false;
+		const settings::DocumentState doc = CanonicalDocument(raw_doc, &migrated);
+		if (!migrated)
+			return;
+		std::vector<settings::Mutation> mutations;
+		if (settings::FindValue(raw_doc, "Caliza/PauseButton1"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseButton1", ""});
+		if (settings::FindValue(raw_doc, "Caliza/PauseButton2"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseButton2", ""});
+		if (const std::string* trigger = settings::FindValue(doc, "Caliza/PauseTrigger"))
+			mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseTrigger", *trigger});
+		else if (settings::FindValue(raw_doc, "Caliza/PauseTrigger"))
+			mutations.push_back({settings::Mutation::Kind::Unset, "Caliza/PauseTrigger", ""});
+		if (mutations.empty())
+			return;
+		std::string summary, write_error;
+		m_options.hooks.edit_settings_file(m_options.global_settings_path, mutations, &summary, &write_error);
 	}
 
 	bool ReadSettingsDocument(const std::string& path, settings::DocumentState* out, std::string* error)
@@ -1490,6 +1526,7 @@ private:
 		settings::DocumentState global_doc;
 		std::string error;
 		ReadSettingsDocument(m_options.global_settings_path, &global_doc, &error);
+		out.pause_trigger_chosen = settings::HasExplicitPauseTrigger(global_doc);
 
 		// The shared schema projection is the native/web boundary for visible rows. The console surface merges the
 		// global layer with game-scoped rows so the registry is complete in one snapshot; writing a game-only row still

@@ -480,6 +480,7 @@ int Depth(Screen screen)
 		case Screen::FirstRun: return 1;
 		case Screen::GameDetail:
 		case Screen::TexturePacks:
+		case Screen::PauseTriggerSetup:
 		case Screen::FolderPicker: return 3;
 		case Screen::PauseOverlay: return 4;
 		default: return 2;
@@ -662,6 +663,7 @@ public:
 				case Screen::Library: PaintLibrary(); break;
 				case Screen::GameDetail: PaintGameDetail(); break;
 				case Screen::TexturePacks: PaintTexturePacks(); break;
+				case Screen::PauseTriggerSetup: PaintPauseTriggerSetup(); break;
 				case Screen::MemoryCards: PaintMemoryCards(); break;
 				case Screen::Settings: PaintSettings(); break;
 				case Screen::Controls: PaintControls(); break;
@@ -1955,6 +1957,42 @@ private:
 		Text(fe::icon::Cross, cx + s * 0.30f, cy + s * 0.15f, gp, kCrossBlue, 0.2f, 1);
 		if (!m_view.subtitle.empty() && m_view.subtitle.find("Press") != std::string::npos)
 			Text(m_view.subtitle, cx, cy + s * 0.75f, m_l.body, kIce, 0.25f, 1, m_l.right - m_l.safe_x - list_w);
+	}
+
+	void PaintPauseTriggerSetup()
+	{
+		const float list_w = (m_l.right - m_l.safe_x) * 0.50f;
+		List(m_view.items, m_l.safe_x - S(10.0f), ContentTop(), list_w, T(78.0f), S(6.0f), ContentBottom(), kDetailNever);
+		const UiEntry* focused = Focused(m_view.items);
+		if (!focused)
+			return;
+		const float px = m_l.safe_x + list_w + S(52.0f);
+		const float pw = m_l.right - px;
+		const float inner_w = pw - S(80.0f);
+		const std::vector<std::string> lines = Wrap(focused->detail, m_l.small * 1.05f, inner_w, 5);
+		const float warn_h = focused->destructive ? (m_l.small * 1.4f + S(28.0f)) : 0.0f;
+		const float ph = std::min(ContentBottom() - ContentTop(),
+			S(60.0f) + m_l.body * 1.6f + static_cast<float>(lines.size()) * (m_l.small * 1.45f) + warn_h + S(48.0f));
+		Panel(px, ContentTop(), pw, ph);
+		float y = ContentTop() + S(54.0f);
+		Text(focused->value.empty() ? "Preset" : focused->value, px + S(40.0f), y, m_l.small,
+			focused->destructive ? kAmber : kIce, 0.0f, 0, inner_w);
+		y += m_l.body * 1.55f;
+		Text(focused->label, px + S(40.0f), y, m_l.body * 1.25f, kText, -0.1f, 0, inner_w);
+		y += m_l.small * 1.9f;
+		for (const std::string& line : lines)
+		{
+			Text(line, px + S(40.0f), y, m_l.small * 1.05f, focused->destructive ? kAmber : kTextSoft, 0.0f, 0, inner_w);
+			y += m_l.small * 1.45f;
+		}
+		if (focused->destructive)
+		{
+			y += S(10.0f);
+			const std::string note = focused->id == "touchpad"
+				? "Select can be auto-mapped to R3 on the next step."
+				: "Avoid in games that require holding Start.";
+			Text(note, px + S(40.0f), y, m_l.small, kTextDim, 0.0f, 0, inner_w);
+		}
 	}
 
 	void PaintAccessibility()

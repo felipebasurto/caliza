@@ -18,6 +18,7 @@ struct FakeBackendOptions
 	std::string legacy_data_root = dataroot::LegacyDataRoot();
 	bool install_default_layout = true;
 	bool bios_present = true;
+	bool pause_trigger_chosen = true;
 	uint64_t initial_time_unix = 1700000000;
 	// Zero is as fast as the worker can cooperatively scan. Tests can add microseconds to make cancellation
 	// and disconnect windows easy to reach without sleeping in the caller thread.

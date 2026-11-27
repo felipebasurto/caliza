@@ -10,6 +10,17 @@
 //   Caliza/InvertLeft, InvertRight = 0 no, 1 up-down, 2 left-right, 3 both: the PS2 stick's axes (after the swap).
 //   Caliza/LeftStickDpad = 0 no, 1 the PS2's left stick also presses the D-pad, 2 it presses only the D-pad (the stick
 //     itself stays in the middle).
+//   Caliza/PauseTrigger = preset to open or close the in-game pause menu (all avoid GoldHEN's long-press Share /
+//     double-press PS and PS4 system Share/PS):
+//       l3_r3 (default): L3 + R3 on release only if no other button was pressed during the hold (keeps L3+R3+D-pad
+//         save/load/disc shortcuts and Touchpad/Options free).
+//       touchpad: single Touchpad click (intercepted; never leaks PS2 Select).
+//       l3_r3_l1: L3 + R3 + L1.
+//       touchpad_hold: hold Touchpad 0.5 s to pause; short tap sends PS2 Select on release.
+//       l1_r1_touchpad: L1 + R1 + Touchpad click (keeps single Touchpad click as PS2 Select).
+//       options_hold: hold Options 0.5 s to pause; short tap sends PS2 Start on release.
+//     Legacy Caliza/PauseButton1/2 migrate automatically: Share/Create clears to "not chosen" (runtime falls back to
+//     l3_r3), and other legacy button pairs map to the closest preset.
 //   Caliza/SaveButton1, SaveButton2, LoadButton1, LoadButton2 = the two buttons held together to save or load the state
 //     (slot 1): L3R3 (both stick clicks) Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 Options Touchpad (its click)
 //     TouchLeft TouchRight (a finger on the touchpad's left or right third) Up Down Left Right, or None. Unset: L3R3 + Up
@@ -207,6 +218,107 @@ inline bool ParseComboButton(std::string v, ComboButton& out)
 	return false;
 }
 
+enum PauseTrigger : uint8_t
+{
+	PT_L3_R3,          // L3 + R3 on release only if no other button pressed during hold (default)
+	PT_TOUCHPAD,       // Single Touchpad click (intercepted; never leaks PS2 Select)
+	PT_L3_R3_L1,       // L3 + R3 + L1
+	PT_TOUCHPAD_HOLD,  // Hold Touchpad 0.5 s; short tap pulses PS2 Select on release
+	PT_L1_R1_TOUCHPAD, // L1 + R1 + Touchpad click
+	PT_OPTIONS_HOLD,   // Hold Options 0.5 s; short tap pulses PS2 Start on release
+	PT_COUNT,
+};
+
+constexpr PauseTrigger kDefaultPauseTrigger = PT_L3_R3;
+constexpr long long kPauseHoldThresholdMs = 500;
+constexpr long long kPauseTapPulseMs = 80;
+
+inline const char* PauseTriggerName(PauseTrigger t)
+{
+	static const char* const k[PT_COUNT] = {
+		"l3_r3", "touchpad", "l3_r3_l1", "touchpad_hold", "l1_r1_touchpad", "options_hold"};
+	return (t >= 0 && t < PT_COUNT) ? k[t] : k[kDefaultPauseTrigger];
+}
+
+inline const char* PauseTriggerLabel(PauseTrigger t)
+{
+	static const char* const k[PT_COUNT] = {
+		"L3 + R3", "Touchpad click", "L3 + R3 + L1", "Hold Touchpad (0.5 s)", "L1 + R1 + Touchpad", "Hold Options (0.5 s)"};
+	return (t >= 0 && t < PT_COUNT) ? k[t] : k[kDefaultPauseTrigger];
+}
+
+inline bool ParsePauseTrigger(std::string v, PauseTrigger& out)
+{
+	while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '\r'))
+		v.pop_back();
+	size_t start = 0;
+	while (start < v.size() && (v[start] == ' ' || v[start] == '\t'))
+		start++;
+	v.erase(0, start);
+	for (int i = 0; i < PT_COUNT; i++)
+		if (SameText(v, PauseTriggerName(static_cast<PauseTrigger>(i))))
+		{
+			out = static_cast<PauseTrigger>(i);
+			return true;
+		}
+	return false;
+}
+
+// Legacy Share/Create pause trigger names that clash with GoldHEN's cheat menu (long-press Share)
+// and PS4 system Share interception.
+inline bool IsLegacyPauseTrigger(std::string v)
+{
+	while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '\r'))
+		v.pop_back();
+	size_t start = 0;
+	while (start < v.size() && (v[start] == ' ' || v[start] == '\t'))
+		start++;
+	v.erase(0, start);
+	return SameText(v, "Share") || SameText(v, "Create") || SameText(v, "ShareHold") || SameText(v, "CreateHold") ||
+	       SameText(v, "ShareLong") || SameText(v, "CreateLong");
+}
+
+// Maps legacy Caliza/PauseButton1 + PauseButton2 values to the closest PauseTrigger preset.
+// Returns false if either button is legacy Share/Create (caller treats it as "not chosen" so the
+// first-run chooser appears, while runtime falls back to kDefaultPauseTrigger) or if both are empty.
+inline bool MapLegacyPauseButtonsToPreset(const std::string& button1, const std::string& button2, PauseTrigger& out,
+	bool* was_legacy_share = nullptr)
+{
+	if (was_legacy_share)
+		*was_legacy_share = false;
+	if (IsLegacyPauseTrigger(button1) || IsLegacyPauseTrigger(button2))
+	{
+		if (was_legacy_share)
+			*was_legacy_share = true;
+		return false;
+	}
+	ComboButton b1 = CB_NONE, b2 = CB_NONE;
+	const bool ok1 = ParseComboButton(button1, b1);
+	const bool ok2 = ParseComboButton(button2, b2);
+	if (!ok1 && !ok2)
+		return false;
+	auto has = [&](ComboButton b) { return b1 == b || b2 == b; };
+	auto only = [&](ComboButton b) { return (b1 == b && (b2 == CB_NONE || b2 == b)) || (b2 == b && b1 == CB_NONE); };
+
+	if (only(CB_TOUCHPAD))
+		out = PT_TOUCHPAD;
+	else if (has(CB_L3R3) && has(CB_L1))
+		out = PT_L3_R3_L1;
+	else if (only(CB_L3R3) || (has(CB_L3) && has(CB_R3)))
+		out = PT_L3_R3;
+	else if (has(CB_TOUCHPAD) && (has(CB_L1) || has(CB_R1)))
+		out = PT_L1_R1_TOUCHPAD;
+	else if (has(CB_OPTIONS) && !has(CB_TOUCHPAD) && !has(CB_L3R3))
+		out = PT_OPTIONS_HOLD;
+	else if (has(CB_L3R3))
+		out = PT_L3_R3_L1;
+	else if (has(CB_TOUCHPAD))
+		out = PT_TOUCHPAD_HOLD;
+	else
+		out = kDefaultPauseTrigger;
+	return true;
+}
+
 // The ScePad bits a combo button is (0 for the touchpad's zones, which are a touch, not a button; L2 and R2 are also
 // held by their triggers).
 inline uint32_t ComboBits(ComboButton b)
@@ -251,6 +363,10 @@ struct Config
 	uint8_t deadzone_right = 0;
 	uint8_t invert_left = 0;  // bit 0 up-down, bit 1 left-right
 	uint8_t invert_right = 0;
+	// In-game pause menu trigger preset (Caliza/PauseTrigger): defaults to L3 + R3 on release
+	// (only if no other button was pressed during the hold, keeping L3+R3+D-pad shortcuts free).
+	// All presets avoid GoldHEN's long-press Share / double-press PS and PS4 system Share/PS.
+	PauseTrigger pause_trigger = kDefaultPauseTrigger;
 	// vk-285-117: the save and load state combos (two buttons each) and how long they're held first.
 	ComboButton save[2] = {CB_L3R3, CB_UP};
 	ComboButton load[2] = {CB_L3R3, CB_DOWN};
@@ -277,6 +393,7 @@ struct Config
 				return false;
 		return swap_sticks == o.swap_sticks && left_dpad == o.left_dpad && deadzone_left == o.deadzone_left &&
 		       deadzone_right == o.deadzone_right && invert_left == o.invert_left && invert_right == o.invert_right &&
+		       pause_trigger == o.pause_trigger &&
 		       save[0] == o.save[0] && save[1] == o.save[1] && load[0] == o.load[0] && load[1] == o.load[1] && hold_ms == o.hold_ms &&
 		       fast[0] == o.fast[0] && fast[1] == o.fast[1] && disc[0] == o.disc[0] && disc[1] == o.disc[1];
 	}
@@ -314,8 +431,10 @@ inline float ParsePressure(const std::string& v)
 // The settings, read with `get(key, value)` (the key within [Caliza]; true when it is set). An unknown value leaves that
 // button or stick option as it is by default.
 template <typename Get>
-inline Config FromSettings(Get get)
+inline Config FromSettings(Get get, bool* pause_migrated = nullptr)
 {
+	if (pause_migrated)
+		*pause_migrated = false;
 	Config c;
 	std::string v;
 	for (int s = 0; s < S_COUNT; s++)
@@ -346,6 +465,40 @@ inline Config FromSettings(Get get)
 	v.clear();
 	if (get("InvertRight", v))
 		c.invert_right = SmallInt(v, 3);
+	// Pause menu preset: prefer Caliza/PauseTrigger; migrate legacy Share/Create or PauseButton1/2 cleanly.
+	{
+		std::string pt;
+		PauseTrigger parsed = kDefaultPauseTrigger;
+		if (get("PauseTrigger", pt))
+		{
+			if (ParsePauseTrigger(pt, parsed))
+			{
+				c.pause_trigger = parsed;
+			}
+			else if (IsLegacyPauseTrigger(pt))
+			{
+				c.pause_trigger = kDefaultPauseTrigger;
+				if (pause_migrated)
+					*pause_migrated = true;
+			}
+		}
+		else
+		{
+			std::string p1, p2;
+			const bool has_p1 = get("PauseButton1", p1);
+			const bool has_p2 = get("PauseButton2", p2);
+			if (has_p1 || has_p2)
+			{
+				bool was_legacy_share = false;
+				if (MapLegacyPauseButtonsToPreset(p1, p2, parsed, &was_legacy_share))
+					c.pause_trigger = parsed;
+				else
+					c.pause_trigger = kDefaultPauseTrigger;
+				if (pause_migrated)
+					*pause_migrated = true;
+			}
+		}
+	}
 	// vk-285-117: the save and load combos; a value that isn't a button leaves that one at its default.
 	static const char* const combo_keys[8] = {"SaveButton1", "SaveButton2", "LoadButton1", "LoadButton2", "FastButton1", "FastButton2",
 		"DiscButton1", "DiscButton2"};
@@ -389,6 +542,29 @@ inline bool ComboHeld(ComboButton b, const ComboState& s)
 		case CB_TOUCH_RIGHT: return s.touch == 2;
 		default: return (s.buttons & ComboBits(b)) != 0;
 	}
+}
+
+inline uint32_t ComboMask(const ComboButton (&b)[2])
+{
+	uint32_t mask = 0;
+	for (ComboButton x : b)
+		if (x != CB_NONE && x < CB_COUNT)
+			mask |= ComboBits(x);
+	return mask;
+}
+
+inline bool ComboActive(const ComboButton (&b)[2], const ComboState& s)
+{
+	int n = 0;
+	bool all = true;
+	for (ComboButton x : b)
+	{
+		if (x == CB_NONE || x >= CB_COUNT)
+			continue;
+		n++;
+		all = all && ComboHeld(x, s);
+	}
+	return n > 0 && all;
 }
 
 // One combo (save, or load): it fires once its buttons have been held together for hold_ms, and again only after one of
@@ -457,6 +633,183 @@ struct ComboWatch
 		held_back &= s.buttons | (s.l2 != 0 ? 0x100u : 0u) | (s.r2 != 0 ? 0x200u : 0u);
 		block |= held_back;
 		return fired;
+	}
+};
+
+struct PauseTriggerResult
+{
+	bool fired = false;
+	uint32_t suppress_bits = 0; // bits to strip from game input while holding or on trigger
+	uint32_t inject_bits = 0;   // bits to pulse into game input on short-tap release (Select / Start)
+};
+
+// Evaluates the selected PauseTrigger preset across frames:
+// - PT_L3_R3: fires on release of L3+R3 only if no other button/trigger/touch was pressed during the hold,
+//   so existing L3+R3+D-pad quick save/load/disc shortcuts keep working untouched.
+// - PT_TOUCHPAD: fires immediately on Touchpad click and suppresses Select while held.
+// - PT_L3_R3_L1: fires immediately on L3+R3+L1 and suppresses L1 until released.
+// - PT_TOUCHPAD_HOLD: suppresses Touchpad while held; >= 500 ms opens pause, < 500 ms pulses Select on release.
+// - PT_L1_R1_TOUCHPAD: fires on L1+R1+Touchpad click and suppresses Select until released; single Touchpad stays Select.
+// - PT_OPTIONS_HOLD: suppresses Options while held; >= 500 ms opens pause, < 500 ms pulses Start on release.
+struct PauseTriggerWatch
+{
+	PauseTrigger last_trigger = kDefaultPauseTrigger;
+	bool initialized = false;
+	bool prev_active = false;
+	bool l3r3_armed = false;
+	bool l3r3_dirty = false;
+	bool holding = false;
+	bool hold_fired = false;
+	long long hold_since_ms = 0;
+	uint32_t held_back = 0;
+	uint32_t pulse_bits = 0;
+	long long pulse_until_ms = 0;
+
+	void Reset()
+	{
+		prev_active = false;
+		l3r3_armed = false;
+		l3r3_dirty = false;
+		holding = false;
+		hold_fired = false;
+		hold_since_ms = 0;
+		held_back = 0;
+		pulse_bits = 0;
+		pulse_until_ms = 0;
+	}
+
+	PauseTriggerResult Update(PauseTrigger trigger, const ComboState& s, long long now_ms, bool menu_open)
+	{
+		if (!initialized || trigger != last_trigger)
+		{
+			Reset();
+			last_trigger = trigger;
+			initialized = true;
+		}
+
+		PauseTriggerResult res;
+		switch (trigger)
+		{
+			case PT_L3_R3:
+			{
+				constexpr uint32_t kL3R3 = 0x00000006u;
+				const bool both_down = (s.buttons & kL3R3) == kL3R3;
+				const bool any_down = (s.buttons & kL3R3) != 0;
+				const bool other_down = (s.buttons & ~kL3R3) != 0 || s.l2 >= 200u || s.r2 >= 200u || s.touch != 0;
+				if (both_down)
+				{
+					if (!l3r3_armed)
+					{
+						l3r3_armed = true;
+						l3r3_dirty = other_down;
+					}
+					else if (other_down)
+					{
+						l3r3_dirty = true;
+					}
+				}
+				else if (any_down)
+				{
+					if (l3r3_armed && other_down)
+						l3r3_dirty = true;
+				}
+				else if (l3r3_armed)
+				{
+					if (!l3r3_dirty)
+						res.fired = true;
+					l3r3_armed = false;
+					l3r3_dirty = false;
+				}
+				break;
+			}
+			case PT_TOUCHPAD:
+			{
+				constexpr uint32_t kTp = 0x40100000u;
+				const bool down = (s.buttons & kTp) != 0;
+				if (down)
+					res.suppress_bits |= kTp;
+				if (down && !prev_active)
+					res.fired = true;
+				prev_active = down;
+				break;
+			}
+			case PT_L3_R3_L1:
+			{
+				constexpr uint32_t kCombo = 0x00000406u; // L3 | R3 | L1
+				const bool down = (s.buttons & kCombo) == kCombo;
+				if (down && !prev_active)
+				{
+					res.fired = true;
+					held_back |= 0x00000400u;
+				}
+				prev_active = down;
+				held_back &= s.buttons;
+				res.suppress_bits |= held_back;
+				break;
+			}
+			case PT_L1_R1_TOUCHPAD:
+			{
+				constexpr uint32_t kTp = 0x40100000u;
+				const bool down = (s.buttons & 0x00000C00u) == 0x00000C00u && (s.buttons & kTp) != 0;
+				if (down && !prev_active)
+				{
+					res.fired = true;
+					held_back |= kTp;
+				}
+				prev_active = down;
+				held_back &= s.buttons;
+				res.suppress_bits |= held_back;
+				break;
+			}
+			case PT_TOUCHPAD_HOLD:
+			case PT_OPTIONS_HOLD:
+			{
+				const uint32_t read_mask = (trigger == PT_TOUCHPAD_HOLD) ? 0x40100000u : 0x00000008u;
+				const uint32_t pulse_mask = (trigger == PT_TOUCHPAD_HOLD) ? 0x00100000u : 0x00000008u;
+				const bool down = (s.buttons & read_mask) != 0;
+				if (down)
+				{
+					res.suppress_bits |= read_mask;
+					if (!holding)
+					{
+						holding = true;
+						hold_since_ms = now_ms;
+						hold_fired = false;
+					}
+					else if (!hold_fired && (now_ms - hold_since_ms) >= kPauseHoldThresholdMs)
+					{
+						hold_fired = true;
+						res.fired = true;
+						pulse_bits = 0;
+						pulse_until_ms = 0;
+					}
+				}
+				else if (holding)
+				{
+					if (!hold_fired && !menu_open)
+					{
+						pulse_bits = pulse_mask;
+						pulse_until_ms = now_ms + kPauseTapPulseMs;
+					}
+					holding = false;
+					hold_fired = false;
+				}
+				if (pulse_bits != 0)
+				{
+					if (!menu_open && now_ms < pulse_until_ms)
+						res.inject_bits |= pulse_bits;
+					else
+					{
+						pulse_bits = 0;
+						pulse_until_ms = 0;
+					}
+				}
+				break;
+			}
+			default:
+				break;
+		}
+		return res;
 	}
 };
 
@@ -625,9 +978,11 @@ inline std::string Describe(const Config& c)
 	// vk-285-117: the save and load combos, when they aren't the default.
 	const Config def;
 	std::string states;
+	if (c.pause_trigger != def.pause_trigger)
+		states = std::string("pause menu on ") + PauseTriggerLabel(c.pause_trigger);
 	if (c.save[0] != def.save[0] || c.save[1] != def.save[1] || c.load[0] != def.load[0] || c.load[1] != def.load[1] ||
 		c.hold_ms != def.hold_ms)
-		states = "save state on " + DescribeCombo(c.save, c.hold_ms) + ", load on " + DescribeCombo(c.load, c.hold_ms);
+		states += (states.empty() ? "" : ", ") + std::string("save state on ") + DescribeCombo(c.save, c.hold_ms) + ", load on " + DescribeCombo(c.load, c.hold_ms);
 	if (c.fast[0] != CB_NONE || c.fast[1] != CB_NONE)
 		states += (states.empty() ? "" : ", ") + std::string("fast forward on ") + DescribeCombo(c.fast, c.hold_ms);
 	std::string out = buttons;

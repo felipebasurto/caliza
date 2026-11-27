@@ -162,7 +162,20 @@ std::vector<SettingCategory> MakeDefaultSettings()
 		MakeSetting("storage.scan_subfolders", "Scan subfolders", "true", "Scan folders recursively", SettingKind::Toggle),
 		MakeSetting("storage.show_hidden", "Show hidden games", "false", "Show games hidden from the library", SettingKind::Toggle),
 	};
-	return {system, emulation, video, storage};
+	SettingCategory buttons;
+	buttons.id = "buttons";
+	buttons.label = "Buttons";
+	buttons.items = {
+		MakeSetting("buttons.pause-trigger", "Pause menu trigger", "l3_r3",
+			"Preset to open or close the in-game pause menu. Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it.",
+			SettingKind::Choice,
+			{{"l3_r3", "L3 + R3"}, {"touchpad", "Touchpad click"}, {"l3_r3_l1", "L3 + R3 + L1"},
+				{"touchpad_hold", "Hold Touchpad (0.5 s)"}, {"l1_r1_touchpad", "L1 + R1 + Touchpad"},
+				{"options_hold", "Hold Options (0.5 s)"}}),
+		MakeSetting("buttons.button-r3", "R3", "R3", "The PS2 button that R3 presses in games.", SettingKind::Choice,
+			{{"R3", "R3"}, {"Select", "Select"}, {"Start", "Start"}, {"None", "Nothing"}}),
+	};
+	return {system, emulation, video, storage, buttons};
 }
 
 std::vector<ControlBinding> MakeDefaultControls()
@@ -218,6 +231,7 @@ public:
 		snapshot.bios.problem = options.bios_present ? std::string() : "fake BIOS is absent";
 		snapshot.settings = MakeDefaultSettings();
 		snapshot.controls = MakeDefaultControls();
+		snapshot.pause_trigger_chosen = options.pause_trigger_chosen;
 		snapshot.time_unix = options.initial_time_unix;
 		for (const SettingCategory& category : snapshot.settings)
 			for (const SettingItem& item : category.items)
@@ -1059,6 +1073,8 @@ private:
 			break;
 		}
 		item->modified = default_setting_values[item->id] != item->value;
+		if (item->id == "buttons.pause-trigger")
+			snapshot.pause_trigger_chosen = true;
 		BumpRevisionLocked();
 		return {CommandStatus::Succeeded, "setting updated", false};
 	}

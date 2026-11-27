@@ -4,6 +4,7 @@
 #include "settings_schema.h"
 
 #include "legacy_compat.h"
+#include "pause_presets.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -76,6 +77,7 @@ static const std::vector<SettingDef> kExtractedSettings = {
 	{"crop.crop-top","CropTop","Crop top","crop",UiTab::Settings,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::Segmented,ApplyTiming::Live,"0",{{"0","Off"},{"2","2 px"},{"4","4 px"},{"6","6 px"},{"8","8 px"},{"10","10 px"},{"12","12 px"},{"16","16 px"},{"24","24 px"},{"32","32 px"}},"Hides this many pixels from the top edge, for games that show garbage at the border. The picture keeps its shape.","Crop top %","","",5,0.0,0.0,0.0,false,false,false,false,false,false,false,"",0,""},
 	{"crop.crop-right","CropRight","Crop right","crop",UiTab::Settings,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::Segmented,ApplyTiming::Live,"0",{{"0","Off"},{"2","2 px"},{"4","4 px"},{"6","6 px"},{"8","8 px"},{"10","10 px"},{"12","12 px"},{"16","16 px"},{"24","24 px"},{"32","32 px"}},"Hides this many pixels from the right edge, for games that show garbage at the border. The picture keeps its shape.","Crop right %","","",5,0.0,0.0,0.0,false,false,false,false,false,false,false,"",0,""},
 	{"crop.crop-bottom","CropBottom","Crop bottom","crop",UiTab::Settings,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::Segmented,ApplyTiming::Live,"0",{{"0","Off"},{"2","2 px"},{"4","4 px"},{"6","6 px"},{"8","8 px"},{"10","10 px"},{"12","12 px"},{"16","16 px"},{"24","24 px"},{"32","32 px"}},"Hides this many pixels from the bottom edge, for games that show garbage at the border. The picture keeps its shape.","Crop bottom %","","",5,0.0,0.0,0.0,false,false,false,false,false,false,false,"",0,""},
+	{"buttons.pause-trigger","Caliza/PauseTrigger","Pause menu trigger","buttons",UiTab::Controls,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::ChoiceList,ApplyTiming::Live,"l3_r3",{{"l3_r3","L3 + R3"},{"touchpad","Touchpad click"},{"l3_r3_l1","L3 + R3 + L1"},{"touchpad_hold","Hold Touchpad (0.5 s)"},{"l1_r1_touchpad","L1 + R1 + Touchpad"},{"options_hold","Hold Options (0.5 s)"}},"Preset to open or close the in-game pause menu (all avoid Share/Create and PS reserved by PS4/GoldHEN). Default: L3 + R3 opens on release only if no other button was pressed, keeping L3+R3+D-pad shortcuts working. Warning for Touchpad click: Touchpad acts as PS2 Select; choosing it means Select must be mapped to another button for games that use it. Hold Options (0.5 s) uses PS2 Start (short tap sends Start on release).","","","",0,0.0,0.0,0.0,false,false,false,false,true,false,false,"",0,""},
 	{"buttons.save-button1","Caliza/SaveButton1","Save: button 1","buttons",UiTab::Controls,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::ChoiceList,ApplyTiming::Live,"L3R3",{{"L3R3","L3 + R3"},{"Cross","Cross"},{"Circle","Circle"},{"Square","Square"},{"Triangle","Triangle"},{"L1","L1"},{"R1","R1"},{"L2","L2"},{"R2","R2"},{"L3","L3"},{"R3","R3"},{"Options","Options"},{"Touchpad","Touchpad click"},{"TouchLeft","Touchpad left"},{"TouchRight","Touchpad right"},{"Up","D-pad up"},{"Down","D-pad down"},{"Left","D-pad left"},{"Right","D-pad right"},{"None","Nothing"}},"Hold this together with Save: button 2 to save a state in slot 1. The default is L3 + R3 (both sticks pressed in) with D-pad up.","","","",0,0.0,0.0,0.0,true,false,false,false,true,false,false,"save-state",1,""},
 	{"buttons.save-button2","Caliza/SaveButton2","Save: button 2","buttons",UiTab::Controls,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::ChoiceList,ApplyTiming::Live,"Up",{{"L3R3","L3 + R3"},{"Cross","Cross"},{"Circle","Circle"},{"Square","Square"},{"Triangle","Triangle"},{"L1","L1"},{"R1","R1"},{"L2","L2"},{"R2","R2"},{"L3","L3"},{"R3","R3"},{"Options","Options"},{"Touchpad","Touchpad click"},{"TouchLeft","Touchpad left"},{"TouchRight","Touchpad right"},{"Up","D-pad up"},{"Down","D-pad down"},{"Left","D-pad left"},{"Right","D-pad right"},{"None","Nothing"}},"Hold this together with Save: button 1 to save a state in slot 1.","","","",0,0.0,0.0,0.0,true,false,false,false,true,false,false,"save-state",2,""},
 	{"buttons.load-button1","Caliza/LoadButton1","Load: button 1","buttons",UiTab::Controls,(ScopeMask::Global | ScopeMask::Game),Inheritance::InheritGlobal,ValueType::Choice,Presentation::ChoiceList,ApplyTiming::Live,"L3R3",{{"L3R3","L3 + R3"},{"Cross","Cross"},{"Circle","Circle"},{"Square","Square"},{"Triangle","Triangle"},{"L1","L1"},{"R1","R1"},{"L2","L2"},{"R2","R2"},{"L3","L3"},{"R3","R3"},{"Options","Options"},{"Touchpad","Touchpad click"},{"TouchLeft","Touchpad left"},{"TouchRight","Touchpad right"},{"Up","D-pad up"},{"Down","D-pad down"},{"Left","D-pad left"},{"Right","D-pad right"},{"None","Nothing"}},"Hold this together with Load: button 2 to load the state in slot 1. The default is L3 + R3 with D-pad down.","","","",0,0.0,0.0,0.0,true,false,false,false,true,false,false,"load-state",1,""},
@@ -771,6 +773,77 @@ std::string EffectiveValue(const SettingDef& def, const DocumentState& own, cons
 			return *value;
 		}
 	return def.default_value;
+}
+
+const std::vector<PauseTriggerPreset>& PauseTriggerPresets()
+{
+	static const std::vector<PauseTriggerPreset> presets = [] {
+		std::vector<PauseTriggerPreset> out;
+		out.reserve(caliza::kPausePresetCount);
+		for (size_t i = 0; i < caliza::kPausePresetCount; ++i)
+		{
+			const caliza::PausePresetInfo& p = caliza::kPausePresets[i];
+			out.push_back({p.id, p.label, p.description, p.recommended, p.warn_select, p.warn_start, p.warning});
+		}
+		return out;
+	}();
+	return presets;
+}
+
+bool HasExplicitPauseTrigger(const DocumentState& doc)
+{
+	const std::string* trigger = FindValue(doc, "Caliza/PauseTrigger");
+	return trigger && caliza::legacy::IsValidPauseTriggerPreset(*trigger);
+}
+
+bool MigrateLegacyPauseCombo(DocumentState* doc)
+{
+	if (!doc)
+		return false;
+	const std::string* trigger = FindValue(*doc, "Caliza/PauseTrigger");
+	const std::string* v1 = FindValue(*doc, "Caliza/PauseButton1");
+	const std::string* v2 = FindValue(*doc, "Caliza/PauseButton2");
+	const bool trigger_valid = trigger && caliza::legacy::IsValidPauseTriggerPreset(*trigger);
+	const bool trigger_legacy_share = trigger && caliza::legacy::IsLegacyPauseButtonValue(*trigger);
+	const bool has_legacy_buttons = (v1 != nullptr) || (v2 != nullptr);
+	if (!has_legacy_buttons && !trigger_legacy_share)
+		return false;
+
+	std::string mapped_preset;
+	bool set_mapped = false;
+	if (!trigger_valid && !trigger_legacy_share && has_legacy_buttons)
+	{
+		bool was_share = false;
+		if (caliza::legacy::MapLegacyPauseButtonsToPresetName(v1 ? *v1 : std::string(), v2 ? *v2 : std::string(), mapped_preset, &was_share))
+			set_mapped = true;
+	}
+
+	auto erase_key = [&](const char* key) {
+		doc->values.erase(std::remove_if(doc->values.begin(), doc->values.end(),
+							  [&](const auto& kv) { return kv.first == key; }),
+			doc->values.end());
+	};
+	erase_key("Caliza/PauseButton1");
+	erase_key("Caliza/PauseButton2");
+	if (trigger_legacy_share)
+		erase_key("Caliza/PauseTrigger");
+
+	if (set_mapped)
+	{
+		bool updated = false;
+		for (auto& kv : doc->values)
+		{
+			if (kv.first == "Caliza/PauseTrigger")
+			{
+				kv.second = mapped_preset;
+				updated = true;
+				break;
+			}
+		}
+		if (!updated)
+			doc->values.emplace_back("Caliza/PauseTrigger", mapped_preset);
+	}
+	return true;
 }
 
 bool ParseMutationLine(const std::string& line, Mutation& out, std::string* error)
