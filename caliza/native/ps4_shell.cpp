@@ -16,6 +16,7 @@
 #include "../../ps5/frontend/fe_texpacks.h"
 #include "../../ps5/frontend/fe_patchdl.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <dirent.h>
@@ -537,6 +538,19 @@ void WriteLastGame(const OrbisFrontendPaths& paths, const std::string& image_pat
 	const std::string file = slash == std::string::npos ? image_path : image_path.substr(slash + 1);
 	fe::settings::WriteFileAtomic(paths.top_dir + "/lastgame.txt", file + "\n");
 }
+
+bool EstratosPerfEnabled(const OrbisFrontendPaths& paths)
+{
+	if (const char* env = std::getenv("CALIZA_ESTRATOS_PERF"))
+	{
+		if (env[0] != '\0' && std::strcmp(env, "0") != 0)
+			return true;
+	}
+	struct stat st = {};
+	const std::string flag_a = paths.top_dir + "/flags/estratos_perf";
+	const std::string flag_b = paths.top_dir + "/estratos_perf";
+	return stat(flag_a.c_str(), &st) == 0 || stat(flag_b.c_str(), &st) == 0;
+}
 } // namespace
 
 namespace caliza::ps4shell
@@ -727,14 +741,29 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	result.ui_ran = true;
 
 	double last = NowSeconds();
+	double last_snapshot_at = last;
+	caliza::Snapshot snapshot = backend.GetSnapshot();
+	caliza::DrawList draw;
+	draw.Reserve(16384);
+	const bool perf_log = EstratosPerfEnabled(paths);
+	double perf_window_start = last;
+	double perf_sum_frame_ms = 0.0;
+	double perf_max_frame_ms = 0.0;
+	double perf_sum_tick_ms = 0.0;
+	double perf_sum_scene_ms = 0.0;
+	double perf_sum_acquire_ms = 0.0;
+	double perf_sum_render_ms = 0.0;
+	double perf_sum_present_ms = 0.0;
+	unsigned perf_frames = 0;
+	unsigned perf_snapshots = 0;
 	unsigned slot = 0;
 	bool first_frame = true;
 	caliza::ConsoleLaunchRequest launch;
 	while (!backend.ConsumeLaunchRequest(&launch))
 	{
-		const double now = NowSeconds();
-		const double dt = now - last;
-		last = now;
+		const double frame_start = NowSeconds();
+		const double dt = frame_start - last;
+		last = frame_start;
 		PadData pad_data = {};
 		pad_data.lx = pad_data.ly = 128;
 		caliza::Input input;
@@ -754,8 +783,18 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			input.l2 = (pad_data.buttons & kPadL2) || pad_data.l2 > 160;
 			input.r2 = (pad_data.buttons & kPadR2) || pad_data.r2 > 160;
 		}
-		model.Tick(backend.GetSnapshot(), backend.PollEvents(), input, dt);
-		const caliza::DrawList draw = scene.Build(model.BuildView(), display.extent.width, display.extent.height, now);
+		const std::vector<caliza::CommandEvent> events = backend.PollEvents();
+		const double refresh_period = snapshot.scan.active ? 0.10 : 0.25;
+		if (!events.empty() || (frame_start - last_snapshot_at) >= refresh_period)
+		{
+			snapshot = backend.GetSnapshot();
+			last_snapshot_at = frame_start;
+			perf_snapshots++;
+		}
+		model.Tick(snapshot, events, input, dt);
+		const double t_after_tick = perf_log ? NowSeconds() : 0.0;
+		scene.BuildInto(draw, model.BuildView(), display.extent.width, display.extent.height, frame_start);
+		const double t_after_scene = perf_log ? NowSeconds() : 0.0;
 		uint32_t image_index = 0;
 		const VkResult acquired_result = display.vk.vkAcquireNextImageKHR(display.device, display.swapchain, UINT64_MAX,
 			display.acquired[slot], VK_NULL_HANDLE, &image_index);
@@ -764,11 +803,13 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			result.error = "vkAcquireNextImageKHR failed";
 			break;
 		}
+		const double t_after_acquire = perf_log ? NowSeconds() : 0.0;
 		if (!renderer.Render(draw, image_index, display.acquired[slot], display.rendered[slot]))
 		{
 			result.error = renderer.error();
 			break;
 		}
+		const double t_after_render = perf_log ? NowSeconds() : 0.0;
 		VkPresentInfoKHR present = {};
 		present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		present.waitSemaphoreCount = 1;
@@ -781,6 +822,42 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 		{
 			result.error = "vkQueuePresentKHR failed";
 			break;
+		}
+		if (perf_log)
+		{
+			const double t_end = NowSeconds();
+			const double frame_ms = (t_end - frame_start) * 1000.0;
+			perf_sum_frame_ms += frame_ms;
+			if (frame_ms > perf_max_frame_ms)
+				perf_max_frame_ms = frame_ms;
+			perf_sum_tick_ms += (t_after_tick - frame_start) * 1000.0;
+			perf_sum_scene_ms += (t_after_scene - t_after_tick) * 1000.0;
+			perf_sum_acquire_ms += (t_after_acquire - t_after_scene) * 1000.0;
+			perf_sum_render_ms += (t_after_render - t_after_acquire) * 1000.0;
+			perf_sum_present_ms += (t_end - t_after_render) * 1000.0;
+			perf_frames++;
+			const double window_s = t_end - perf_window_start;
+			if (window_s >= 1.0 && perf_frames > 0)
+			{
+				const double inv = 1.0 / static_cast<double>(perf_frames);
+				std::printf(
+					"[estratos] fps=%.1f frame=%.2fms (max=%.2fms) | tick=%.2fms scene=%.2fms acquire=%.2fms render=%.2fms present=%.2fms | verts=%zu batches=%zu snaps=%u\n",
+					static_cast<double>(perf_frames) / window_s, perf_sum_frame_ms * inv, perf_max_frame_ms,
+					perf_sum_tick_ms * inv, perf_sum_scene_ms * inv, perf_sum_acquire_ms * inv,
+					perf_sum_render_ms * inv, perf_sum_present_ms * inv, draw.VertexCount(),
+					draw.Batches().size(), perf_snapshots);
+				std::fflush(stdout);
+				perf_window_start = t_end;
+				perf_sum_frame_ms = 0.0;
+				perf_max_frame_ms = 0.0;
+				perf_sum_tick_ms = 0.0;
+				perf_sum_scene_ms = 0.0;
+				perf_sum_acquire_ms = 0.0;
+				perf_sum_render_ms = 0.0;
+				perf_sum_present_ms = 0.0;
+				perf_frames = 0;
+				perf_snapshots = 0;
+			}
 		}
 		if (first_frame)
 		{

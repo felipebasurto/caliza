@@ -5,7 +5,10 @@
 #include "../../caliza/core/console_backend.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <set>
+#include <thread>
 
 using namespace caliza;
 using namespace caliza_test;
@@ -390,6 +393,50 @@ void TestProductionServiceCommandHooks()
 	}
 }
 
+void TestAsyncProjectionRefreshOffRenderThread()
+{
+	TempDir root;
+	ConsoleBackendOptions options = TestOptions(root);
+	options.projection_refresh_ms = 20;
+	const std::thread::id caller_tid = std::this_thread::get_id();
+	std::atomic<int> phase{0};
+	std::atomic<int> caller_thread_calls{0};
+	std::atomic<int> worker_thread_calls{0};
+	options.hooks.bios_status = [&] {
+		if (phase.load() > 0)
+		{
+			if (std::this_thread::get_id() == caller_tid)
+				caller_thread_calls.fetch_add(1);
+			else
+				worker_thread_calls.fetch_add(1);
+		}
+		BiosStatus bios;
+		bios.present = phase.load() >= 1;
+		bios.path = bios.present ? (root.path + "/bios/scph39001.bin") : "";
+		return bios;
+	};
+	options.hooks.web_panel_url = [&] {
+		return phase.load() >= 1 ? std::string("http://192.168.1.50:8080") : std::string();
+	};
+	ConsoleBackend backend(options);
+	phase.store(1);
+	// Wait past projection_refresh_ms, then poll GetSnapshot on the caller thread; projection refresh
+	// must execute on the background worker thread and never synchronously on the render thread.
+	std::this_thread::sleep_for(std::chrono::milliseconds(35));
+	Snapshot refreshed;
+	for (int attempt = 0; attempt < 40; attempt++)
+	{
+		refreshed = backend.GetSnapshot();
+		if (refreshed.bios.present && !refreshed.diagnostics.web_panel_url.empty())
+			break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	CHECK_EQ(caller_thread_calls.load(), 0);
+	CHECK_TRUE(worker_thread_calls.load() >= 1);
+	CHECK_TRUE(refreshed.bios.present);
+	CHECK_EQ(refreshed.diagnostics.web_panel_url, std::string("http://192.168.1.50:8080"));
+}
+
 } // namespace
 
 int main()
@@ -401,6 +448,7 @@ int main()
 	TestExternalPs2FolderDiscoveredAfterStartup();
 	TestLaunchHandoffAndRuntimeHonesty();
 	TestProductionServiceCommandHooks();
+	TestAsyncProjectionRefreshOffRenderThread();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");

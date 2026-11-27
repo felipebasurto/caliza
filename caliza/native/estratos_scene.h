@@ -71,7 +71,16 @@ public:
 	const Texture2D* FogTexture() const { return &m_fog; }
 
 	DrawList Build(const UiView& view, uint32_t width, uint32_t height, double seconds);
+	void BuildInto(DrawList& out, const UiView& view, uint32_t width, uint32_t height, double seconds);
 	MotionMemory& Motion() { return m_motion; }
+
+	struct BakedAtmosphere
+	{
+		Texture2D backdrop;   // opaque void + 3 glows + 2 back fog layers
+		Texture2D front_haze; // front fog layer + readability edge shades
+	};
+	const BakedAtmosphere& AtmosphereFor(int look_group, bool high_contrast, uint32_t width, uint32_t height,
+		float cx_frac, float cy_frac, float left_shade);
 
 private:
 	std::vector<uint8_t> m_text_font;
@@ -81,6 +90,7 @@ private:
 	Texture2D m_glow;
 	Texture2D m_fog;
 	std::map<std::string, Texture2D> m_covers;
+	std::map<uint64_t, BakedAtmosphere> m_atmosphere;
 	MotionMemory m_motion;
 	bool m_ready = false;
 };
