@@ -4,11 +4,20 @@ All notable changes to Caliza are documented in this file.
 
 Caliza is free software under the GNU General Public License, version 3 or later (`COPYING.GPLv3`), based on modified PCSX2 code. Caliza does not include BIOS files, firmware, decryption keys, or games.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-27
+
+> Alpha build tested on host only; on-console PS4 testing is pending.
+
+### In-game pause menu
+
+- **Native pause menu overlay (#13):** Pause a running session at any time without exiting. Inside the pause menu, move with the D-pad or left stick to resume play, save or load across **10 save slots** (pick a slot with Left/Right or L1/R1, with automatic backup fallback on load), swap discs in multi-disc titles, or return to the library (with Cancel selected first to prevent accidental exits). Controller input stays isolated from the running title while the menu is open.
+- **How to open it and first-launch trigger choice (#13):** Press and release **L3 + R3** on their own to open or close the pause menu (`L3 + R3 + D-pad` quick-save, quick-load, and disc-swap shortcuts still work while held). On first launch—or when upgrading from an older Share/Create binding—Caliza prompts you to pick one of six trigger presets (`L3 + R3`, `Touchpad click`, `L3 + R3 + L1`, `Hold Touchpad (0.5 s)`, `L1 + R1 + Touchpad`, or `Hold Options (0.5 s)`), with `L3 + R3` pre-selected. You can change your choice anytime in **Controls** or the companion web panel.
+- **No clash with GoldHEN's Share menu (#13):** All six pause triggers avoid Share/Create (used by GoldHEN's cheat menu and the PS4 Share menu) and the PS button.
+- **Touchpad = PS2 Select warning (#13):** Because Touchpad acts as PS2 Select, choosing `Touchpad click` warns that PS2 Select must be mapped to another button for titles that use it, and offers a one-step option to map R3 to Select.
 
 ### Interface and library
 
-- **Modern controls per game:** A game whose `patches/` or `cheats/` folder has a group named like a dual-stick control remap (for example `Modern Control Profiles`) now shows it under its own "Modern controls" toggle, off by default, in both Estratos and the companion web panel, instead of mixed in with every other patch or cheat. Caliza bundles and downloads none of this content itself; see `docs/research/modern-controls.md` for the research behind the detection rule and the licensing reasons. Boot.log now reports whether a matching patch was applied, available but off, or absent for the game being launched.
+- **Modern controls category per title (#12):** When a title's `patches/` or `cheats/` folder contains a modern-controls patch or cheat group, Caliza displays it under its own **Modern controls** category (off by default) in both Estratos and the companion web panel instead of mixing it in with other patches or cheats. Titles without such a patch do not show the category. Caliza does not bundle or download these patches; `boot.log` records whether a matching patch was applied, available but off, or absent on launch.
 
 ## [0.3.0] - 2026-11-27
 
