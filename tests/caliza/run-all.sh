@@ -15,11 +15,18 @@ bash tests/caliza/test_ui_build.sh
 echo '== estratos scene =='
 cc=${CC:-clang}
 "$cc" -std=c99 -O2 -c ps5/frontend/third_party/qrcodegen/qrcodegen.c -o "$out/qrcodegen.o"
-"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -I3rdparty/stb \
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -I3rdparty/stb -pthread \
   tests/caliza/test_estratos_scene.cpp caliza/native/estratos_scene.cpp caliza/native/draw_list.cpp \
-  caliza/native/procedural_covers.cpp ps5/frontend/fe_text.cpp "$out/qrcodegen.o" \
+  caliza/native/procedural_covers.cpp ps5/frontend/fe_text.cpp ps5/frontend/fe_covers.cpp ps5/frontend/fe_i18n.cpp \
+  "$out/qrcodegen.o" \
   -o "$out/test_estratos_scene"
 "$out/test_estratos_scene"
+
+echo '== cover art (download/cache/path mechanics) =='
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -Ips5/frontend -pthread \
+  tests/caliza/test_covers.cpp ps5/frontend/fe_covers.cpp ps5/frontend/fe_text.cpp ps5/frontend/fe_i18n.cpp \
+  -o "$out/test_covers"
+"$out/test_covers"
 
 echo '== pause menu model =='
 "$cxx" -std=c++17 -O1 -Wall -Wextra -Werror -Icaliza/core \

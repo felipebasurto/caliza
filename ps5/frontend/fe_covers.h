@@ -137,10 +137,22 @@ public:
 	// (fe_ps5.cpp, vk-285-44). A game with only an OPL ART cover counts as missing (vk-285-110).
 	static std::vector<int> MissingCovers(const std::vector<GameInfo>& games, const CoverConfig& cfg);
 
+	// A scan's cover-fetch outcome, for the boot.log summary line: how many of the games asked for a
+	// cover were saved just now, had no cover and still don't (404, a network failure stopped the
+	// rest, or the time budget ran out), or came back as something that didn't decode as an image.
+	struct PrefetchStats
+	{
+		int downloaded = 0;
+		int not_found = 0; // 404
+		int failed = 0;    // 200 but didn't decode as an image
+		int missing = 0;   // never attempted, or the network/time budget stopped it first
+	};
+
 	// Downloads those covers into the cache, one after another, until `budget_s` seconds have
 	// passed or the network fails. Only images that decode are kept. Returns how many were saved.
+	// `stats`, when given, is filled in with the per-outcome counts for a boot.log summary line.
 	static int Prefetch(const std::vector<GameInfo>& games, const std::vector<int>& which, const CoverConfig& cfg,
-		const DownloadFn& download, double budget_s);
+		const DownloadFn& download, double budget_s, PrefetchStats* stats = nullptr);
 
 private:
 	static void* ThreadMain(void* self);

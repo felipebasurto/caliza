@@ -11,6 +11,7 @@
 
 #if defined(ORBIS_PS4)
 #include "../../ps5/frontend/fe_bios.h"
+#include "../../ps5/frontend/fe_covers.h"
 #include "../../ps5/frontend/fe_games.h"
 #include "../../ps5/frontend/fe_settings.h"
 #include "../../ps5/frontend/fe_texpacks.h"
@@ -258,7 +259,11 @@ public:
 class FrontendImageInspector final : public caliza::ImageInspector
 {
 public:
-	explicit FrontendImageInspector(OrbisFrontendPaths paths) : m_paths(std::move(paths)) {}
+	explicit FrontendImageInspector(OrbisFrontendPaths paths)
+		: m_paths(std::move(paths))
+		, m_covers(m_paths.covers_dir, m_paths.cache_dir)
+	{
+	}
 	bool Inspect(caliza::GameEntry& entry) override
 	{
 		caliza::PosixImageInspector base;
@@ -286,6 +291,10 @@ public:
 		entry.serial = info.serial;
 		entry.badges = info.badges;
 		entry.hidden = info.hidden;
+		// The cover the user supplied, found beside the image or on the drive, or downloaded into the cache
+		// (fe_covers.h's own lookup order); empty when none exists yet. Estratos falls back to a procedural
+		// poster (EstratosScene::CoverFor) until one does.
+		entry.cover_path = m_covers.Best(info).path;
 		if (!info.damaged.empty())
 		{
 			entry.damaged = true;
@@ -296,6 +305,7 @@ public:
 	}
 private:
 	OrbisFrontendPaths m_paths;
+	fe::CoverFinder m_covers;
 };
 
 std::string ConfiguredBiosDir(const OrbisFrontendPaths& paths)
