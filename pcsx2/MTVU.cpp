@@ -14,6 +14,7 @@
 
 VU_Thread vu1Thread;
 unsigned long long g_orbis_vu_idle_ticks, g_orbis_ee_waitvu_ticks, g_orbis_ee_vuring_ticks; // eerec-281
+std::atomic<unsigned long long> g_orbis_vu_wait_start_tsc{0};
 void OrbisCpuSample(int slot); // eerec-285 (GSRenderer.cpp)
 void OrbisVUProfStart(); // vk-285-29 (orbis_eeprof.cpp)
 std::atomic<int> g_orbis_vu_waiting{0}; // vk-285-29: the VU1 profiler skips the ring waits
@@ -68,11 +69,30 @@ alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_laps{0}; // VU: NULL p
 alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_wakeups{0}; // VU: work waits returned
 alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_spin_waits{0}; // VU: spin-path waits entered (not timeout outcomes)
 alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_sleep_waits{0}; // VU: sleep-path waits entered
+alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_spin_ticks{0}; // VU: ticks spent in spin-path work waits
+alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_sleep_ticks{0}; // VU: ticks spent in sleep-path work waits
+alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_exec_ticks{0}; // VU: ticks spent draining ring packets
+alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_ee_spin_iters{0}; // EE: pause-loop iterations in ring/lap waits
+alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_ee_yields{0}; // EE: thread yields in ring/lap waits
 alignas(__cachelinesize) std::atomic<u32> g_orbis_mtvu_ring_hwm_kb{0}; // VU: maximum producer-minus-consumer ring backlog, KiB
 
 static __fi void OrbisMtvuCount(std::atomic<u64>& counter)
 {
 	counter.store(counter.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+}
+
+static __fi void OrbisMtvuAdd(std::atomic<u64>& counter, u64 delta)
+{
+	counter.store(counter.load(std::memory_order_relaxed) + delta, std::memory_order_relaxed);
+}
+
+static __fi void OrbisCpuPause()
+{
+#if defined(ARCH_X86) || defined(__x86_64__) || defined(__i386__)
+	__asm__ __volatile__("pause");
+#elif defined(ARCH_ARM64)
+	__asm__ __volatile__("isb");
+#endif
 }
 
 extern std::atomic<u64> g_orbis_ee_evtests; // R5900.cpp
@@ -279,15 +299,18 @@ void VU_Thread::OrbisRingHighWater()
 void VU_Thread::ExecuteRingBuffer()
 {
 	Threading::SetNameOfCurrentThread("MTVU");
+	OrbisCpuSample(2);
 
 	for (;;)
 	{
 		{
 			const unsigned long long t0 = __builtin_ia32_rdtsc(); // eerec-281
+			g_orbis_vu_wait_start_tsc.store(t0, std::memory_order_release);
 			g_orbis_vu_waiting.store(1, std::memory_order_relaxed); // vk-285-29
-			if (g_orbis_mtvu_spin.load(std::memory_order_relaxed)) // vk-285-84
+			const bool used_spin = g_orbis_mtvu_spin.load(std::memory_order_relaxed) != 0; // vk-285-84
+			if (used_spin)
 			{
-				OrbisMtvuCount(g_orbis_mtvu_vu_spin_waits); // PS4 port (AI-assisted): path entered, not the timeout outcome
+				OrbisMtvuCount(g_orbis_mtvu_vu_spin_waits);
 				semaEvent.WaitForWorkWithSpin();
 			}
 			else
@@ -295,18 +318,25 @@ void VU_Thread::ExecuteRingBuffer()
 				OrbisMtvuCount(g_orbis_mtvu_vu_sleep_waits);
 				semaEvent.WaitForWork();
 			}
-			OrbisMtvuCount(g_orbis_mtvu_vu_wakeups); // PS4 port (AI-assisted): a work wait returned
+			OrbisMtvuCount(g_orbis_mtvu_vu_wakeups);
+			const unsigned long long t1 = __builtin_ia32_rdtsc();
+			const unsigned long long wait_dt = (t1 >= t0) ? (t1 - t0) : 0;
+			const unsigned long long prev_idle = __atomic_load_n(&g_orbis_vu_idle_ticks, __ATOMIC_RELAXED);
+			__atomic_store_n(&g_orbis_vu_idle_ticks, prev_idle + wait_dt, __ATOMIC_RELEASE);
+			g_orbis_vu_wait_start_tsc.store(0, std::memory_order_release);
 			g_orbis_vu_waiting.store(0, std::memory_order_relaxed);
-			g_orbis_vu_idle_ticks += __builtin_ia32_rdtsc() - t0;
+			OrbisMtvuAdd(used_spin ? g_orbis_mtvu_vu_spin_ticks : g_orbis_mtvu_vu_sleep_ticks, wait_dt);
 			OrbisCpuSample(2); // eerec-285
 			OrbisVUProfStart(); // vk-285-29
 		}
 		if (m_shutdown_flag.load(std::memory_order_acquire))
 			break;
 
+		const unsigned long long exec_t0 = __builtin_ia32_rdtsc();
 		while (m_ato_read_pos.load(std::memory_order_relaxed) != GetWritePos())
 		{
-			OrbisRingHighWater(); // PS4 port (AI-assisted): uses the write-position line this loop already loads
+			OrbisCpuSample(2);
+			OrbisRingHighWater(); // uses the write-position line this loop already loads
 			u32 tag = Read();
 			switch (tag)
 			{
@@ -497,6 +527,9 @@ void VU_Thread::ExecuteRingBuffer()
 				}
 			}
 		}
+		const unsigned long long exec_t1 = __builtin_ia32_rdtsc();
+		if (exec_t1 >= exec_t0)
+			OrbisMtvuAdd(g_orbis_mtvu_vu_exec_ticks, exec_t1 - exec_t0);
 	}
 
 	semaEvent.Kill();
@@ -526,6 +559,7 @@ __ri void VU_Thread::WaitOnSize(s32 size)
 	OrbisEEWaitScope orbis_wait; // vk-285-8
 	OrbisMtvuCount(g_orbis_mtvu_ring_stalls); // PS4 port (AI-assisted)
 	bool kick_sent = false;
+	u32 spin_iters = 0;
 	for (;;)
 	{
 		s32 readPos = GetReadPos();
@@ -540,9 +574,8 @@ __ri void VU_Thread::WaitOnSize(s32 size)
 		if (readPos > m_write_pos + size + _4kb)
 			break; // Enough free front space
 		{          // Let MTVU run to free up buffer space
-			// PS4 port (AI-assisted): one kick per wait. This thread cannot add more ring work while it
-			// waits here, so if space is still short the first kick's work is necessarily still unconsumed;
-			// if it was all consumed, the checks above have room and leave. Needs proper testing.
+			// One kick per wait: this thread cannot add more ring work while it
+			// waits here, so if space is still short the first kick's work is still unconsumed.
 			if (!kick_sent)
 			{
 				KickStart();
@@ -550,11 +583,19 @@ __ri void VU_Thread::WaitOnSize(s32 size)
 			}
 			else
 				OrbisMtvuCount(g_orbis_mtvu_kick_coalesced);
-			// Locking might trigger a full flush of the ring buffer. Yield
-			// will be more aggressive, and only flush the minimal size.
-			// Performance will be smoother but it will consume extra CPU cycle
-			// on the EE thread (not an issue on 4 cores).
-			std::this_thread::yield();
+			// Brief pause backoff absorbs short cache-line handoffs without hammering sched_yield;
+			// sustained stalls yield cleanly so other threads are not starved on Jaguar.
+			if (spin_iters < 16)
+			{
+				spin_iters++;
+				OrbisMtvuCount(g_orbis_mtvu_ee_spin_iters);
+				OrbisCpuPause();
+			}
+			else
+			{
+				OrbisMtvuCount(g_orbis_mtvu_ee_yields);
+				std::this_thread::yield();
+			}
 		}
 	}
 }
@@ -584,10 +625,9 @@ void VU_Thread::OrbisWaitLapStart(s32 null_pos)
 	struct OrbisRingTimer { unsigned long long t0 = __builtin_ia32_rdtsc(); ~OrbisRingTimer() { g_orbis_ee_vuring_ticks += __builtin_ia32_rdtsc() - t0; } } orbis_ring_timer;
 	OrbisEEWaitScope orbis_wait;
 	bool kick_sent = false;
+	u32 spin_iters = 0;
 	do
 	{
-		// PS4 port (AI-assisted): as in WaitOnSize, the waiting EE thread adds no further ring work here;
-		// a still-unmet lap condition means the first kick's work is still ahead of the VU thread. Needs proper testing.
 		if (!kick_sent)
 		{
 			KickStart();
@@ -595,7 +635,17 @@ void VU_Thread::OrbisWaitLapStart(s32 null_pos)
 		}
 		else
 			OrbisMtvuCount(g_orbis_mtvu_kick_coalesced);
-		std::this_thread::yield();
+		if (spin_iters < 16)
+		{
+			spin_iters++;
+			OrbisMtvuCount(g_orbis_mtvu_ee_spin_iters);
+			OrbisCpuPause();
+		}
+		else
+		{
+			OrbisMtvuCount(g_orbis_mtvu_ee_yields);
+			std::this_thread::yield();
+		}
 		readPos = GetReadPos();
 	} while (readPos == 0 || readPos > null_pos);
 	m_cached_read_pos = readPos;

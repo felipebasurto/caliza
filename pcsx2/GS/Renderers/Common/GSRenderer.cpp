@@ -20,6 +20,8 @@ extern "C" int sceKernelAvailableFlexibleMemorySize(unsigned long long* size); /
 #include "Host.h"
 #include "PerformanceMetrics.h"
 #include "pcsx2/Config.h"
+#include "pcsx2/vtlb.h"
+#include "pcsx2/MTVU.h"
 #include "VMManager.h"
 #ifdef PS5SX2_ACHIEVEMENTS
 #include "Achievements.h" // 2026-10-08: the challenge icons (OrbisDrawChallengeIcons)
@@ -111,7 +113,14 @@ extern char g_orbis_tune_line2[64];
 #define fflush OrbisDeferredFlush
 std::atomic<int> g_orbis_gsini_reload{0}; // GS thread saw gs.ini change -> the CPU thread applies it
 std::atomic<int> g_orbis_live_reapply{0}; // the CPU thread applied gs.ini -> apply live.ini again
+#ifdef ORBIS_PS4
+// Default to Jaguar mode 1 pinning (EE and VU1 on distinct cores of one 4-core L2 cluster,
+// GS on the other cluster, helpers/Vulkan on remaining cores); live.ini pin= overrides this.
+std::atomic<int> g_orbis_pin_request{1};
+#else
 std::atomic<int> g_orbis_pin_request{-1}; // live.ini pin= -> the CPU thread (OrbisApplyPinning)
+#endif
+static std::atomic<bool> s_orbis_pin_from_live{false};
 extern "C" int sceKernelGetCurrentCpu(void);
 extern "C" int sceKernelGetCpumode(void);
 extern "C" int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
@@ -502,9 +511,12 @@ static void OrbisApplyPinningPs4(int mode, unsigned long long orig)
 	OrbisPs4LogSlots(slot_mask, rc, helper_mask);
 	OrbisPinHelpers(helper_mask);
 	fflush(stdout);
-	char label[24];
-	snprintf(label, sizeof(label), "PIN %d", mode);
-	OrbisOSDLabel(label);
+	if (s_orbis_pin_from_live.load(std::memory_order_relaxed))
+	{
+		char label[24];
+		snprintf(label, sizeof(label), "PIN %d", mode);
+		OrbisOSDLabel(label);
+	}
 }
 #endif
 
@@ -608,6 +620,11 @@ extern double GetVerticalFrequency();
 extern unsigned long long g_orbis_gs_idle_ticks, g_orbis_ee_waitgs_ticks, g_orbis_ee_stall_ticks; // eerec-174
 extern unsigned long long g_orbis_ee_vsyncq_ticks, g_orbis_vu_idle_ticks, g_orbis_ee_waitvu_ticks, g_orbis_ee_vuring_ticks,
 	g_orbis_ee_throttle_ticks, g_orbis_gs_swsync_ticks, g_orbis_sw_busy_ticks[16]; // eerec-281
+extern std::atomic<unsigned long long> g_orbis_vu_wait_start_tsc; // MTVU.cpp
+extern std::atomic<u64> g_orbis_mtvu_vu_spin_ticks, g_orbis_mtvu_vu_sleep_ticks, g_orbis_mtvu_vu_exec_ticks,
+	g_orbis_mtvu_ee_spin_iters, g_orbis_mtvu_ee_yields;
+extern std::atomic<u32> g_orbis_mtvu_ring_kb;
+extern "C" unsigned long long orbis_fault_count;
 #ifdef ORBIS_VULKAN
 extern std::atomic<int> g_orbis_widescreen, g_orbis_ws_active; // vk-285-12 (pcsx2/OrbisWidescreen.cpp)
 void OrbisEEProfMark(); // vk-285-8 (the port's orbis_eeprof.cpp)
@@ -729,6 +746,9 @@ struct OrbisLoadMeasure
 	u32 nsw = 0;
 	double vu_mcycles = 0.0; // vk-285-74: VU1 cycles the MTVU thread ran this second, in millions
 	double vu_runs = 0.0; // and VU1 program runs
+	double vu_spin_ms = 0.0;
+	double vu_sleep_ms = 0.0;
+	double vu_exec_ms = 0.0;
 	double sw_sync_n[8] = {}, sw_sync_ms[8] = {}; // vk-285-119: the GS thread's SW syncs by reason, per second
 };
 extern unsigned long long g_orbis_sw_sync_n[8], g_orbis_sw_sync_ticks[8]; // vk-285-119 (GSRasterizer.cpp)
@@ -736,16 +756,35 @@ extern std::atomic<u64> g_orbis_vu1_cycles, g_orbis_vu1_runs; // vk-285-74 (MTVU
 extern std::atomic<int> g_orbis_vu1_dump_request;
 static OrbisLoadMeasure s_orbis_load_measure;
 
+static unsigned long long OrbisVuEffectiveIdleTicks(
+	unsigned long long now_tsc, unsigned long long prev_effective)
+{
+	const unsigned long long wait_start = g_orbis_vu_wait_start_tsc.load(std::memory_order_acquire);
+	const unsigned long long completed = __atomic_load_n(&g_orbis_vu_idle_ticks, __ATOMIC_ACQUIRE);
+	const unsigned long long wait_start2 = g_orbis_vu_wait_start_tsc.load(std::memory_order_acquire);
+	unsigned long long effective = completed;
+	if (wait_start != 0 && wait_start == wait_start2 && now_tsc > wait_start)
+		effective += (now_tsc - wait_start);
+	if (effective < prev_effective)
+		effective = prev_effective;
+	return effective;
+}
+
 static void OrbisMeasureLoad()
 {
 	static unsigned long long s_tsc = 0, s_prev[26] = {};
+	static u64 s_prev_vu_spin = 0, s_prev_vu_sleep = 0, s_prev_vu_exec = 0;
 	static auto s_t = std::chrono::steady_clock::now();
 	const unsigned long long tsc = __builtin_ia32_rdtsc();
 	const auto now = std::chrono::steady_clock::now();
 	const double sec = std::chrono::duration<double>(now - s_t).count();
+	const unsigned long long vu_idle_eff = OrbisVuEffectiveIdleTicks(tsc, s_prev[8]);
 	const unsigned long long cur[10] = {g_orbis_ee_waitgs_ticks, g_orbis_ee_stall_ticks, g_orbis_ee_vsyncq_ticks,
 		g_orbis_ee_waitvu_ticks, g_orbis_ee_vuring_ticks, g_orbis_ee_throttle_ticks, g_orbis_gs_idle_ticks,
-		g_orbis_gs_swsync_ticks, g_orbis_vu_idle_ticks, 0};
+		g_orbis_gs_swsync_ticks, vu_idle_eff, 0};
+	const u64 vu_spin = g_orbis_mtvu_vu_spin_ticks.load(std::memory_order_relaxed);
+	const u64 vu_sleep = g_orbis_mtvu_vu_sleep_ticks.load(std::memory_order_relaxed);
+	const u64 vu_exec = g_orbis_mtvu_vu_exec_ticks.load(std::memory_order_relaxed);
 	OrbisLoadMeasure& m = s_orbis_load_measure;
 	OrbisTickerWatch(); // vk-285-108
 	m.nsw = std::min<u32>(PerformanceMetrics::GetGSSWThreadCount(), 16);
@@ -755,6 +794,9 @@ static void OrbisMeasureLoad()
 		m.k = 1000.0 / static_cast<double>(tsc - s_tsc);
 		for (int i = 0; i < 9; i++)
 			m.v[i] = static_cast<double>(cur[i] - s_prev[i]) * m.k;
+		m.vu_spin_ms = static_cast<double>(vu_spin - s_prev_vu_spin) * m.k;
+		m.vu_sleep_ms = static_cast<double>(vu_sleep - s_prev_vu_sleep) * m.k;
+		m.vu_exec_ms = static_cast<double>(vu_exec - s_prev_vu_exec) * m.k;
 		m.ee_wait = m.v[0] + m.v[1] + m.v[2] + m.v[3] + m.v[4] + m.v[5];
 		for (u32 i = 0; i < m.nsw; i++)
 			m.sw_busy[i] = static_cast<double>(g_orbis_sw_busy_ticks[i] - s_prev[10 + i]) * m.k;
@@ -766,6 +808,9 @@ static void OrbisMeasureLoad()
 	}
 	for (int i = 0; i < 9; i++)
 		s_prev[i] = cur[i];
+	s_prev_vu_spin = vu_spin;
+	s_prev_vu_sleep = vu_sleep;
+	s_prev_vu_exec = vu_exec;
 	for (u32 i = 0; i < m.nsw; i++)
 		s_prev[10 + i] = g_orbis_sw_busy_ticks[i];
 	{
@@ -819,6 +864,88 @@ static void OrbisMeasureLoad()
 
 void OrbisPrintTCStats(); // vk-285-125 (GSTextureCache.cpp)
 // The [load] line of the second OrbisMeasureLoad last measured, and the [rec]/[mcd] lines after it.
+static void OrbisPrintMtvuAndFastmem(double window_sec, bool include_cpu_and_rec)
+{
+	const OrbisLoadMeasure& lm = s_orbis_load_measure;
+	if (!lm.measured)
+		return;
+	const double inv_s = (window_sec > 0.2) ? (1.0 / window_sec) : 1.0;
+	{
+		extern std::atomic<u64> g_orbis_mtvu_kicks, g_orbis_mtvu_kick_coalesced, g_orbis_mtvu_ring_stalls,
+			g_orbis_mtvu_laps, g_orbis_mtvu_vu_laps, g_orbis_mtvu_vu_wakeups, g_orbis_mtvu_vu_spin_waits,
+			g_orbis_mtvu_vu_sleep_waits;
+		extern std::atomic<u32> g_orbis_mtvu_ring_hwm_kb;
+		static u64 s_mtvu_prev[10] = {};
+		const u64 cur[10] = {
+			g_orbis_mtvu_kicks.load(std::memory_order_relaxed),
+			g_orbis_mtvu_kick_coalesced.load(std::memory_order_relaxed),
+			g_orbis_mtvu_ring_stalls.load(std::memory_order_relaxed),
+			g_orbis_mtvu_laps.load(std::memory_order_relaxed),
+			g_orbis_mtvu_vu_laps.load(std::memory_order_relaxed),
+			g_orbis_mtvu_vu_wakeups.load(std::memory_order_relaxed),
+			g_orbis_mtvu_vu_spin_waits.load(std::memory_order_relaxed),
+			g_orbis_mtvu_vu_sleep_waits.load(std::memory_order_relaxed),
+			g_orbis_mtvu_ee_spin_iters.load(std::memory_order_relaxed),
+			g_orbis_mtvu_ee_yields.load(std::memory_order_relaxed),
+		};
+		const auto rate = [&](int idx) -> unsigned long long {
+			const u64 d = cur[idx] - s_mtvu_prev[idx];
+			return static_cast<unsigned long long>(static_cast<double>(d) * inv_s + 0.5);
+		};
+		const u32 hwm_kb = g_orbis_mtvu_ring_hwm_kb.exchange(0, std::memory_order_relaxed);
+		const u32 cap_kb = g_orbis_mtvu_ring_kb.load(std::memory_order_relaxed);
+		printf("[mtvu] per s: kicks=%llu coalesced=%llu ringstalls=%llu laps ee/vu=%llu/%llu wakeups=%llu spin/sleep=%llu/%llu | backlog hwm %u KB (cap %u KB) vuring=%.0fms waitvu=%.0fms vu_exec=%.0fms vu_wait_spin/sleep=%.0f/%.0fms ee_spin/yield=%llu/%llu\n",
+			rate(0), rate(1), rate(2), rate(3), rate(4), rate(5), rate(6), rate(7),
+			hwm_kb, cap_kb, lm.v[4], lm.v[3], lm.vu_exec_ms, lm.vu_spin_ms, lm.vu_sleep_ms, rate(8), rate(9));
+		std::memcpy(s_mtvu_prev, cur, sizeof(cur));
+	}
+	{
+		const VtlbFastmemStats fm = vtlb_GetFastmemStats();
+		const u64 dyn_total = fm.emit_fast + fm.emit_slow;
+		const unsigned hit_pct = dyn_total ? static_cast<unsigned>((fm.emit_fast * 100ull) / dyn_total) : 0u;
+		const unsigned long long pf_n = __atomic_load_n(&orbis_fault_count, __ATOMIC_RELAXED);
+		const int vu0_clamp = static_cast<int>(EmuConfig.Cpu.Recompiler.vu0Overflow) +
+			static_cast<int>(EmuConfig.Cpu.Recompiler.vu0ExtraOverflow) +
+			static_cast<int>(EmuConfig.Cpu.Recompiler.vu0SignOverflow);
+		const int vu1_clamp = static_cast<int>(EmuConfig.Cpu.Recompiler.vu1Overflow) +
+			static_cast<int>(EmuConfig.Cpu.Recompiler.vu1ExtraOverflow) +
+			static_cast<int>(EmuConfig.Cpu.Recompiler.vu1SignOverflow);
+		printf("[cpudiag] pin=%d | fastmem check=%d cfg=%d avail=%d maps=%u emit fast/slow/const=%llu/%llu/%llu (hit=%u%%) backpatch=%llu fault_pcs=%u pf=%llu | vu_clamp=%d/%d",
+			s_orbis_pin_mode,
+			CHECK_FASTMEM ? 1 : 0,
+			EmuConfig.Cpu.Recompiler.EnableFastmem ? 1 : 0,
+			vtlb_IsFastmemAvailable() ? 1 : 0,
+			fm.mapped_pages,
+			static_cast<unsigned long long>(fm.emit_fast),
+			static_cast<unsigned long long>(fm.emit_slow),
+			static_cast<unsigned long long>(fm.emit_const),
+			hit_pct,
+			static_cast<unsigned long long>(fm.backpatches),
+			fm.faulting_pcs,
+			pf_n,
+			vu0_clamp, vu1_clamp);
+		if (include_cpu_and_rec)
+		{
+			extern std::atomic<u32> g_orbis_rec_compiles, g_orbis_rec_discards, g_orbis_rec_full_resets;
+			extern size_t OrbisRecEEUsed(size_t* size);
+			static u32 s_diag_rec_prev[3] = {};
+			const u32 rcur[3] = {
+				g_orbis_rec_compiles.load(std::memory_order_relaxed),
+				g_orbis_rec_discards.load(std::memory_order_relaxed),
+				g_orbis_rec_full_resets.load(std::memory_order_relaxed),
+			};
+			size_t ee_size = 0;
+			const size_t ee_used = OrbisRecEEUsed(&ee_size);
+			printf(" | rec +%u/-%u rst=%u ee=%.1f/%.0fMiB",
+				rcur[0] - s_diag_rec_prev[0], rcur[1] - s_diag_rec_prev[1], rcur[2] - s_diag_rec_prev[2],
+				static_cast<double>(ee_used) / 1048576.0, static_cast<double>(ee_size) / 1048576.0);
+			std::memcpy(s_diag_rec_prev, rcur, sizeof(rcur));
+			OrbisPrintCpu();
+		}
+		printf("\n");
+	}
+}
+
 static void OrbisPrintLoad()
 {
 	const OrbisLoadMeasure& m = s_orbis_load_measure;
@@ -905,30 +1032,7 @@ static void OrbisPrintLoad()
 		for (int i = 0; i < 8; i++)
 			s_tag_prev[i] = tags[i];
 	}
-	{
-		// PS4 port (AI-assisted): the MTVU ring's own rates this second (MTVU.cpp): kicks of the VU thread,
-		// the kicks coalesced away inside ring-space waits, the EE's stalls for ring space, laps on each side,
-		// the VU thread's wakeups and wait paths, and the ring's high-water mark. Jaguar's small caches make
-		// the backlog the number to watch while OrbisMTVURingKB is tuned.
-		extern std::atomic<u64> g_orbis_mtvu_kicks, g_orbis_mtvu_kick_coalesced, g_orbis_mtvu_ring_stalls,
-			g_orbis_mtvu_laps, g_orbis_mtvu_vu_laps, g_orbis_mtvu_vu_wakeups, g_orbis_mtvu_vu_spin_waits,
-			g_orbis_mtvu_vu_sleep_waits;
-		extern std::atomic<u32> g_orbis_mtvu_ring_hwm_kb;
-		static u64 s_mtvu_prev[8] = {};
-		const u64 m[8] = {g_orbis_mtvu_kicks.load(std::memory_order_relaxed),
-			g_orbis_mtvu_kick_coalesced.load(std::memory_order_relaxed), g_orbis_mtvu_ring_stalls.load(std::memory_order_relaxed),
-			g_orbis_mtvu_laps.load(std::memory_order_relaxed), g_orbis_mtvu_vu_laps.load(std::memory_order_relaxed),
-			g_orbis_mtvu_vu_wakeups.load(std::memory_order_relaxed), g_orbis_mtvu_vu_spin_waits.load(std::memory_order_relaxed),
-			g_orbis_mtvu_vu_sleep_waits.load(std::memory_order_relaxed)};
-		printf("[mtvu] per s: kicks=%llu coalesced=%llu ringstalls=%llu laps ee/vu=%llu/%llu wakeups=%llu spin/sleep=%llu/%llu | backlog hwm %u KB\n",
-			static_cast<unsigned long long>(m[0] - s_mtvu_prev[0]), static_cast<unsigned long long>(m[1] - s_mtvu_prev[1]),
-			static_cast<unsigned long long>(m[2] - s_mtvu_prev[2]), static_cast<unsigned long long>(m[3] - s_mtvu_prev[3]),
-			static_cast<unsigned long long>(m[4] - s_mtvu_prev[4]), static_cast<unsigned long long>(m[5] - s_mtvu_prev[5]),
-			static_cast<unsigned long long>(m[6] - s_mtvu_prev[6]), static_cast<unsigned long long>(m[7] - s_mtvu_prev[7]),
-			g_orbis_mtvu_ring_hwm_kb.load(std::memory_order_relaxed));
-		g_orbis_mtvu_ring_hwm_kb.store(0, std::memory_order_relaxed);
-		std::memcpy(s_mtvu_prev, m, sizeof(m));
-	}
+	OrbisPrintMtvuAndFastmem(1.0, false);
 	{
 		// vk-285-27: the EE recompiler's churn this second (iR5900.cpp, vtlb.cpp), and the
 		// rec_nocount switch.
@@ -1284,7 +1388,10 @@ static void OrbisLiveTune()
 		}
 	}
 	if (pin_request >= 0)
+	{
+		s_orbis_pin_from_live.store(true, std::memory_order_relaxed);
 		g_orbis_pin_request.store(pin_request, std::memory_order_release);
+	}
 	printf("[present] live.ini (%zu bytes) applied: deinterlace=%d fxaa=%d antiblur=%d\n", cur.size(),
 		static_cast<int>(GSConfig.InterlaceMode), static_cast<int>(GSConfig.FXAA), static_cast<int>(GSConfig.PCRTCAntiBlur));
 	printf("[present] swtex=%d testpat=%d upload=%d diag=%d perf=%d\n", g_orbis_swtex, g_orbis_testpat, g_orbis_upload_mode,
@@ -1853,6 +1960,22 @@ static void OrbisGLOSD(bool generated = false)
 			printf("\n");
 			OrbisPrintLoad(); // eerec-281
 		}
+#ifdef ORBIS_PS4
+		else
+		{
+			// Always emit a concise MTVU + fastmem + core-placement diagnostic line on PS4
+			// (first measured second and every 5s thereafter) even when perf=0 / ORBIS_TEST_BUILD=0.
+			static unsigned s_ps4_diag_ticks = 0;
+			static double s_ps4_diag_accum_sec = 0.0;
+			s_ps4_diag_accum_sec += dt;
+			if (s_orbis_load_measure.measured && (s_ps4_diag_ticks == 0 || (s_ps4_diag_ticks % 5) == 0))
+			{
+				OrbisPrintMtvuAndFastmem(s_ps4_diag_accum_sec, true);
+				s_ps4_diag_accum_sec = 0.0;
+			}
+			s_ps4_diag_ticks++;
+		}
+#endif
 		// vk-285-100: the EE switches' flag files, [cpuclk] every 5 s and the eediag lines (OrbisEEDiag.cpp);
 		// the flags are read whether or not the lines print.
 		OrbisEEDiagSecond(print);
