@@ -124,6 +124,10 @@ private:
 	void Log(const std::string& line) const;
 	void LoadManifest();
 	void SaveManifest() const;
+	// A console upgraded from a build that had OrbisDir("patches")/OrbisDir("cheats") fall back to the top data
+	// folder (orbis_paths.cpp) may still have files this app wrote sitting there instead of in m_patches/m_cheats.
+	// Moves back what can still be told apart safely; see fe_patchdl.cpp for what that excludes.
+	void MigrateMisplacedFiles();
 
 	OnlinePatchPlatform m_platform;
 	std::string m_patches, m_cheats, m_manifest_path;
