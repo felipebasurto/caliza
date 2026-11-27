@@ -84,9 +84,11 @@ OrbisDvifStats g_orbis_dvif_stats[2] = {};
 alignas(64) std::atomic<int> g_orbis_ee_plzcw_lzcnt{1};
 std::atomic<int> g_orbis_vtlb_nopushpop{1};
 std::atomic<int> g_orbis_vu1_mem_reg{1};
+std::atomic<int> g_orbis_vu1_three_op{1};
 alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
 std::atomic<u64> g_orbis_vtlb_nopushpop_emits{0};
 std::atomic<u64> g_orbis_vu1_mem_reg_loads{0}, g_orbis_vu1_mem_reg_reuses{0};
+std::atomic<u64> g_orbis_vu1_three_op_copies{0};
 
 bool OrbisCpuHasLzcnt()
 {
@@ -221,6 +223,7 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_ee_plzcw_lzcnt, (!OrbisCpuHasLzcnt() || OrbisHasFlag("noplzcw")) ? 0 : 1, "EE PLZCW LZCNT"},
 		{g_orbis_vtlb_nopushpop, OrbisHasFlag("rec_vtlb_pushpop") ? 0 : 1, "VTLB const no push/pop"},
 		{g_orbis_vu1_mem_reg, OrbisHasFlag("novumemreg") ? 0 : 1, "VU1 mem base reg"},
+		{g_orbis_vu1_three_op, OrbisHasFlag("novu3op") ? 0 : 1, "VU1 AVX 3-op FMAC"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -282,20 +285,22 @@ void OrbisEEDiagSecond(bool print)
 
 	// Caliza adopted optimization/guard counters (printed when any counter advances).
 	{
-		static u64 s_caliza_prev[4] = {};
-		const u64 caliza_cur[4] = {
+		static u64 s_caliza_prev[5] = {};
+		const u64 caliza_cur[5] = {
 			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
 			g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed),
 			g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed),
 			g_orbis_vu1_mem_reg_reuses.load(std::memory_order_relaxed),
+			g_orbis_vu1_three_op_copies.load(std::memory_order_relaxed),
 		};
 		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
 		{
-			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu vu1_mem=%llu/%llu\n",
+			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu vu1_mem=%llu/%llu vu1_3op=%llu\n",
 				static_cast<unsigned long long>(caliza_cur[0]),
 				static_cast<unsigned long long>(caliza_cur[1]),
 				static_cast<unsigned long long>(caliza_cur[3]),
-				static_cast<unsigned long long>(caliza_cur[2] + caliza_cur[3]));
+				static_cast<unsigned long long>(caliza_cur[2] + caliza_cur[3]),
+				static_cast<unsigned long long>(caliza_cur[4]));
 			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
 		}
 	}

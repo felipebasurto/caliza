@@ -503,6 +503,28 @@ public:
 		}
 	}
 
+	// Adapted from Forja SX2 (GPL-3.0+, app 158, commit a7715d5): find an XMM register caching VF `vf` (1..32)
+	// whole (unmodified or all 4 lanes modified) and pin its needed flag until the 3-operand AVX FMAC is emitted.
+	int acquireThreeOpSource(int vf, bool& was_needed)
+	{
+		if (regAllocCOP2 || vf < 1 || vf > 32)
+			return -1;
+		for (int i = 0; i < xmmTotal; i++)
+		{
+			microMapXMM& m = xmmMap[i];
+			if (m.VFreg == vf && (!m.xyzw || m.xyzw == 0xf))
+			{
+				counter++;
+				was_needed = m.isNeeded;
+				m.isNeeded = true;
+				m.count = counter;
+				return i;
+			}
+		}
+		return -1;
+	}
+	void releaseThreeOpSource(int id, bool was_needed) { xmmMap[id].isNeeded = was_needed; }
+
 	// Adapted from Forja SX2 (GPL-3.0+, app 158, commit a7715d5): cache VU1 memory base pointer (above 4 GiB
 	// on PS4) in a free GPR for the remainder of the block as a never-dirty pseudo-VI register so LQ/SQ/ILW/ISW
 	// avoid repeated 10-byte movabs loads. Evictions and flushes drop it with zero writeback cost.

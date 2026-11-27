@@ -229,6 +229,52 @@ static void setupFtReg(microVU& mVU, xmm& Ft, xmm& tempFt, int opCase, int clamp
 	}
 }
 
+// Adapted from Forja SX2 (GPL-3.0+, app 158, commit a7715d5): use 3-operand AVX VEX FMAC instructions
+// on VU1 so packed ADD/SUB/MUL write their destination directly from cached Fs/ACC without emitting a
+// preparatory vmovaps clone. Only active when AVX is enabled, !_XYZW_SS, !clampE, and neither Fs nor ACC
+// requires in-place operand clamping. Disabled via /data/caliza/flags/novu3op.
+static bool mVUthreeOpWanted(microVU& mVU, int opType, int clampType)
+{
+	return isVU1 && x86Emitter::use_avx && g_orbis_vu1_three_op.load(std::memory_order_relaxed) != 0 &&
+		   !_XYZW_SS && !clampE && (opType == 0 || opType == 1 || opType == 2 || opType == 5) &&
+		   !((clampType & (cFs | cACC)) && (CHECK_VU_OVERFLOW(mVU.index) || CHECK_VU_SIGN_OVERFLOW(mVU.index)));
+}
+
+static void mVUthreeOpEmit(int opType, const xmm& dst, const xmm& a, const xmm& b)
+{
+	if (opType == 1)
+		xSUB.PS(dst, a, b);
+	else if (opType == 2)
+		xMUL.PS(dst, a, b);
+	else
+		xADD.PS(dst, a, b);
+}
+
+struct mVUThreeOpSource
+{
+	bool on = false;
+	bool was_needed = false;
+	int id = -1;
+	xmm src;
+
+	void take(microVU& mVU, int vf)
+	{
+		id = mVU.regAlloc->acquireThreeOpSource(vf, was_needed);
+		on = id >= 0;
+		if (on)
+		{
+			src = xmm(id);
+			g_orbis_vu1_three_op_copies.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
+	void release(microVU& mVU)
+	{
+		if (on)
+			mVU.regAlloc->releaseThreeOpSource(id, was_needed);
+	}
+};
+
 // Normal FMAC Opcodes
 static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool isACC, microOpcode opEnum, int clampType)
 {
@@ -241,30 +287,47 @@ static void mVU_FMACa(microVU& mVU, int recPass, int opCase, int opType, bool is
 		xmm Fs, Ft, ACC, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
+		mVUThreeOpSource tri;
+		if (mVUthreeOpWanted(mVU, opType, clampType))
+			tri.take(mVU, _Fs_);
+
 		if (isACC)
 		{
-			Fs = mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
+			if (!tri.on)
+				Fs = mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
+			else if (_X_Y_Z_W != 0xf)
+				Fs = mVU.regAlloc->allocReg(-1, 0, _X_Y_Z_W);
+			else
+				Fs = xEmptyReg;
 			ACC = mVU.regAlloc->allocReg((_X_Y_Z_W == 0xf) ? -1 : 32, 32, 0xf, 0);
 			if (_XYZW_SS2)
 				xPSHUF.D(ACC, ACC, shuffleSS(_X_Y_Z_W));
 		}
 		else
 		{
-			Fs = mVU.regAlloc->allocReg(_Fs_, _Fd_, _X_Y_Z_W);
+			Fs = tri.on ? mVU.regAlloc->allocReg(-1, _Fd_, _X_Y_Z_W) : mVU.regAlloc->allocReg(_Fs_, _Fd_, _X_Y_Z_W);
 		}
 
 		if (clampType & cFt) mVUclamp2(mVU, Ft, xEmptyReg, _X_Y_Z_W);
-		if (clampType & cFs) mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
+		if ((clampType & cFs) && !tri.on) mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
 
-		if (_XYZW_SS) SSE_SS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
-		else          SSE_PS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		if (tri.on)
+		{
+			mVUthreeOpEmit(opType, Fs.IsEmpty() ? ACC : Fs, tri.src, Ft);
+			tri.release(mVU);
+		}
+		else if (_XYZW_SS) SSE_SS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		else               SSE_PS[opType](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 
 		if (isACC)
 		{
-			if (_XYZW_SS)
-				xMOVSS(ACC, Fs);
-			else
-				mVUmergeRegs(ACC, Fs, _X_Y_Z_W);
+			if (!Fs.IsEmpty())
+			{
+				if (_XYZW_SS)
+					xMOVSS(ACC, Fs);
+				else
+					mVUmergeRegs(ACC, Fs, _X_Y_Z_W);
+			}
 			mVUupdateFlags(mVU, ACC, Fs, tempFt);
 			if (_XYZW_SS2)
 				xPSHUF.D(ACC, ACC, shuffleSS(_X_Y_Z_W));
@@ -294,17 +357,25 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 		xmm Fs, Ft, ACC, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
-		Fs = mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
+		mVUThreeOpSource tri;
+		if (mVUthreeOpWanted(mVU, 2, clampType))
+			tri.take(mVU, _Fs_);
+		Fs = tri.on ? mVU.regAlloc->allocReg(-1, 0, _X_Y_Z_W) : mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
 		ACC = mVU.regAlloc->allocReg(32, 32, 0xf, false);
 
 		if (_XYZW_SS2)
 			xPSHUF.D(ACC, ACC, shuffleSS(_X_Y_Z_W));
 
 		if (clampType & cFt) mVUclamp2(mVU, Ft, xEmptyReg, _X_Y_Z_W);
-		if (clampType & cFs) mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
+		if ((clampType & cFs) && !tri.on) mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
 
-		if (_XYZW_SS) SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
-		else          SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		if (tri.on)
+		{
+			mVUthreeOpEmit(2, Fs, tri.src, Ft);
+			tri.release(mVU);
+		}
+		else if (_XYZW_SS) SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		else               SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
 
 		if (_XYZW_SS || _X_Y_Z_W == 0xf)
 		{
@@ -317,8 +388,16 @@ static void mVU_FMACb(microVU& mVU, int recPass, int opCase, int opType, microOp
 		else
 		{
 			const xmm& tempACC = mVU.regAlloc->allocReg();
-			xMOVAPS(tempACC, ACC);
-			SSE_PS[opType](mVU, tempACC, Fs, tempFt, xEmptyReg);
+			if (mVUthreeOpWanted(mVU, opType, clampType))
+			{
+				mVUthreeOpEmit(opType, tempACC, ACC, Fs);
+				g_orbis_vu1_three_op_copies.fetch_add(1, std::memory_order_relaxed);
+			}
+			else
+			{
+				xMOVAPS(tempACC, ACC);
+				SSE_PS[opType](mVU, tempACC, Fs, tempFt, xEmptyReg);
+			}
 			mVUmergeRegs(ACC, tempACC, _X_Y_Z_W);
 			mVUupdateFlags(mVU, ACC, Fs, tempFt);
 			mVU.regAlloc->clearNeeded(tempACC);
@@ -343,18 +422,27 @@ static void mVU_FMACc(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
 		ACC = mVU.regAlloc->allocReg(32);
-		Fs = mVU.regAlloc->allocReg(_Fs_, _Fd_, _X_Y_Z_W);
+		mVUThreeOpSource tri;
+		if (mVUthreeOpWanted(mVU, 2, clampType))
+			tri.take(mVU, _Fs_);
+		Fs = tri.on ? mVU.regAlloc->allocReg(-1, _Fd_, _X_Y_Z_W) : mVU.regAlloc->allocReg(_Fs_, _Fd_, _X_Y_Z_W);
 
 		if (_XYZW_SS2)
 			xPSHUF.D(ACC, ACC, shuffleSS(_X_Y_Z_W));
 
-		if (clampType & cFt)  mVUclamp2(mVU, Ft,  xEmptyReg, _X_Y_Z_W);
-		if (clampType & cFs)  mVUclamp2(mVU, Fs,  xEmptyReg, _X_Y_Z_W);
-		if (clampType & cACC) mVUclamp2(mVU, ACC, xEmptyReg, _X_Y_Z_W);
+		if (clampType & cFt)              mVUclamp2(mVU, Ft,  xEmptyReg, _X_Y_Z_W);
+		if ((clampType & cFs) && !tri.on) mVUclamp2(mVU, Fs,  xEmptyReg, _X_Y_Z_W);
+		if (clampType & cACC)             mVUclamp2(mVU, ACC, xEmptyReg, _X_Y_Z_W);
 
 
-		if (_XYZW_SS) { SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_SS[0](mVU, Fs, ACC, tempFt, xEmptyReg); }
-		else          { SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_PS[0](mVU, Fs, ACC, tempFt, xEmptyReg); }
+		if (tri.on)
+		{
+			mVUthreeOpEmit(2, Fs, tri.src, Ft);
+			tri.release(mVU);
+			SSE_PS[0](mVU, Fs, ACC, tempFt, xEmptyReg);
+		}
+		else if (_XYZW_SS) { SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_SS[0](mVU, Fs, ACC, tempFt, xEmptyReg); }
+		else               { SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_PS[0](mVU, Fs, ACC, tempFt, xEmptyReg); }
 
 		if (_XYZW_SS2)
 			xPSHUF.D(ACC, ACC, shuffleSS(_X_Y_Z_W));
@@ -379,15 +467,27 @@ static void mVU_FMACd(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 		xmm Fs, Ft, Fd, tempFt;
 		setupFtReg(mVU, Ft, tempFt, opCase, clampType);
 
-		Fs = mVU.regAlloc->allocReg(_Fs_,  0, _X_Y_Z_W);
-		Fd = mVU.regAlloc->allocReg(32, _Fd_, _X_Y_Z_W);
+		const bool tri_wanted = mVUthreeOpWanted(mVU, 2, clampType);
+		mVUThreeOpSource tri, acc;
+		if (tri_wanted)
+			tri.take(mVU, _Fs_);
+		Fs = tri.on ? mVU.regAlloc->allocReg(-1, 0, _X_Y_Z_W) : mVU.regAlloc->allocReg(_Fs_,  0, _X_Y_Z_W);
+		if (tri_wanted)
+			acc.take(mVU, 32);
+		Fd = acc.on ? mVU.regAlloc->allocReg(-1, _Fd_, _X_Y_Z_W) : mVU.regAlloc->allocReg(32, _Fd_, _X_Y_Z_W);
 
-		if (clampType & cFt)  mVUclamp2(mVU, Ft, xEmptyReg, _X_Y_Z_W);
-		if (clampType & cFs)  mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
-		if (clampType & cACC) mVUclamp2(mVU, Fd, xEmptyReg, _X_Y_Z_W);
+		if (clampType & cFt)               mVUclamp2(mVU, Ft, xEmptyReg, _X_Y_Z_W);
+		if ((clampType & cFs) && !tri.on)  mVUclamp2(mVU, Fs, xEmptyReg, _X_Y_Z_W);
+		if ((clampType & cACC) && !acc.on) mVUclamp2(mVU, Fd, xEmptyReg, _X_Y_Z_W);
 
-		if (_XYZW_SS) { SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_SS[1](mVU, Fd, Fs, tempFt, xEmptyReg); }
-		else          { SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg); SSE_PS[1](mVU, Fd, Fs, tempFt, xEmptyReg); }
+		if (tri.on)        mVUthreeOpEmit(2, Fs, tri.src, Ft);
+		else if (_XYZW_SS) SSE_SS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		else               SSE_PS[2](mVU, Fs, Ft, xEmptyReg, xEmptyReg);
+		if (acc.on)        mVUthreeOpEmit(1, Fd, acc.src, Fs);
+		else if (_XYZW_SS) SSE_SS[1](mVU, Fd, Fs, tempFt, xEmptyReg);
+		else               SSE_PS[1](mVU, Fd, Fs, tempFt, xEmptyReg);
+		tri.release(mVU);
+		acc.release(mVU);
 
 		mVUupdateFlags(mVU, Fd, Fs, tempFt);
 
