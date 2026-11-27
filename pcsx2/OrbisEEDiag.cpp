@@ -71,10 +71,15 @@ std::atomic<int> g_orbis_pfw{0};
 std::atomic<int> g_orbis_nt_store{0};
 alignas(64) u64 g_orbis_vif1_fused = 0;
 u64 g_orbis_hle_flushes = 0;
-u64 g_orbis_tid_hits = 0, g_orbis_tid_checks = 0, g_orbis_tid_mismatches = 0, g_orbis_eret_skips = 0;
+u64 g_orbis_tid_hits = 0, g_orbis_tid_checks = 0, g_orbis_tid_mismatches = 0;
+u64 g_orbis_eret_skips = 0, g_orbis_eret_forced = 0;
+u64 g_orbis_ei_skips = 0, g_orbis_ei_forced = 0;
+u64 g_orbis_status_skips = 0, g_orbis_status_forced = 0, g_orbis_cop0_timer_sched = 0;
+u64 g_orbis_vif1_fast_codes = 0, g_orbis_vif1_slow_codes = 0, g_orbis_vif1_whole_unpacks = 0;
 u64 g_orbis_eret_block[4] = {}; // vk-285-103: ERETs whose event test flags/eretfast kept: INTC, DMAC, timer, VU0
 u64 g_orbis_waitloop_ext_blocks = 0, g_orbis_waitloop_ext_runs = 0; // vk-285-126
 alignas(64) char g_orbis_ee_counters_fence[64] = {};
+OrbisDvifStats g_orbis_dvif_stats[2] = {};
 
 // The EE core's cycles per TSC tick, x1e6, measured on the EE thread every 300 vsyncs (0: not yet).
 static std::atomic<u64> s_orbis_ee_ratio_u{0};
@@ -184,8 +189,8 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_hle_flush, OrbisHasFlag("hleflush") ? 1 : 0, "FlushCache HLE"},
 		{g_orbis_pfw, OrbisHasFlag("pfw") ? 1 : 0, "write prefetches"},
 		{g_orbis_hle_tid, OrbisHasFlag("nohletid") ? 0 : 1, "GetThreadId cache"},
-		{g_orbis_eret_fast, OrbisHasFlag("noeretfast") ? 0 : 1, "ERET without event test"},
-		{g_orbis_vif_fast, OrbisHasFlag("vifslow") ? 0 : 1, "VIF simple codes in the loop"},
+		{g_orbis_eret_fast, OrbisHasFlag("noeretfast") ? 0 : 1, "COP0 event-test gating"},
+		{g_orbis_vif_fast, OrbisHasFlag("vifslow") ? 0 : 1, "VIF1 fast loop + MPG skip"},
 		{g_orbis_nt_store, OrbisHasFlag("ntstore") ? 1 : 0, "GS streaming stores"},
 		{g_orbis_gs_pfw, OrbisHasFlag("nogspfw") ? 0 : 1, "GS stream prefetch"}, // vk-285-107: on unless flags/nogspfw
 		{g_orbis_waitloop_ext, OrbisHasFlag("waitloop_upstream") ? 0 : 1, "wider wait-loop rule"}, // vk-285-126
@@ -205,23 +210,46 @@ void OrbisEEDiagSecond(bool print)
 		s_first = false;
 	}
 
-	// The fast paths' counts per second, when any moved (plain loads of EE-thread counters).
+	// The fast paths' counts per second, when any moved (plain loads of EE-thread counters + relaxed cross-thread loads).
 	{
-		static u64 s_prev[12] = {};
-		const u64 cur[12] = {g_orbis_vif1_fused, g_orbis_hle_flushes, g_orbis_tid_hits, g_orbis_tid_checks,
+		static u64 s_prev[26] = {};
+		const u64 dvif_compiled = g_orbis_dvif_stats[0].compiled.load(std::memory_order_relaxed) +
+			g_orbis_dvif_stats[1].compiled.load(std::memory_order_relaxed);
+		const u64 dvif_hits = g_orbis_dvif_stats[0].cache_hits.load(std::memory_order_relaxed) +
+			g_orbis_dvif_stats[1].cache_hits.load(std::memory_order_relaxed);
+		const u64 dvif_fallbacks = g_orbis_dvif_stats[0].interp_fallbacks.load(std::memory_order_relaxed) +
+			g_orbis_dvif_stats[1].interp_fallbacks.load(std::memory_order_relaxed);
+		const u64 cur[26] = {
+			g_orbis_vif1_fused, g_orbis_hle_flushes, g_orbis_tid_hits, g_orbis_tid_checks,
 			g_orbis_tid_mismatches, g_orbis_eret_skips, g_orbis_eret_block[0], g_orbis_eret_block[1],
-			g_orbis_eret_block[2], g_orbis_eret_block[3], g_orbis_waitloop_ext_runs, g_orbis_waitloop_ext_blocks};
+			g_orbis_eret_block[2], g_orbis_eret_block[3], g_orbis_waitloop_ext_runs, g_orbis_waitloop_ext_blocks,
+			g_orbis_ei_skips, g_orbis_status_skips, g_orbis_cop0_timer_sched, g_orbis_vif1_fast_codes,
+			g_orbis_vif1_whole_unpacks, g_orbis_vu1_mpg_same.load(std::memory_order_relaxed),
+			g_orbis_vu1_mpg_total.load(std::memory_order_relaxed),
+			dvif_compiled, dvif_hits, dvif_fallbacks,
+			g_orbis_eret_forced, g_orbis_ei_forced, g_orbis_status_forced, g_orbis_vif1_slow_codes,
+		};
 		if (std::memcmp(cur, s_prev, sizeof(cur)) != 0)
 			printf("[eefast] per s: vif1 passes in place=%llu FlushCache HLE=%llu | GetThreadId cached=%llu checked=%llu "
-				   "mismatched=%llu (total %llu) | ERETs without event test=%llu, kept by intc=%llu dmac=%llu timer=%llu "
-				   "vu0=%llu | wider wait loops: fast-forwards=%llu blocks=%llu (total)\n",
+				   "mismatched=%llu (total %llu) | dvif compile=%llu hit=%llu fallback=%llu | cop0 skip/forced: "
+				   "ERET=%llu/%llu EI=%llu/%llu status=%llu/%llu tmr=%llu (kept intc=%llu dmac=%llu tmr=%llu vu0=%llu) "
+				   "| vif1 fast=%llu slow=%llu whole_upk=%llu | vu1 mpg same=%llu/%llu "
+				   "| wider wait loops: fast-forwards=%llu blocks=%llu (total)\n",
 				static_cast<unsigned long long>(cur[0] - s_prev[0]), static_cast<unsigned long long>(cur[1] - s_prev[1]),
 				static_cast<unsigned long long>(cur[2] - s_prev[2]), static_cast<unsigned long long>(cur[3] - s_prev[3]),
 				static_cast<unsigned long long>(cur[4] - s_prev[4]), static_cast<unsigned long long>(cur[4]),
-				static_cast<unsigned long long>(cur[5] - s_prev[5]), static_cast<unsigned long long>(cur[6] - s_prev[6]),
-				static_cast<unsigned long long>(cur[7] - s_prev[7]), static_cast<unsigned long long>(cur[8] - s_prev[8]),
-				static_cast<unsigned long long>(cur[9] - s_prev[9]), static_cast<unsigned long long>(cur[10] - s_prev[10]),
-				static_cast<unsigned long long>(cur[11]));
+				static_cast<unsigned long long>(cur[19] - s_prev[19]), static_cast<unsigned long long>(cur[20] - s_prev[20]),
+				static_cast<unsigned long long>(cur[21] - s_prev[21]),
+				static_cast<unsigned long long>(cur[5] - s_prev[5]), static_cast<unsigned long long>(cur[22] - s_prev[22]),
+				static_cast<unsigned long long>(cur[12] - s_prev[12]), static_cast<unsigned long long>(cur[23] - s_prev[23]),
+				static_cast<unsigned long long>(cur[13] - s_prev[13]), static_cast<unsigned long long>(cur[24] - s_prev[24]),
+				static_cast<unsigned long long>(cur[14] - s_prev[14]),
+				static_cast<unsigned long long>(cur[6] - s_prev[6]), static_cast<unsigned long long>(cur[7] - s_prev[7]),
+				static_cast<unsigned long long>(cur[8] - s_prev[8]), static_cast<unsigned long long>(cur[9] - s_prev[9]),
+				static_cast<unsigned long long>(cur[15] - s_prev[15]), static_cast<unsigned long long>(cur[25] - s_prev[25]),
+				static_cast<unsigned long long>(cur[16] - s_prev[16]),
+				static_cast<unsigned long long>(cur[17] - s_prev[17]), static_cast<unsigned long long>(cur[18] - s_prev[18]),
+				static_cast<unsigned long long>(cur[10] - s_prev[10]), static_cast<unsigned long long>(cur[11]));
 		std::memcpy(s_prev, cur, sizeof(cur));
 	}
 

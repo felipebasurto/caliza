@@ -75,6 +75,8 @@ alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_vu_exec_ticks{0}; // VU: 
 alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_ee_spin_iters{0}; // EE: pause-loop iterations in ring/lap waits
 alignas(__cachelinesize) std::atomic<u64> g_orbis_mtvu_ee_yields{0}; // EE: thread yields in ring/lap waits
 alignas(__cachelinesize) std::atomic<u32> g_orbis_mtvu_ring_hwm_kb{0}; // VU: maximum producer-minus-consumer ring backlog, KiB
+alignas(__cachelinesize) std::atomic<u64> g_orbis_vu1_mpg_total{0}; // VU: MTVU_VU_WRITE_MICRO packets received
+alignas(__cachelinesize) std::atomic<u64> g_orbis_vu1_mpg_same{0}; // VU: unchanged microcode uploads skipped without Clear()
 
 static __fi void OrbisMtvuCount(std::atomic<u64>& counter)
 {
@@ -460,6 +462,31 @@ void VU_Thread::ExecuteRingBuffer()
 					u32 vu_micro_addr = Read();
 					u32 size = Read();
 					OrbisHist(4, vu_micro_addr, size, 0, 0); // vk-285-80
+					// Adapted from Forja SX2 (josephguerra562-ux/forja-sx2, GPLv3): when a microprogram
+					// upload writes identical bytes, skip CpuVU1->Clear() so microVU keeps its entry cache
+					// and quick lookup table intact. Disabled by /data/caliza/flags/vifslow.
+					OrbisMtvuCount(g_orbis_vu1_mpg_total);
+					if (g_orbis_vif_fast.load(std::memory_order_relaxed) && size > 0)
+					{
+						const bool vu_ok = vu_micro_addr <= sizeof(VU1.Micro) && size <= sizeof(VU1.Micro) - vu_micro_addr;
+						const bool ring_ok = m_read_pos >= 0 && size_u32(size) <= static_cast<u32>(buffer_size - m_read_pos);
+						if (!vu_ok || !ring_ok) [[unlikely]]
+						{
+							static std::atomic<bool> s_logged_mpg_bounds{false};
+							if (!s_logged_mpg_bounds.exchange(true, std::memory_order_relaxed))
+							{
+								printf("[perf-fallback] vif1_fast_and_mpg_skip: unexpected MTVU_VU_WRITE_MICRO bounds (addr=0x%x size=%u read_pos=%d ring=%d), falling back to Clear+Read\n",
+									vu_micro_addr, size, m_read_pos, buffer_size);
+								fflush(stdout);
+							}
+						}
+						else if (std::memcmp(&VU1.Micro[vu_micro_addr], &buffer[m_read_pos], size) == 0)
+						{
+							m_read_pos += size_u32(size);
+							OrbisMtvuCount(g_orbis_vu1_mpg_same);
+							break;
+						}
+					}
 					CpuVU1->Clear(vu_micro_addr, size);
 					Read(&VU1.Micro[vu_micro_addr], size);
 					break;

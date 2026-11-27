@@ -11,6 +11,8 @@
 #include "Memory.h"
 #include "OrbisPaths.h" // vk-285-33 (the port's include-orbis)
 
+bool newVifDynaRec = false;
+
 enum UnpackOffset {
 	OFFSET_X = 0,
 	OFFSET_Y = 1,

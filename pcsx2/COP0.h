@@ -7,6 +7,8 @@ struct tlbs;
 
 extern void WriteCP0Status(u32 value);
 extern void WriteCP0Config(u32 value);
+extern void OrbisRecERET();
+extern void OrbisRecEI();
 extern void cpuUpdateOperationMode();
 extern void WriteTLB(int i);
 extern void UnmapTLB(const tlbs& t, int i);

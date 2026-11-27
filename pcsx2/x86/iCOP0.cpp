@@ -84,14 +84,18 @@ void recTLBWR() { recCall(Interp::TLBWR); }
 
 void recERET()
 {
-	recBranchCall(Interp::ERET);
+	// OrbisRecERET matches recBranchCall when flags/noeretfast is set; otherwise ERET schedules
+	// an event test only when an interrupt, COP0 timer, or VU0 microprogram requires one.
+	recCall(OrbisRecERET);
+	g_branch = 2;
 }
 
 void recEI()
 {
-	// must branch after enabling interrupts, so that anything
-	// pending gets triggered properly.
-	recBranchCall(Interp::EI);
+	// OrbisRecEI matches recBranchCall when flags/noeretfast is set; otherwise EI schedules
+	// an event test only when an interrupt, COP0 timer, or VU0 microprogram requires one.
+	recCall(OrbisRecEI);
+	g_branch = 2;
 }
 
 void recDI()

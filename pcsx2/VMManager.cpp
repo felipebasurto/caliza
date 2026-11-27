@@ -24,6 +24,7 @@
 #include "IopBios.h"
 #include "MTGS.h"
 #include "MTVU.h"
+#include "OrbisEEDiag.h"
 #include "PINE.h"
 #include "Patch.h"
 #include "PerformanceMetrics.h"
@@ -2757,6 +2758,8 @@ void VMManager::LogCPUCapabilities()
 }
 
 
+extern bool OrbisFlag(const char* name);
+
 void VMManager::InitializeCPUProviders()
 {
 #ifdef _M_X86 // TODO(Stenzek): Remove me once EE/VU/IOP recs are added.
@@ -2776,7 +2779,27 @@ void VMManager::InitializeCPUProviders()
 	vu1Thread.Open();
 #endif
 
-	if (SysMemory::IsCodeMemoryExecutable())
+	const bool code_exec = SysMemory::IsCodeMemoryExecutable();
+	const bool vifrec_off = ::OrbisFlag("novifrec");
+	const bool eretfast_off = ::OrbisFlag("noeretfast");
+	const bool vifslow_off = ::OrbisFlag("vifslow");
+
+	newVifDynaRec = code_exec && !vifrec_off;
+	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_vif_fast.store(vifslow_off ? 0 : 1, std::memory_order_relaxed);
+
+	printf("[perf] vif_unpack_rec: %s (%s)\n",
+		newVifDynaRec ? "on" : "off",
+		!code_exec ? "non-executable code memory" : (vifrec_off ? "flags/novifrec" : "default"));
+	printf("[perf] cop0_event_gating: %s (%s)\n",
+		eretfast_off ? "off" : "on",
+		eretfast_off ? "flags/noeretfast" : "default");
+	printf("[perf] vif1_fast_and_mpg_skip: %s (%s)\n",
+		vifslow_off ? "off" : "on",
+		vifslow_off ? "flags/vifslow" : "default");
+	fflush(stdout);
+
+	if (code_exec)
 		VifUnpackSSE_Init();
 	else
 		printf("[dbg] icp: VIF unpack JIT generation skipped (non-executable code memory)\n");
@@ -2855,7 +2878,7 @@ void VMManager::Internal::ClearCPUExecutionCaches()
 	CpuVU1->Reset();
 	printf("[dbg] clear: CpuVU1 done\n"); fflush(stdout);
 
-	if constexpr (newVifDynaRec)
+	if (newVifDynaRec)
 	{
 		dVifReset(0);
 		dVifReset(1);
