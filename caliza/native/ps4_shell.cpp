@@ -356,6 +356,15 @@ std::vector<caliza::settings::Choice> DynamicChoices(const OrbisFrontendPaths& p
 	return out;
 }
 
+std::vector<caliza::ConsolePatchGroup> ListPatchGroups(const OrbisFrontendPaths& paths, const caliza::GameEntry& game, bool cheats)
+{
+	std::vector<caliza::ConsolePatchGroup> out;
+	const std::string& dir = cheats ? paths.cheats_dir : paths.patches_dir;
+	for (const fe::settings::PatchGroup& group : fe::settings::PatchGroups(dir, game.serial))
+		out.push_back({group.name, group.file, group.description});
+	return out;
+}
+
 bool EditSettings(const std::string& path, const std::vector<caliza::settings::Mutation>& mutations, std::string* summary, std::string* error)
 {
 	std::vector<fe::settings::Change> changes;
@@ -633,6 +642,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 		return status;
 	};
 	options.hooks.dynamic_choices = [&paths](const caliza::settings::SettingDef& definition) { return DynamicChoices(paths, definition); };
+	options.hooks.list_patch_groups = [&paths](const caliza::GameEntry& game, bool cheats) { return ListPatchGroups(paths, game, cheats); };
 	options.hooks.web_panel_url = [] {
 		std::string url, shown;
 		return orbis_web_browser_url(url, shown) ? shown : std::string();

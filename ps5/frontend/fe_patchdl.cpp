@@ -5,6 +5,7 @@
 
 #include "fe_patchdl.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
@@ -76,6 +77,12 @@ void MakeDir(const std::string& dir)
 {
 	if (!dir.empty())
 		mkdir(dir.c_str(), 0777);
+}
+
+bool Exists(const std::string& path)
+{
+	struct stat st = {};
+	return stat(path.c_str(), &st) == 0;
 }
 
 std::string Trimmed(const std::string& s)
@@ -257,6 +264,7 @@ OnlinePatches::OnlinePatches(OnlinePatchPlatform platform, std::string patches_d
 	, m_manifest_path(std::move(manifest))
 {
 	LoadManifest();
+	MigrateMisplacedFiles();
 }
 
 OnlinePatches::~OnlinePatches()
@@ -305,6 +313,73 @@ void OnlinePatches::SaveManifest() const
 	std::string error;
 	if (!WriteWhole(m_manifest_path, text, error))
 		Log(error);
+}
+
+// Before this fix, orbis_paths.cpp's OrbisDir("patches")/OrbisDir("cheats") answered the top data folder itself
+// while neither subfolder existed yet, so a file this app wrote could land there instead -- and since both kinds
+// fell back to the identical folder, a cheats file and a patches file sharing the same "<serial>_<crc>.pnach" name
+// landed at the very same path, the cheats source running last in the list (see OnlinePatchSources) silently
+// overwriting whatever the patches source had just written. That overwritten content is already gone; nothing here
+// recovers it. What this moves back is only what the manifest (files this app itself wrote) still shows sitting one
+// folder up from m_patches/m_cheats: a Gabominated-suffixed name is unambiguous, since only that source ever writes
+// it, so it goes to m_patches. A plain "<serial>_<crc>.pnach" was written under that identical name by both the
+// PCSX2 patches source and the cheats source, so whichever ran last is whatever remains -- there is no way left to
+// tell which one it is, so it is left exactly where it is rather than guessed into the wrong folder.
+void OnlinePatches::MigrateMisplacedFiles()
+{
+	std::vector<std::string> parents;
+	for (const std::string* dir : {&m_patches, &m_cheats})
+	{
+		const size_t slash = dir->rfind('/');
+		if (slash == std::string::npos || slash == 0)
+			continue;
+		const std::string parent = dir->substr(0, slash);
+		if (parent != m_patches && parent != m_cheats && std::find(parents.begin(), parents.end(), parent) == parents.end())
+			parents.push_back(parent);
+	}
+	static const std::string kGabominatedSuffix = "_gabominated.pnach";
+	bool changed = false;
+	for (const std::string& parent : parents)
+	{
+		std::vector<std::string> stray;
+		for (const auto& [path, fingerprint] : m_manifest)
+		{
+			(void)fingerprint;
+			const size_t slash = path.rfind('/');
+			if (slash == parent.size() && path.compare(0, slash, parent) == 0)
+				stray.push_back(path);
+		}
+		for (const std::string& path : stray)
+		{
+			const std::string name = path.substr(parent.size() + 1);
+			const bool gabominated = name.size() > kGabominatedSuffix.size() &&
+				name.compare(name.size() - kGabominatedSuffix.size(), kGabominatedSuffix.size(), kGabominatedSuffix) == 0;
+			if (!gabominated)
+			{
+				Log(name + ": at " + parent + " from before patches/ and cheats/ had their own folders; its name doesn't say " +
+					"which one it belongs to, so it is left there rather than guessed");
+				continue;
+			}
+			if (!Exists(path))
+				continue; // the manifest still names it, but it's already gone (user-removed, or moved by hand)
+			const std::string to = m_patches + "/" + name;
+			if (Exists(to))
+				continue; // a current copy is already in the right place; leave the stray one for the user to clear out
+			MakeDir(m_patches);
+			if (std::rename(path.c_str(), to.c_str()) != 0)
+			{
+				Log("couldn't move " + path + " to " + to + " (errno " + std::to_string(errno) + ")");
+				continue;
+			}
+			const std::string fingerprint = m_manifest[path];
+			m_manifest.erase(path);
+			m_manifest[to] = fingerprint;
+			changed = true;
+			Log("moved " + path + " to " + to + " (it was written before patches/ existed)");
+		}
+	}
+	if (changed)
+		SaveManifest();
 }
 
 OnlinePatchStatus OnlinePatches::Status(const std::string& serial) const

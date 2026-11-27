@@ -2653,7 +2653,11 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   fe.top_dir = "/data/caliza";
   fe.settings_dir = "/data/caliza/settings";
   fe.gs_ini = "/data/caliza/gs.ini";
-  fe.patches_dir = OrbisDir("patches");
+  // Not OrbisDir("patches"): same reasoning as fe.textures_dir below -- a fresh /data/caliza with no patches/ or
+  // cheats/ yet made OrbisDir answer /data/caliza itself for both, so a downloaded cheats file could land on top of
+  // a patches file of the same name and silently replace it. Fixed paths; the downloader (fe_patchdl.cpp) and
+  // PCSX2's own EmuFolders::Patches/::Cheats below already create the folder before writing to it.
+  fe.patches_dir = "/data/caliza/patches";
   fe.covers_dir = OrbisDir("covers");
   fe.cache_dir = OrbisDir("cache") + "/covers";
   fe.allow_download = allow_download;
@@ -2667,8 +2671,9 @@ static OrbisFrontendPaths orbis_frontend_paths(bool allow_download)
   fe.texture_pack_list = OrbisDir("cache") + "/texture-packs.json";
   fe.texture_packs = !orbis_flag("notexpacks");
   // 2026-10-08 (AI-assisted): a game's patches and cheats from GitHub (the sheet's "Get patches and cheats"), into the
-  // folders PCSX2 reads them from (EmuFolders::Patches and ::Cheats below).
-  fe.cheats_dir = OrbisDir("cheats");
+  // folders PCSX2 reads them from (EmuFolders::Patches and ::Cheats below). Fixed path, not OrbisDir("cheats"): see
+  // fe.patches_dir above.
+  fe.cheats_dir = "/data/caliza/cheats";
   fe.online_patch_manifest = OrbisDir("cache") + "/online-patches.txt";
   fe.online_patches = !orbis_flag("noonlinepatches");
   return fe;
@@ -3588,8 +3593,10 @@ int main()
   EmuFolders::MemoryCards = OrbisDir("memcards");
   EmuFolders::Snapshots = OrbisDir("snapshots");
   EmuFolders::Savestates = OrbisDir("savestates");
-  EmuFolders::Cheats = OrbisDir("cheats");
-  EmuFolders::Patches = OrbisDir("patches");
+  // Fixed paths, not OrbisDir("cheats")/OrbisDir("patches"): see fe.patches_dir's comment above. PCSX2 reads both
+  // folders directly, so a stale fallback to /data/caliza here would miss a correctly-filed patch or cheat too.
+  EmuFolders::Cheats = "/data/caliza/cheats";
+  EmuFolders::Patches = "/data/caliza/patches";
   EmuFolders::Cache = OrbisDir("cache");
   EmuFolders::Covers = OrbisDir("covers");
   EmuFolders::GameSettings = "/data/caliza";

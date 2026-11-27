@@ -437,6 +437,92 @@ void TestAsyncProjectionRefreshOffRenderThread()
 	CHECK_EQ(refreshed.diagnostics.web_panel_url, std::string("http://192.168.1.50:8080"));
 }
 
+// Each per-patch/per-cheat row the game's downloaded files actually contain (list_patch_groups, same state the web
+// companion panel reads from fe_settings.cpp PatchGroups) shows as an own Toggle row once the game is selected, and
+// toggling it persists to the per-game ini exactly as the web panel's patch+/patch-/cheat+/cheat- edits do: a Patches/
+// Enable or Cheats/Enable list line, plus EmuCore/EnableCheats kept in lockstep with whether any cheat is on.
+void TestPatchAndCheatTogglePersistence()
+{
+	TempDir root;
+	ConsoleBackendOptions options = TestOptions(root);
+	options.hooks.list_patch_groups = [](const GameEntry& game, bool cheats) {
+		std::vector<ConsolePatchGroup> out;
+		if (game.serial != "SLUS-20010")
+			return out;
+		if (cheats)
+			out.push_back({"Infinite HP", "SLUS-20010_DEADBEEF.pnach", ""});
+		else
+			out.push_back({"60 FPS", "SLUS-20010_DEADBEEF.pnach", "Removes the frame cap"});
+		return out;
+	};
+	ConsoleBackend backend(options);
+	EventLog log;
+	MakeMinimalIso(root.path + "/games/Valid Game (USA).iso");
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::RescanAll)));
+	const Snapshot scanned = backend.GetSnapshot();
+	CHECK_EQ(scanned.games.size(), 1u);
+	if (scanned.games.empty())
+		return;
+	const std::string game_id = scanned.games.front().id;
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, game_id)));
+
+	auto find_row = [](const Snapshot& snapshot, const char* category_id, const char* label) -> const SettingItem* {
+		for (const SettingCategory& category : snapshot.settings)
+		{
+			if (category.id != category_id)
+				continue;
+			for (const SettingItem& item : category.items)
+				if (item.label == label)
+					return &item;
+		}
+		return nullptr;
+	};
+
+	const Snapshot before_toggle = backend.GetSnapshot();
+	const SettingItem* patch_row = find_row(before_toggle, "patches", "60 FPS");
+	const SettingItem* cheat_row = find_row(before_toggle, "cheats", "Infinite HP");
+	CHECK_TRUE(patch_row != nullptr);
+	CHECK_TRUE(cheat_row != nullptr);
+	if (!patch_row || !cheat_row)
+		return;
+	CHECK_EQ(patch_row->value, std::string("false"));
+	CHECK_EQ(cheat_row->value, std::string("false"));
+	CHECK_FALSE(patch_row->game_scoped);
+	const std::string patch_id = patch_row->id, cheat_id = cheat_row->id;
+
+	const CommandEvent patch_on = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, patch_id, {}, "true")));
+	CHECK_EQ(static_cast<int>(patch_on.status), static_cast<int>(CommandStatus::Succeeded));
+	const CommandEvent cheat_on = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, cheat_id, {}, "true")));
+	CHECK_EQ(static_cast<int>(cheat_on.status), static_cast<int>(CommandStatus::Succeeded));
+
+	const std::string ini_path = root.path + "/settings/Valid Game (USA).ini";
+	std::string written = ReadFile(ini_path);
+	CHECK_TRUE(written.find("Patches/Enable=60 FPS") != std::string::npos);
+	CHECK_TRUE(written.find("Cheats/Enable=Infinite HP") != std::string::npos);
+	CHECK_TRUE(written.find("EmuCore/EnableCheats=true") != std::string::npos);
+
+	const Snapshot after_on = backend.GetSnapshot();
+	const SettingItem* patch_row_on = find_row(after_on, "patches", "60 FPS");
+	const SettingItem* cheat_row_on = find_row(after_on, "cheats", "Infinite HP");
+	CHECK_TRUE(patch_row_on != nullptr && patch_row_on->value == "true" && patch_row_on->modified);
+	CHECK_TRUE(cheat_row_on != nullptr && cheat_row_on->value == "true" && cheat_row_on->modified);
+
+	// Turning the only enabled cheat back off also clears the master EmuCore/EnableCheats switch this backend set,
+	// the same on/off coordination the shelf's legacy options sheet uses (fe_options.cpp OptionsSheet::SetCheat).
+	const CommandEvent cheat_off = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, cheat_id, {}, "false")));
+	CHECK_EQ(static_cast<int>(cheat_off.status), static_cast<int>(CommandStatus::Succeeded));
+	written = ReadFile(ini_path);
+	CHECK_TRUE(written.find("Cheats/Enable=Infinite HP") == std::string::npos);
+	CHECK_TRUE(written.find("EmuCore/EnableCheats") == std::string::npos);
+	CHECK_TRUE(written.find("Patches/Enable=60 FPS") != std::string::npos); // the patch toggle is untouched
+
+	// Reset (the shelf's Square action on a row) turns a patch/cheat toggle back off too, same as turning it off.
+	const CommandEvent patch_reset = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::ResetSetting, patch_id)));
+	CHECK_EQ(static_cast<int>(patch_reset.status), static_cast<int>(CommandStatus::Succeeded));
+	written = ReadFile(ini_path);
+	CHECK_TRUE(written.find("Patches/Enable=60 FPS") == std::string::npos);
+}
+
 } // namespace
 
 int main()
@@ -449,6 +535,7 @@ int main()
 	TestLaunchHandoffAndRuntimeHonesty();
 	TestProductionServiceCommandHooks();
 	TestAsyncProjectionRefreshOffRenderThread();
+	TestPatchAndCheatTogglePersistence();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");

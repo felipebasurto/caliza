@@ -14,6 +14,14 @@
 
 namespace caliza
 {
+// One group ("[60 FPS]") found in a game's patch or cheat file, as fe_settings.cpp's PatchGroups reads it.
+struct ConsolePatchGroup
+{
+	std::string name;
+	std::string file;
+	std::string description;
+};
+
 // Production services owned outside the presentation layer. console_backend.cpp validates and serializes
 // every contract command, but these hooks are the only place that performs platform/settings mutations. The
 // UI never edits ini files, memory cards, BIOS state or boot state itself.
@@ -30,6 +38,9 @@ struct ConsoleSettingsHooks
 	using BiosStatus = std::function<caliza::BiosStatus()>;
 	using DynamicChoices = std::function<std::vector<settings::Choice>(const settings::SettingDef& definition)>;
 	using WebPanelUrl = std::function<std::string()>;
+	// The patch or cheat groups a game's downloaded file(s) actually contain, read live so the settings
+	// projection never shows a stale or empty row. `cheats` selects the cheats folder over the patches one.
+	using ListPatchGroups = std::function<std::vector<ConsolePatchGroup>(const GameEntry& game, bool cheats)>;
 	// Production long-running services. Begin/cancel/delete hooks return whether the service accepted the
 	// request; completion is reported through ServiceOperations rather than pretending the command itself
 	// downloaded or installed anything.
@@ -51,6 +62,7 @@ struct ConsoleSettingsHooks
 	BiosStatus bios_status;
 	DynamicChoices dynamic_choices;
 	WebPanelUrl web_panel_url;
+	ListPatchGroups list_patch_groups;
 	FetchOnlinePatches fetch_online_patches;
 	DownloadTexturePack download_texture_pack;
 	std::function<bool(const GameEntry&, const std::string&, std::string*)> import_texture_pack;
