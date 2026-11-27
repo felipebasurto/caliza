@@ -105,6 +105,10 @@ int sceNetCtlGetState(int* state);
 
 }
 
+#ifdef ORBIS_PS4
+extern std::atomic<unsigned long long> g_orbis_title_cpu_mask;
+#endif
+
 // The fonts, embedded: PCSX2's Roboto (Apache-2.0) and PromptFont (OFL-1.1), from its resources.
 #ifndef FE_FONT_DIR
 #error "FE_FONT_DIR must name PCSX2's bin/resources/fonts"
@@ -358,8 +362,7 @@ std::string ThreadPlace()
 void TexturePackThreadStart(const char* role)
 {
 #ifdef ORBIS_PS4
-	extern std::atomic<unsigned long long> g_orbis_title_cpu_mask;
-	unsigned long long kTitleCpus = g_orbis_title_cpu_mask.load(std::memory_order_acquire);
+	unsigned long long kTitleCpus = ::g_orbis_title_cpu_mask.load(std::memory_order_acquire);
 	if (kTitleCpus == 0)
 	{
 		const int cpumode = sceKernelGetCpumode();
