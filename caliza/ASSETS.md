@@ -10,9 +10,9 @@ commercial game artwork, or the generated reference bitmaps as runtime resources
   (`ps4/sce_sys/icon0.png`), the master PNG and the companion-panel SVGs are generated
   from the same geometry by `ps4/tools/make_brand_assets.py`.
 - The README vector illustrations under `ps4/docs/diagrams/` (`caliza-overview.svg`,
-  `caliza-architecture.svg`, and `caliza-storage-flow.svg`) are original standalone
-  diagrams for Caliza using only geometric vector primitives and the Estratos palette;
-  they contain no third-party trademarks, logos, or commercial artwork.
+  `caliza-architecture.svg`, `caliza-storage-flow.svg`, and `download-button.svg`) are
+  original standalone vector assets for Caliza using only geometric primitives and the
+  Estratos palette; they contain no third-party trademarks, logos, or commercial artwork.
 - The background is procedural: a radial glow sprite and a domain-warped noise fog are
   generated once on the CPU, and the glass cubes are projected and shaded per frame. The
   background stays still apart from a slow float of each cube; reduced motion stops that

@@ -10,6 +10,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/felipebasurto/caliza/releases/latest">
+    <img src="ps4/docs/diagrams/download-button.svg" width="320" alt="Download Latest Release (.pkg)">
+  </a>
+</p>
+
+<p align="center">
+  <sub>PS4 homebrew <code>.pkg</code> + SHA-256 checksum on <a href="https://github.com/felipebasurto/caliza/releases">GitHub Releases</a> · No BIOS or games included</sub>
+</p>
+
+<p align="center">
   <a href="#how-it-works">How it works</a> ·
   <a href="#features">Features</a> ·
   <a href="#install">Install</a> ·
@@ -65,7 +75,13 @@ Do not upload BIOS files, keys, or game images to this repository or attach them
 
 ## Install
 
-1. Download the latest `.pkg` and its `.txt` SHA-256 checksum file from the [Releases page](https://github.com/felipebasurto/caliza/releases).
+<p>
+  <a href="https://github.com/felipebasurto/caliza/releases/latest">
+    <img src="ps4/docs/diagrams/download-button.svg" width="280" alt="Download Latest Release (.pkg)">
+  </a>
+</p>
+
+1. Click **Download Latest Release** above (or open [GitHub Releases](https://github.com/felipebasurto/caliza/releases)) and download the `.pkg` and its `.txt` SHA-256 checksum file.
 2. Verify the checksum before installing:
    - **macOS:** `shasum -a 256 -c <checksum-file>`
    - **Linux:** `sha256sum -c <checksum-file>`
