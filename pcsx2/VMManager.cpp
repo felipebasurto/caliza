@@ -2788,6 +2788,7 @@ void VMManager::InitializeCPUProviders()
 	const bool vtlb_pushpop_on = ::OrbisFlag("rec_vtlb_pushpop");
 	const bool vumemreg_off = ::OrbisFlag("novumemreg");
 	const bool vu3op_off = ::OrbisFlag("novu3op");
+	const bool clutskip_off = ::OrbisFlag("noclutskip");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
@@ -2796,6 +2797,7 @@ void VMManager::InitializeCPUProviders()
 	g_orbis_vtlb_nopushpop.store(vtlb_pushpop_on ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_vu1_mem_reg.store(vumemreg_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_vu1_three_op.store(vu3op_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_skip_clut64.store(clutskip_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2823,6 +2825,10 @@ void VMManager::InitializeCPUProviders()
 		vu3op_off ? "off" : "on",
 		vu3op_off ? "flags/novu3op" : "default",
 		static_cast<unsigned long long>(g_orbis_vu1_three_op_copies.load(std::memory_order_relaxed)));
+	printf("[perf] gs_skip_clut64: %s (%s) skips=%llu\n",
+		clutskip_off ? "off" : "on",
+		clutskip_off ? "flags/noclutskip" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_clut64_skips.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

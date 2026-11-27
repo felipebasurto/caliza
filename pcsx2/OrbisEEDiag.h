@@ -72,6 +72,8 @@ extern std::atomic<int> g_orbis_vu1_mem_reg; // 1 unless flags/novumemreg
 extern std::atomic<u64> g_orbis_vu1_mem_reg_loads, g_orbis_vu1_mem_reg_reuses;
 extern std::atomic<int> g_orbis_vu1_three_op; // 1 unless flags/novu3op
 extern std::atomic<u64> g_orbis_vu1_three_op_copies;
+extern std::atomic<int> g_orbis_gs_skip_clut64; // 1 unless flags/noclutskip
+extern std::atomic<u64> g_orbis_gs_clut64_skips;
 
 bool OrbisCpuHasLzcnt();
 
