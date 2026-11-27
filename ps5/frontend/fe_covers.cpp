@@ -102,6 +102,29 @@ bool RecentlyMissing(const std::string& cache_dir, const std::string& serial)
 		   std::time(nullptr) - st.st_mtime < 14 * 24 * 3600;
 }
 
+// The host part of a URL ("raw.githubusercontent.com" from the production kCoverUrl), for the boot.log
+// line: which server a failed/slow attempt actually talked to, without the full per-serial path.
+std::string UrlHost(const std::string& url)
+{
+	size_t start = url.find("://");
+	start = start == std::string::npos ? 0 : start + 3;
+	size_t end = url.find('/', start);
+	end = end == std::string::npos ? url.size() : end;
+	return url.substr(start, end - start);
+}
+
+// One boot.log line per cover attempt, with everything the task's hardware triage asks for: the
+// game's serial, the source host, the HTTP status (or a negative libcurl/sceNet-style error), the
+// bytes received, and where (if anywhere) the cover was saved.
+void LogCoverAttempt(const char* tag, const std::string& serial, const std::string& url, int status,
+	size_t bytes, const std::string& saved_path)
+{
+	std::printf("[frontend] %s: serial=%s host=%s status=%d bytes=%zu saved=%s\n", tag,
+		serial.empty() ? "?" : serial.c_str(), UrlHost(url).c_str(), status, bytes,
+		saved_path.empty() ? "-" : saved_path.c_str());
+	std::fflush(stdout);
+}
+
 // The glow colour: the dominant saturated hue of the cover, brightened.
 bool GlowFrom(const CoverImage& img, float out[3])
 {
@@ -660,11 +683,12 @@ bool CoverService::DownloadCover(int index, CoverImage& out)
 		WriteFileAtomic(missing, std::vector<uint8_t>{'4', '0', '4', '\n'});
 	else if (status < 0)
 		m_offline = true;
-	std::printf("[frontend] cover %s: %s -> %d%s\n", g.serial.c_str(), url.c_str(), status,
-		ok ? " (saved)" :
-		status >= 0 ? "" :
-		m_stop ? " (stopped: the shelf closed)" :
-				 " (network down; no more downloads this session)");
+	LogCoverAttempt("cover", g.serial, url, status, bytes.size(), ok ? cached : std::string());
+	if (status < 0)
+		std::printf("[frontend] cover %s: %s\n", g.serial.c_str(),
+			m_stop ? "stopped: the shelf closed" : "network down; no more downloads this session");
+	else if (!ok && status != 404)
+		std::printf("[frontend] cover %s: 200 but the body did not decode as an image; not kept\n", g.serial.c_str());
 	std::fflush(stdout);
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -692,8 +716,12 @@ std::vector<int> CoverService::MissingCovers(const std::vector<GameInfo>& games,
 }
 
 int CoverService::Prefetch(const std::vector<GameInfo>& games, const std::vector<int>& which, const CoverConfig& cfg,
-	const DownloadFn& download, double budget_s)
+	const DownloadFn& download, double budget_s, PrefetchStats* stats)
 {
+	PrefetchStats local;
+	PrefetchStats& st = stats ? *stats : local;
+	st = PrefetchStats{};
+	st.missing = static_cast<int>(which.size());
 	if (which.empty() || !download || cfg.url_template.empty())
 		return 0;
 	MakeDirs(cfg.cache_dir);
@@ -721,13 +749,24 @@ int CoverService::Prefetch(const std::vector<GameInfo>& games, const std::vector
 		const int status = download(url, bytes);
 		CoverImage probe;
 		bool ok = false;
+		std::string saved_path;
 		if (status == 200 && Decode(bytes, 1024, probe))
-			ok = WriteFileAtomic(cfg.cache_dir + "/" + g.serial + ".jpg", bytes);
+		{
+			saved_path = cfg.cache_dir + "/" + g.serial + ".jpg";
+			ok = WriteFileAtomic(saved_path, bytes);
+		}
 		else if (status == 404)
 			WriteFileAtomic(cfg.cache_dir + "/" + g.serial + ".missing", std::vector<uint8_t>{'4', '0', '4', '\n'});
-		std::printf("[frontend] prefetch %s: %d%s\n", g.serial.c_str(), status,
-			ok ? " (saved)" : (status == 200 ? " (not an image; not kept)" : ""));
-		std::fflush(stdout);
+		LogCoverAttempt("prefetch", g.serial, url, status, bytes.size(), ok ? saved_path : std::string());
+		st.missing--;
+		if (ok)
+			st.downloaded++;
+		else if (status == 404)
+			st.not_found++;
+		else if (status == 200)
+			st.failed++; // decoded as something else, or WriteFileAtomic itself failed
+		else
+			st.missing++; // network error: this attempt and the rest are still missing
 		saved += ok ? 1 : 0;
 		if (status < 0)
 			break; // the network is down: no point in trying the rest now
