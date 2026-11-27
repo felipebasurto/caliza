@@ -10,6 +10,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
+#include <cstring>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -118,6 +119,45 @@ bool PercentDecode(const std::string& encoded, std::string* out)
 		out->push_back(static_cast<char>((hex(encoded[i + 1]) << 4) | hex(encoded[i + 2])));
 		i += 2;
 	}
+	return true;
+}
+
+// One row in an expanded Patches/Enable or Cheats/Enable list: a self-contained command id so each per-patch
+// or per-cheat toggle round-trips through the generic Toggle command path (true/false) without colliding with
+// the single shared schema id every row would otherwise share. compatibility_key never contains ':', so the
+// prefix and the two percent-encoded parts split unambiguously.
+constexpr const char kPatchMemberPrefix[] = "patch-member:";
+
+struct PatchMemberRef
+{
+	std::string compatibility_key; // "Patches/Enable" or "Cheats/Enable"
+	std::string game_key;
+	std::string name; // the patch or cheat group's name
+};
+
+std::string EncodePatchMemberId(const std::string& compatibility_key, const std::string& game_key, const std::string& name)
+{
+	return std::string(kPatchMemberPrefix) + compatibility_key + ":" + PercentEncode(game_key) + ":" + PercentEncode(name);
+}
+
+bool DecodePatchMemberId(const std::string& encoded, PatchMemberRef* out)
+{
+	if (encoded.rfind(kPatchMemberPrefix, 0) != 0)
+		return false;
+	const std::string rest = encoded.substr(std::strlen(kPatchMemberPrefix));
+	const size_t first_colon = rest.find(':');
+	if (first_colon == std::string::npos)
+		return false;
+	const size_t second_colon = rest.find(':', first_colon + 1);
+	if (second_colon == std::string::npos)
+		return false;
+	std::string game_key, name;
+	if (!PercentDecode(rest.substr(first_colon + 1, second_colon - first_colon - 1), &game_key) ||
+		!PercentDecode(rest.substr(second_colon + 1), &name))
+		return false;
+	out->compatibility_key = rest.substr(0, first_colon);
+	out->game_key = game_key;
+	out->name = name;
 	return true;
 }
 
@@ -816,8 +856,70 @@ private:
 		return Success("global tuning settings reset; player-owned folders, cards and accessibility were preserved");
 	}
 
+	// One expanded per-patch/per-cheat Toggle row (BuildPatchAndCheatRows): turns the specific named group on or
+	// off, the same Patches/Enable or Cheats/Enable list line the web panel's patch+/patch- edits. Enabling a
+	// cheat also turns on EmuCore/EnableCheats when this file doesn't already set it (PCSX2 applies no cheat
+	// group without it); turning off the last enabled cheat in this file turns it back off, mirroring the
+	// shelf's options sheet (fe_options.cpp OptionsSheet::SetCheat).
+	Execution SetPatchMember(const PatchMemberRef& member, const std::string& value)
+	{
+		const bool cheat = member.compatibility_key == "Cheats/Enable";
+		if (!cheat && member.compatibility_key != "Patches/Enable")
+			return Failure("unknown patch or cheat group list " + member.compatibility_key);
+		Snapshot snapshot;
+		const GameEntry* game = FindGameInSnapshot(member.game_key, &snapshot);
+		if (!game)
+			return Failure("the game settings layer was not found in the catalog");
+		const std::string path = GameSettingsPath(*game);
+		const bool on = settings::Truthy(value);
+		std::vector<settings::Mutation> mutations;
+		settings::Mutation group_mutation;
+		group_mutation.key = member.name;
+		group_mutation.kind = cheat ? (on ? settings::Mutation::Kind::CheatOn : settings::Mutation::Kind::CheatOff) :
+									   (on ? settings::Mutation::Kind::PatchOn : settings::Mutation::Kind::PatchOff);
+		mutations.push_back(group_mutation);
+		if (cheat)
+		{
+			settings::DocumentState doc;
+			std::string read_error;
+			ReadSettingsDocument(path, &doc, &read_error);
+			const std::string* own_master = settings::FindValue(doc, "EmuCore/EnableCheats");
+			if (on)
+			{
+				if (!own_master || !settings::Truthy(*own_master))
+				{
+					settings::Mutation master;
+					master.kind = settings::Mutation::Kind::Set;
+					master.key = "EmuCore/EnableCheats";
+					master.value = "true";
+					mutations.push_back(master);
+				}
+			}
+			else
+			{
+				const bool others = std::any_of(
+					doc.cheats.begin(), doc.cheats.end(), [&](const std::string& name) { return name != member.name; });
+				if (!others && own_master)
+				{
+					settings::Mutation master;
+					master.kind = settings::Mutation::Kind::Unset;
+					master.key = "EmuCore/EnableCheats";
+					mutations.push_back(master);
+				}
+			}
+		}
+		std::string summary, error;
+		if (!EditSettings(path, mutations, &summary, &error))
+			return Failure(error);
+		return Success(std::string(cheat ? "cheat " : "patch ") + (on ? "enabled" : "disabled") +
+			(summary.empty() ? std::string() : ": " + summary));
+	}
+
 	Execution SetSetting(const Command& command)
 	{
+		PatchMemberRef member;
+		if (DecodePatchMemberId(command.id, &member))
+			return SetPatchMember(member, command.value);
 		if (command.value == "activate")
 		{
 			if (const settings::ActionDef* action = settings::FindAction(command.id))
@@ -874,6 +976,9 @@ private:
 
 	Execution ResetSetting(const Command& command)
 	{
+		PatchMemberRef member;
+		if (DecodePatchMemberId(command.id, &member))
+			return SetPatchMember(member, "false"); // a group's default is unset/off, same as any other row's reset
 		SettingReference ref = ResolveSettingReference(command.id);
 		if (!ref.error.empty())
 			return Failure(ref.error);
@@ -1387,6 +1492,7 @@ private:
 				}
 				out.settings = std::move(scoped_settings);
 				out.selected_game_id = selected_game_key;
+				BuildPatchAndCheatRows(*selected_game, game_doc, selected_game_key, &out.settings);
 				if (m_options.hooks.texture_packs)
 					out.texture_packs = m_options.hooks.texture_packs(*selected_game);
 			}
@@ -1472,6 +1578,81 @@ private:
 			out->accessibility.reduce_motion = TruthyText(settings::EffectiveValue(*motion, global_doc, empty));
 		if (focus)
 			out->accessibility.large_focus = TruthyText(settings::EffectiveValue(*focus, global_doc, empty));
+	}
+
+	// Expands the schema's single "Patches/Enable"/"Cheats/Enable" composite row (empty: the schema carries no
+	// per-game state) into one Toggle row per group the game's downloaded file(s) actually contain, the same
+	// state the companion web panel reads and writes (fe_settings.cpp PatchGroups / Patches::Enable list lines).
+	// A group still listed as enabled whose file is gone stays visible too, so it can be turned off.
+	void BuildPatchAndCheatRows(const GameEntry& game, const settings::DocumentState& game_doc, const std::string& game_key,
+		std::vector<SettingCategory>* settings)
+	{
+		struct Kind
+		{
+			const char* category_id;
+			const char* compatibility_key;
+			bool cheats;
+			const std::vector<std::string>* enabled;
+			const char* empty_hint;
+			const char* orphan_hint;
+		};
+		const Kind kinds[] = {
+			{"patches", "Patches/Enable", false, &game_doc.patches, "No patch file is installed for this game.",
+				"No patch file has this group."},
+			{"cheats", "Cheats/Enable", true, &game_doc.cheats, "No cheat file is installed for this game.",
+				"No cheat file has this group."},
+		};
+		for (const Kind& kind : kinds)
+		{
+			auto category_it = std::find_if(settings->begin(), settings->end(),
+				[&](const SettingCategory& category) { return category.id == kind.category_id; });
+			if (category_it == settings->end())
+				continue; // the schema always defines these two categories; defensive only
+			category_it->items.erase(std::remove_if(category_it->items.begin(), category_it->items.end(),
+										  [&](const SettingItem& item) { return item.id == kind.compatibility_key; }),
+				category_it->items.end());
+			std::vector<ConsolePatchGroup> groups;
+			if (m_options.hooks.list_patch_groups)
+				groups = m_options.hooks.list_patch_groups(game, kind.cheats);
+			std::vector<std::string> seen;
+			for (const ConsolePatchGroup& group : groups)
+			{
+				const bool on = std::find(kind.enabled->begin(), kind.enabled->end(), group.name) != kind.enabled->end();
+				SettingItem item;
+				item.id = EncodePatchMemberId(kind.compatibility_key, game_key, group.name);
+				item.label = group.name;
+				item.description = !group.description.empty() ? group.description : group.file;
+				item.kind = SettingKind::Toggle;
+				item.value = on ? "true" : "false";
+				item.modified = on;
+				item.game_scoped = false; // the id already carries the game scope
+				category_it->items.push_back(std::move(item));
+				seen.push_back(group.name);
+			}
+			for (const std::string& name : *kind.enabled)
+			{
+				if (std::find(seen.begin(), seen.end(), name) != seen.end())
+					continue;
+				SettingItem item;
+				item.id = EncodePatchMemberId(kind.compatibility_key, game_key, name);
+				item.label = name;
+				item.description = kind.orphan_hint;
+				item.kind = SettingKind::Toggle;
+				item.value = "true";
+				item.modified = true;
+				item.game_scoped = false;
+				category_it->items.push_back(std::move(item));
+			}
+			if (category_it->items.empty())
+			{
+				SettingItem placeholder;
+				placeholder.id = kind.compatibility_key;
+				placeholder.label = kind.cheats ? "Cheats" : "Patches";
+				placeholder.description = kind.empty_hint;
+				placeholder.kind = SettingKind::Text;
+				category_it->items.push_back(std::move(placeholder));
+			}
+		}
 	}
 
 	void BuildMemoryCards(const settings::DocumentState& global_doc, ConsoleOverlay* out)
