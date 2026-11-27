@@ -22,6 +22,12 @@ cc=${CC:-clang}
   -o "$out/test_estratos_scene"
 "$out/test_estratos_scene"
 
+echo '== cover art (download/cache/path mechanics) =='
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -Ips5/frontend -pthread \
+  tests/caliza/test_covers.cpp ps5/frontend/fe_covers.cpp ps5/frontend/fe_text.cpp ps5/frontend/fe_i18n.cpp \
+  -o "$out/test_covers"
+"$out/test_covers"
+
 echo '== pause menu model =='
 "$cxx" -std=c++17 -O1 -Wall -Wextra -Werror -Icaliza/core \
   caliza/core/pause_menu.cpp tests/caliza/test_pause_menu.cpp -o "$out/test_pause_menu"
