@@ -388,7 +388,7 @@ FE_SRCS := $(FE_DIR)/fe_covers.cpp $(FE_DIR)/fe_games.cpp \
   $(FE_DIR)/fe_text.cpp $(FE_DIR)/fe_vk.cpp $(FE_DIR)/fe_ps5.cpp \
   $(FE_DIR)/fe_web.cpp $(FE_DIR)/fe_i18n.cpp $(FE_DIR)/fe_settings.cpp \
   $(FE_DIR)/fe_texpacks.cpp $(FE_DIR)/fe_https.cpp $(FE_DIR)/fe_https_ps5.cpp \
-  $(FE_DIR)/fe_patchdl.cpp $(FE_DIR)/fe_bios.cpp
+  $(FE_DIR)/fe_patchdl.cpp $(FE_DIR)/fe_bios.cpp $(FE_DIR)/fe_modern_controls.cpp
 # Project Nayuki's QR Code generator (MIT, C) for the companion-panel QR code, plus embedded
 # fonts, presets and the canonical Caliza web panel assets.
 FE_CSRCS := $(FE_DIR)/third_party/qrcodegen/qrcodegen.c
