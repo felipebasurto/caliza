@@ -78,6 +78,12 @@ extern std::atomic<int> g_orbis_gs_vt_strip_once; // 1 unless flags/nogsvtonce
 extern std::atomic<u64> g_orbis_gs_vt_strip_draws, g_orbis_gs_vt_strip_saved, g_orbis_gs_vt_strip_bails;
 extern std::atomic<int> g_orbis_tid_reset_invalidate; // 1 unless flags/notidreset
 extern std::atomic<u64> g_orbis_tid_invalidations;
+extern std::atomic<int> g_orbis_gs_reset_flush; // 1 unless flags/nogsresetflush
+extern std::atomic<u64> g_orbis_gs_reset_flushes;
+extern std::atomic<int> g_orbis_gs_sw_extbuf_guard; // 1 unless flags/noswextbufguard
+extern std::atomic<u64> g_orbis_gs_sw_extbuf_skips;
+extern std::atomic<int> g_orbis_gs_h2l_mip_inv; // 1 unless flags/nomipinv
+extern std::atomic<u64> g_orbis_gs_h2l_mip_invs;
 
 bool OrbisCpuHasLzcnt();
 

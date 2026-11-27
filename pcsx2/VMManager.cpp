@@ -2791,6 +2791,9 @@ void VMManager::InitializeCPUProviders()
 	const bool clutskip_off = ::OrbisFlag("noclutskip");
 	const bool gsvtonce_off = ::OrbisFlag("nogsvtonce");
 	const bool tidreset_off = ::OrbisFlag("notidreset");
+	const bool gsresetflush_off = ::OrbisFlag("nogsresetflush");
+	const bool swextbufguard_off = ::OrbisFlag("noswextbufguard");
+	const bool mipinv_off = ::OrbisFlag("nomipinv");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
@@ -2802,6 +2805,9 @@ void VMManager::InitializeCPUProviders()
 	g_orbis_gs_skip_clut64.store(clutskip_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_gs_vt_strip_once.store(gsvtonce_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_tid_reset_invalidate.store(tidreset_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_reset_flush.store(gsresetflush_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_sw_extbuf_guard.store(swextbufguard_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_h2l_mip_inv.store(mipinv_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2843,6 +2849,18 @@ void VMManager::InitializeCPUProviders()
 		tidreset_off ? "off" : "on",
 		tidreset_off ? "flags/notidreset" : "default",
 		static_cast<unsigned long long>(g_orbis_tid_invalidations.load(std::memory_order_relaxed)));
+	printf("[perf] gs_reset_flush: %s (%s) flushes=%llu\n",
+		gsresetflush_off ? "off" : "on",
+		gsresetflush_off ? "flags/nogsresetflush" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_reset_flushes.load(std::memory_order_relaxed)));
+	printf("[perf] gs_sw_extbuf_guard: %s (%s) skips=%llu\n",
+		swextbufguard_off ? "off" : "on",
+		swextbufguard_off ? "flags/noswextbufguard" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_sw_extbuf_skips.load(std::memory_order_relaxed)));
+	printf("[perf] gs_h2l_mip_inv: %s (%s) invalidations=%llu\n",
+		mipinv_off ? "off" : "on",
+		mipinv_off ? "flags/nomipinv" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_h2l_mip_invs.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)
