@@ -176,17 +176,6 @@ using namespace fe;
 // xlenore/ps2-covers, the default set: <serial>.jpg, 512x736 (the same source as the user's Twiso).
 constexpr const char* kCoverUrl = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg";
 
-// The host part of a URL, for the boot.log prefetch line: which server the console actually talked
-// to, without the full per-run serial path.
-std::string UrlHost(const std::string& url)
-{
-	size_t start = url.find("://");
-	start = start == std::string::npos ? 0 : start + 3;
-	size_t end = url.find('/', start);
-	end = end == std::string::npos ? url.size() : end;
-	return url.substr(start, end - start);
-}
-
 // libScePad's state, as game_select.cpp and main-boot.cpp read it.
 struct PadData
 {
@@ -1567,7 +1556,7 @@ int orbis_frontend_prefetch_covers(const OrbisFrontendPaths& paths, double budge
 	const std::vector<int> missing = CoverService::MissingCovers(games, cc);
 	const int found = static_cast<int>(games.size()) - static_cast<int>(missing.size());
 	std::printf("[frontend] prefetch: %zu of %zu covers to fetch from %s (%d from the USB list; checked in %.0f ms)\n",
-		missing.size(), games.size(), UrlHost(kCoverUrl).c_str(), listed, (Now() - t0) * 1000.0);
+		missing.size(), games.size(), fe::UrlHost(kCoverUrl).c_str(), listed, (Now() - t0) * 1000.0);
 	std::fflush(stdout);
 	if (missing.empty())
 	{
