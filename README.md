@@ -131,14 +131,15 @@ Check `[migrate]` lines in `/data/caliza/logs/boot.log` if anything did not copy
 
 | Default shortcut | Action |
 | --- | --- |
+| L3 + R3 + L1 | Open or close the in-game pause menu (resume, save/load slots 1–10, disc swap, return to library) |
 | Options | PS2 Start |
-| L3 + R3 + D-pad Up | Save state to slot 1 |
-| L3 + R3 + D-pad Down | Load state from slot 1 |
+| L3 + R3 + D-pad Up | Quick save state to slot 1 |
+| L3 + R3 + D-pad Down | Quick load state from slot 1 |
 | L3 + R3 + D-pad Right | Switch to the next disc in a multi-disc set |
 | Hold L1 + R1 and click Touchpad | End the session and return to the library |
 | Hold L2 + D-pad Down for 2 seconds | Open the companion panel or show its QR code |
 
-The native pause overlay works in the host preview. Live PS4 gameplay uses the shortcuts above. You can change the save, load, and disc-swap shortcuts under Controls.
+Inside the pause menu, move with the D-pad or left stick, pick a save slot (1–10) or target disc with Left/Right or L1/R1, confirm with Cross, and resume with Circle or the pause combo. The default `L3 + R3 + L1` combo avoids GoldHEN's long-press Share menu and system Share/PS buttons; existing configurations carrying a legacy Share/Create pause binding are automatically migrated to `L3 + R3 + L1`. You can remap the pause, save, load, and disc-swap shortcuts under Controls or in the companion web panel.
 
 ## Architecture
 
