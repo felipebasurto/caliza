@@ -31,13 +31,17 @@ GameEntry Game(const char* id, const char* title, const char* region, uint64_t b
 }
 
 // A handful of fictional per-patch/per-cheat rows for the preview's one game with downloaded files, in the same
-// Toggle shape BuildPatchAndCheatRows (console_backend.cpp) builds from a real game's patches/cheats folders. The
-// global-scope projection MakeDemoSnapshot starts from never includes these (both are ScopeMask::Game), so this
-// adds the whole category, not just its items; it is idempotent, so selecting a different game clears them again.
+// Toggle shape BuildPatchAndCheatRows (console_backend.cpp) builds from a real game's patches/cheats folders,
+// including the one case where a group's name (ConsolePatchGroup::modern_controls, fe::IsModernControlsGroup)
+// moves it into its own "Modern controls" category instead. The global-scope projection MakeDemoSnapshot starts
+// from never includes these (all are ScopeMask::Game), so this adds the whole category, not just its items; it
+// is idempotent, so selecting a different game clears them again.
 void ApplyDemoPatchRows(const std::string& game_id, std::vector<SettingCategory>& settings)
 {
 	settings.erase(std::remove_if(settings.begin(), settings.end(),
-						[](const SettingCategory& category) { return category.id == "patches" || category.id == "cheats"; }),
+						[](const SettingCategory& category) {
+							return category.id == "patches" || category.id == "cheats" || category.id == "modern-controls";
+						}),
 		settings.end());
 	if (game_id != "aurora")
 		return;
@@ -68,8 +72,19 @@ void ApplyDemoPatchRows(const std::string& game_id, std::vector<SettingCategory>
 	cheats.id = "cheats";
 	cheats.label = "Cheats";
 	cheats.items = {infinite_hp};
+	SettingItem modern_camera;
+	modern_camera.id = "demo-patch:modern-controls";
+	modern_camera.label = "Modern analog controls";
+	modern_camera.value = "false";
+	modern_camera.description = "aurora_demo_modern_controls.pnach";
+	modern_camera.kind = SettingKind::Toggle;
+	SettingCategory modern_controls;
+	modern_controls.id = "modern-controls";
+	modern_controls.label = "Modern controls";
+	modern_controls.items = {modern_camera};
 	settings.push_back(std::move(patches));
 	settings.push_back(std::move(cheats));
+	settings.push_back(std::move(modern_controls));
 }
 
 } // namespace

@@ -523,6 +523,104 @@ void TestPatchAndCheatTogglePersistence()
 	CHECK_TRUE(written.find("Patches/Enable=60 FPS") == std::string::npos);
 }
 
+// A patch/cheat group list_patch_groups marks modern_controls (ps4_shell.cpp's hook, via fe::IsModernControlsGroup;
+// see docs/research/modern-controls.md) shows under its own "Modern controls" category instead of "Patches"/
+// "Cheats", stays off by default, and keeps toggling through the exact same Patches/Enable id as a non-matching
+// group. A game with no such group gets no such category at all. Launching also logs whether any matching group
+// is actually turned on, available but off, or absent (console_backend.cpp LogModernControlsForLaunch).
+void TestModernControlsCategoryAndBootLog()
+{
+	TempDir root;
+	ConsoleBackendOptions options = TestOptions(root);
+	options.hooks.list_patch_groups = [](const GameEntry& game, bool cheats) {
+		// MakeMinimalIso always writes the same SYSTEM.CNF (SLUS-20010), so every fixture ISO shares one serial;
+		// match by title instead, purely to give this test a second, unmatched game.
+		std::vector<ConsolePatchGroup> out;
+		if (game.title != "Valid Game")
+			return out;
+		if (cheats)
+			out.push_back({"Infinite HP", "SLUS-20010_DEADBEEF.pnach", "", false});
+		else
+		{
+			out.push_back({"60 FPS", "SLUS-20010_DEADBEEF.pnach", "Removes the frame cap", false});
+			out.push_back({"Modern Control Profiles", "SLUS-20010_DEADBEEF.pnach", "", true});
+		}
+		return out;
+	};
+	std::vector<std::string> boot_lines;
+	options.hooks.boot_log = [&boot_lines](const std::string& line) { boot_lines.push_back(line); };
+	ConsoleBackend backend(options);
+	EventLog log;
+	MakeMinimalIso(root.path + "/games/Valid Game (USA).iso");
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::RescanAll)));
+	const Snapshot scanned = backend.GetSnapshot();
+	CHECK_EQ(scanned.games.size(), 1u);
+	if (scanned.games.empty())
+		return;
+	const std::string game_id = scanned.games.front().id;
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, game_id)));
+
+	auto find_row = [](const Snapshot& snapshot, const char* category_id, const char* label) -> const SettingItem* {
+		for (const SettingCategory& category : snapshot.settings)
+		{
+			if (category.id != category_id)
+				continue;
+			for (const SettingItem& item : category.items)
+				if (item.label == label)
+					return &item;
+		}
+		return nullptr;
+	};
+
+	const Snapshot before_toggle = backend.GetSnapshot();
+	CHECK_TRUE(find_row(before_toggle, "patches", "60 FPS") != nullptr);
+	CHECK_TRUE(find_row(before_toggle, "patches", "Modern Control Profiles") == nullptr); // moved out of "patches"
+	const SettingItem* modern_row = find_row(before_toggle, "modern-controls", "Modern Control Profiles");
+	CHECK_TRUE(modern_row != nullptr);
+	if (!modern_row)
+		return;
+	CHECK_EQ(modern_row->value, std::string("false"));
+	const std::string modern_id = modern_row->id;
+
+	const CommandEvent launch_off = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::LaunchGame, game_id)));
+	CHECK_EQ(static_cast<int>(launch_off.status), static_cast<int>(CommandStatus::Succeeded));
+	ConsoleLaunchRequest request;
+	CHECK_TRUE(backend.ConsumeLaunchRequest(&request));
+	CHECK_TRUE(!boot_lines.empty() && boot_lines.back().find("modern controls") != std::string::npos);
+	CHECK_TRUE(boot_lines.back().find("Modern Control Profiles") != std::string::npos);
+	CHECK_TRUE(boot_lines.back().find("but off") != std::string::npos);
+
+	const CommandEvent toggled = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, modern_id, {}, "true")));
+	CHECK_EQ(static_cast<int>(toggled.status), static_cast<int>(CommandStatus::Succeeded));
+	const std::string ini_path = root.path + "/settings/Valid Game (USA).ini";
+	CHECK_TRUE(ReadFile(ini_path).find("Patches/Enable=Modern Control Profiles") != std::string::npos);
+	const Snapshot after_toggle = backend.GetSnapshot();
+	const SettingItem* modern_row_on = find_row(after_toggle, "modern-controls", "Modern Control Profiles");
+	CHECK_TRUE(modern_row_on != nullptr && modern_row_on->value == "true");
+
+	const CommandEvent launch_on = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::LaunchGame, game_id)));
+	CHECK_EQ(static_cast<int>(launch_on.status), static_cast<int>(CommandStatus::Succeeded));
+	CHECK_TRUE(backend.ConsumeLaunchRequest(&request));
+	CHECK_TRUE(!boot_lines.empty() && boot_lines.back().find("applying \"Modern Control Profiles\"") != std::string::npos);
+
+	// A game the hook has no groups for at all gets no boot.log mention beyond "no matching patch".
+	MakeMinimalIso(root.path + "/games/Other Game (USA).iso");
+	WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::RescanAll)));
+	const Snapshot rescanned = backend.GetSnapshot();
+	const GameEntry* other = nullptr;
+	for (const GameEntry& game : rescanned.games)
+		if (game.title == "Other Game")
+			other = &game;
+	CHECK_TRUE(other != nullptr);
+	if (!other)
+		return;
+	boot_lines.clear();
+	const CommandEvent launch_other = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::LaunchGame, other->id)));
+	CHECK_EQ(static_cast<int>(launch_other.status), static_cast<int>(CommandStatus::Succeeded));
+	CHECK_TRUE(backend.ConsumeLaunchRequest(&request));
+	CHECK_TRUE(!boot_lines.empty() && boot_lines.back().find("no matching patch") != std::string::npos);
+}
+
 } // namespace
 
 int main()
@@ -536,6 +634,7 @@ int main()
 	TestProductionServiceCommandHooks();
 	TestAsyncProjectionRefreshOffRenderThread();
 	TestPatchAndCheatTogglePersistence();
+	TestModernControlsCategoryAndBootLog();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");
