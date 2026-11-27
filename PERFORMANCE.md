@@ -10,7 +10,7 @@ Caliza runs many PS2 games well, but some games are heavier than others. Most sl
 
 ## Step 1: read the info box
 
-The box shows something like:
+Set **Info box** to **FPS + load** first. The default shows only the frame rate, with no box. The box shows something like:
 
 ```text
 42 FPS EE99 GS61 VU70

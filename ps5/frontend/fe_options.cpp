@@ -453,8 +453,8 @@ const std::vector<OptionGroup>& OptionGroups()
 			}},
 		{"On screen",
 			{
-				Seg("Caliza/Overlay", "Info box", "2", "Info box %", {{"0", "Off"}, {"1", "FPS"}, {"2", "FPS + load"}},
-					"The box in the top right corner. Load is how busy the EE, GS and VU threads are."),
+				Seg("Caliza/Overlay", "Info box", "1", "Info box %", {{"0", "Off"}, {"1", "FPS"}, {"2", "FPS + load"}},
+					"The frame rate in the top right corner. FPS + load adds a box with how busy the EE, GS and VU threads are and the game's picture size."),
 				Toggle("Caliza/FpsGraph", "FPS graph", "false", "FPS graph %",
 					"A blue graph of the last minute's frame rate in the top right corner. It shows with the info box off too."),
 				// 2026-10-08 (AI-assisted): GSRenderer.cpp OrbisDrawBezel; the folder is on the settings page (no keyboard here).

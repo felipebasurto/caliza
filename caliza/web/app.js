@@ -107,7 +107,7 @@ const GROUPS = [
     item("EmuCore/EnableFastBoot", "Fast boot", "toggle", "true", { restart: true, short: "Fast boot %", hint: "Off shows the original console startup sequence; on goes directly to the game." }),
   ]},
   { title: "On screen", tab: "settings", items: [
-    item(calizaKey("Overlay"), "Performance overlay", "seg", "2", { short: "Overlay %", cols: 3, options: [["0","Off"],["1","FPS"],["2","FPS + load"]], hint: "Shows frame rate and, optionally, processor load while playing." }),
+    item(calizaKey("Overlay"), "Performance overlay", "seg", "1", { short: "Overlay %", cols: 3, options: [["0","Off"],["1","FPS"],["2","FPS + load"]], hint: "Shows the frame rate as a number, or with processor load and picture size in a box while playing." }),
     item(calizaKey("FpsGraph"), "Frame-rate graph", "toggle", "false", { short: "FPS graph %" }),
     item(calizaKey("Bezel"), "Overlay image", "toggle", "false", { short: "Overlay %", hint: "Draws a PNG frame around the game when one exists for its serial or as a default overlay." }),
     item(calizaKey("RAChallengeIcons"), "Achievement challenge icons", "toggle", "true", { short: "Challenge icons %", hint: "Shows active achievement challenge badges while they are in progress." }),
