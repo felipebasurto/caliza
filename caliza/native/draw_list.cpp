@@ -14,6 +14,7 @@ void DrawList::Clear()
 {
 	m_vertices.clear();
 	m_batches.clear();
+	m_opaque_fullscreen = false;
 }
 
 void DrawList::Reserve(size_t vertices)
@@ -21,12 +22,12 @@ void DrawList::Reserve(size_t vertices)
 	m_vertices.reserve(vertices);
 }
 
-void DrawList::Append(const Texture2D* texture, const DrawVertex* vertices, size_t count)
+void DrawList::Append(const Texture2D* texture, const DrawVertex* vertices, size_t count, bool opaque)
 {
 	if (!count)
 		return;
-	if (m_batches.empty() || m_batches.back().texture != texture)
-		m_batches.push_back({texture, m_vertices.size(), 0});
+	if (m_batches.empty() || m_batches.back().texture != texture || m_batches.back().opaque != opaque)
+		m_batches.push_back({texture, m_vertices.size(), 0, opaque});
 	m_vertices.insert(m_vertices.end(), vertices, vertices + count);
 	m_batches.back().count += count;
 }
@@ -45,6 +46,26 @@ void DrawList::AddSolidQuad(float x0, float y0, float x1, float y1, Color color)
 	DrawVertex d{x0, y1, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
 	const DrawVertex vertices[] = {a, b, c, a, c, d};
 	Append(nullptr, vertices, 6);
+}
+
+void DrawList::AddQuadPoints(float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3, Color color)
+{
+	DrawVertex a{x0, y0, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
+	DrawVertex b{x1, y1, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
+	DrawVertex c{x2, y2, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
+	DrawVertex d{x3, y3, 0, 0, color.r, color.g, color.b, color.a, 0, 0, 0, 3};
+	const DrawVertex vertices[] = {a, b, c, a, c, d};
+	Append(nullptr, vertices, 6);
+}
+
+void DrawList::AddOpaqueGrad(float x0, float y0, float x1, float y1, Color tl, Color tr, Color br, Color bl)
+{
+	DrawVertex a{x0, y0, 0, 0, tl.r, tl.g, tl.b, 1.0f, 0, 0, 0, 3};
+	DrawVertex b{x1, y0, 0, 0, tr.r, tr.g, tr.b, 1.0f, 0, 0, 0, 3};
+	DrawVertex c{x1, y1, 0, 0, br.r, br.g, br.b, 1.0f, 0, 0, 0, 3};
+	DrawVertex d{x0, y1, 0, 0, bl.r, bl.g, bl.b, 1.0f, 0, 0, 0, 3};
+	const DrawVertex vertices[] = {a, b, c, a, c, d};
+	Append(nullptr, vertices, 6, true);
 }
 
 void DrawList::AddPoly(const std::vector<std::pair<float, float>>& points, Color color)
@@ -93,7 +114,7 @@ void DrawList::AddLine(float x0, float y0, float x1, float y1, float width, Colo
 		return;
 	const float nx = -dy / len * width * 0.5f;
 	const float ny = dx / len * width * 0.5f;
-	AddPoly({{x0 + nx, y0 + ny}, {x1 + nx, y1 + ny}, {x1 - nx, y1 - ny}, {x0 - nx, y0 - ny}}, color);
+	AddQuadPoints(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, color);
 }
 
 void DrawList::AddImage(const Texture2D* texture, float x, float y, float w, float h, Color tint)
@@ -104,6 +125,16 @@ void DrawList::AddImage(const Texture2D* texture, float x, float y, float w, flo
 	DrawVertex d{x, y + h, 0, 1, tint.r, tint.g, tint.b, tint.a, 0, 0, 0, 2};
 	const DrawVertex vertices[] = {a, b, c, a, c, d};
 	Append(texture, vertices, 6);
+}
+
+void DrawList::AddOpaqueImage(const Texture2D* texture, float x, float y, float w, float h, Color tint)
+{
+	DrawVertex a{x, y, 0, 0, tint.r, tint.g, tint.b, 1.0f, 0, 0, 0, 2};
+	DrawVertex b{x + w, y, 1, 0, tint.r, tint.g, tint.b, 1.0f, 0, 0, 0, 2};
+	DrawVertex c{x + w, y + h, 1, 1, tint.r, tint.g, tint.b, 1.0f, 0, 0, 0, 2};
+	DrawVertex d{x, y + h, 0, 1, tint.r, tint.g, tint.b, 1.0f, 0, 0, 0, 2};
+	const DrawVertex vertices[] = {a, b, c, a, c, d};
+	Append(texture, vertices, 6, true);
 }
 
 void DrawList::AddImageUV(const Texture2D* texture, float x, float y, float w, float h, float u0, float v0, float u1,
@@ -122,13 +153,15 @@ void DrawList::AddText(const fe::Fonts& fonts, const std::string& utf8, float x,
 {
 	if (utf8.empty())
 		return;
-	std::vector<fe::UiVertex> source;
+	thread_local std::vector<fe::UiVertex> source;
+	thread_local std::vector<DrawVertex> converted;
+	source.clear();
 	const uint32_t packed = (static_cast<uint32_t>(color.a * 255.0f + 0.5f) << 24) |
 		(static_cast<uint32_t>(color.b * 255.0f + 0.5f) << 16) |
 		(static_cast<uint32_t>(color.g * 255.0f + 0.5f) << 8) | static_cast<uint32_t>(color.r * 255.0f + 0.5f);
 	fonts.AddText(source, utf8.c_str(), x, baseline, px, packed, weight,
 		align == 1 ? fe::Fonts::Center : align == 2 ? fe::Fonts::Right : fe::Fonts::Left);
-	std::vector<DrawVertex> converted;
+	converted.clear();
 	converted.reserve(source.size());
 	for (const fe::UiVertex& in : source)
 	{

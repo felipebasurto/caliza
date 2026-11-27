@@ -24,6 +24,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#ifdef ORBIS_PS4
+void OrbisHelperThreadAdd(pthread_t thread);
+void OrbisHelperThreadRemove(pthread_t thread);
+extern "C" int scePthreadSetprio(pthread_t thread, int prio);
+#endif
+
 namespace fe
 {
 // The settings files, memory cards, patch groups and recommended settings (vk-285-114: fe_settings.cpp, shared with the
@@ -416,6 +422,9 @@ bool WebServer::Start(const WebConfig& cfg)
 		m_listen = -1;
 		return false;
 	}
+#ifdef ORBIS_PS4
+	OrbisHelperThreadAdd(m_thread);
+#endif
 	std::printf("[web] listening on port %u (no key: http://<the console's address>:%u/)\n", static_cast<unsigned>(m_port),
 		static_cast<unsigned>(m_port));
 	std::fflush(stdout);
@@ -432,6 +441,9 @@ void WebServer::Stop()
 	m_listen = -1;
 	if (m_thread_started)
 	{
+#ifdef ORBIS_PS4
+		OrbisHelperThreadRemove(m_thread);
+#endif
 		pthread_join(m_thread, nullptr);
 		m_thread_started = false;
 	}
@@ -451,6 +463,9 @@ void WebServer::RequestStats(uint64_t& count, double& age_s) const
 
 void* WebServer::ThreadMain(void* self)
 {
+#ifdef ORBIS_PS4
+	scePthreadSetprio(pthread_self(), 740);
+#endif
 	static_cast<WebServer*>(self)->Run();
 	return nullptr;
 }

@@ -162,6 +162,192 @@ const Texture2D* EstratosScene::CoverFor(const std::string& key, const std::stri
 
 namespace
 {
+float SampleAlphaBilinear(const Texture2D& tex, float u, float v)
+{
+	if (tex.width <= 0 || tex.height <= 0 || tex.pixels.empty())
+		return 0.0f;
+	u = Clamp01(u);
+	v = Clamp01(v);
+	const float fx = u * static_cast<float>(tex.width - 1);
+	const float fy = v * static_cast<float>(tex.height - 1);
+	const int x0 = static_cast<int>(fx);
+	const int y0 = static_cast<int>(fy);
+	const int x1 = std::min(x0 + 1, tex.width - 1);
+	const int y1 = std::min(y0 + 1, tex.height - 1);
+	const float tx = fx - static_cast<float>(x0);
+	const float ty = fy - static_cast<float>(y0);
+	const auto at = [&](int x, int y) {
+		return static_cast<float>(tex.pixels[(static_cast<size_t>(y) * tex.width + x) * 4 + 3]) / 255.0f;
+	};
+	const float top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * tx;
+	const float bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * tx;
+	return top + (bottom - top) * ty;
+}
+
+inline void BlendOverOpaque(float& r, float& g, float& b, Color src, float alpha)
+{
+	const float inv = 1.0f - alpha;
+	r = src.r * alpha + r * inv;
+	g = src.g * alpha + g * inv;
+	b = src.b * alpha + b * inv;
+}
+
+inline void BlendOverPremul(float& pr, float& pg, float& pb, float& pa, Color src, float alpha)
+{
+	const float inv = 1.0f - alpha;
+	pr = src.r * alpha + pr * inv;
+	pg = src.g * alpha + pg * inv;
+	pb = src.b * alpha + pb * inv;
+	pa = alpha + pa * inv;
+}
+} // namespace
+
+const EstratosScene::BakedAtmosphere& EstratosScene::AtmosphereFor(int look_group, bool high_contrast, uint32_t width,
+	uint32_t height, float cx_frac, float cy_frac, float left_shade)
+{
+	const uint32_t safe_w = std::max<uint32_t>(width, 1);
+	const uint32_t safe_h = std::max<uint32_t>(height, 1);
+	constexpr int kBakeW = 480;
+	const int bake_h = std::clamp(static_cast<int>(static_cast<double>(kBakeW) * safe_h / safe_w + 0.5), 120, 480);
+	const uint64_t key = (static_cast<uint64_t>(look_group & 0xff) << 32) |
+		(static_cast<uint64_t>(high_contrast ? 1u : 0u) << 24) | static_cast<uint64_t>(bake_h & 0xffff);
+	auto it = m_atmosphere.find(key);
+	if (it != m_atmosphere.end())
+		return it->second;
+
+	using namespace estratos;
+	BakedAtmosphere baked;
+	baked.backdrop.width = kBakeW;
+	baked.backdrop.height = bake_h;
+	baked.backdrop.format = Texture2D::Format::RGBA8;
+	baked.backdrop.pixels.resize(static_cast<size_t>(kBakeW) * bake_h * 4);
+
+	baked.front_haze.width = kBakeW;
+	baked.front_haze.height = bake_h;
+	baked.front_haze.format = Texture2D::Format::RGBA8;
+	baked.front_haze.pixels.resize(static_cast<size_t>(kBakeW) * bake_h * 4);
+
+	const float w = static_cast<float>(kBakeW);
+	const float h = static_cast<float>(bake_h);
+	const float cx = w * cx_frac;
+	const float cy = h * cy_frac;
+	const float hc_dim = high_contrast ? 0.45f : 1.0f;
+	const Color void_tr = HexColor(0x0A0D36);
+	const Color fog1_col = HexColor(0x4656E6);
+	const Color fog2_col = HexColor(0x6A48D6);
+	const Color fog3_col = HexColor(0x3A48D0);
+	const float r0 = h * 0.95f;
+	const float g1x = cx - w * 0.16f, g1y = cy + h * 0.22f, r1 = h * 0.60f;
+	const float g2x = w * 0.12f, g2y = h * 0.05f, r2 = h * 0.55f;
+	const float fw = w * 1.35f, fh = h * 1.35f;
+
+	for (int y = 0; y < bake_h; y++)
+	{
+		const float py = static_cast<float>(y) + 0.5f;
+		const float v = py / h;
+		for (int x = 0; x < kBakeW; x++)
+		{
+			const float px = static_cast<float>(x) + 0.5f;
+			const float u = px / w;
+			// Base gradient matches Painter::Grad(0, 0, w, h, kVoidTop, void_tr, kVoid, kVoid).
+			float r, g, b;
+			if (u >= v)
+			{
+				const float w_tr = u - v;
+				const float w_br = v;
+				const float w_tl = 1.0f - u;
+				r = kVoidTop.r * w_tl + void_tr.r * w_tr + kVoid.r * w_br;
+				g = kVoidTop.g * w_tl + void_tr.g * w_tr + kVoid.g * w_br;
+				b = kVoidTop.b * w_tl + void_tr.b * w_tr + kVoid.b * w_br;
+			}
+			else
+			{
+				const float w_bl = v - u;
+				const float w_br = u;
+				const float w_tl = 1.0f - v;
+				r = kVoidTop.r * w_tl + kVoid.r * (w_bl + w_br);
+				g = kVoidTop.g * w_tl + kVoid.g * (w_bl + w_br);
+				b = kVoidTop.b * w_tl + kVoid.b * (w_bl + w_br);
+			}
+
+			// Three radial glow pools.
+			auto add_glow = [&](float gx, float gy, float rad, Color col, float alpha_scale) {
+				const float gu = (px - (gx - rad)) / (rad * 2.0f);
+				const float gv = (py - (gy - rad)) / (rad * 2.0f);
+				if (gu >= 0.0f && gu <= 1.0f && gv >= 0.0f && gv <= 1.0f)
+				{
+					const float a = SampleAlphaBilinear(m_glow, gu, gv) * alpha_scale;
+					if (a > 0.0f)
+						BlendOverOpaque(r, g, b, col, a);
+				}
+			};
+			add_glow(cx, cy, r0, kNebula, 0.50f * hc_dim);
+			add_glow(g1x, g1y, r1, kViolet, 0.26f * hc_dim);
+			add_glow(g2x, g2y, r2, kDeep, 0.65f * hc_dim);
+
+			// Two back fog layers.
+			const float f1u = (px + w * 0.17f) / fw;
+			const float f1v = (py + h * 0.17f) / fh;
+			if (f1u >= 0.0f && f1u <= 1.0f && f1v >= 0.0f && f1v <= 1.0f)
+				BlendOverOpaque(r, g, b, fog1_col, SampleAlphaBilinear(m_fog, f1u, f1v) * 0.30f * hc_dim);
+
+			const float f2u = 1.0f - (px + w * 0.20f) / fw;
+			const float f2v = 1.0f - (py + h * 0.10f) / fh;
+			if (f2u >= 0.0f && f2u <= 1.0f && f2v >= 0.0f && f2v <= 1.0f)
+				BlendOverOpaque(r, g, b, fog2_col, SampleAlphaBilinear(m_fog, f2u, f2v) * 0.16f * hc_dim);
+
+			const size_t idx = (static_cast<size_t>(y) * kBakeW + x) * 4;
+			baked.backdrop.pixels[idx + 0] = static_cast<uint8_t>(Clamp01(r) * 255.0f + 0.5f);
+			baked.backdrop.pixels[idx + 1] = static_cast<uint8_t>(Clamp01(g) * 255.0f + 0.5f);
+			baked.backdrop.pixels[idx + 2] = static_cast<uint8_t>(Clamp01(b) * 255.0f + 0.5f);
+			baked.backdrop.pixels[idx + 3] = 255;
+
+			// Front fog layer + static readability vignettes, composited in premultiplied alpha.
+			float pr = 0.0f, pg = 0.0f, pb = 0.0f, pa = 0.0f;
+			const float f3u = (px + w * 0.12f) / fw;
+			const float f3v = 1.0f - (py + h * 0.22f) / fh;
+			if (f3u >= 0.0f && f3u <= 1.0f && f3v >= 0.0f && f3v <= 1.0f)
+				BlendOverPremul(pr, pg, pb, pa, fog3_col, SampleAlphaBilinear(m_fog, f3u, f3v) * 0.14f * hc_dim);
+			if (left_shade > 0.0f && u < 0.62f)
+			{
+				const float a = left_shade * (1.0f - u / 0.62f);
+				BlendOverPremul(pr, pg, pb, pa, kVoid, a);
+			}
+			if (v > 0.80f)
+			{
+				const float a = 0.70f * ((v - 0.80f) / 0.20f);
+				BlendOverPremul(pr, pg, pb, pa, kVoid, a);
+			}
+			if (v < 0.16f)
+			{
+				const float a = 0.45f * (1.0f - v / 0.16f);
+				BlendOverPremul(pr, pg, pb, pa, kVoid, a);
+			}
+			if (pa > 1e-5f)
+			{
+				const float inv_a = 1.0f / pa;
+				baked.front_haze.pixels[idx + 0] = static_cast<uint8_t>(Clamp01(pr * inv_a) * 255.0f + 0.5f);
+				baked.front_haze.pixels[idx + 1] = static_cast<uint8_t>(Clamp01(pg * inv_a) * 255.0f + 0.5f);
+				baked.front_haze.pixels[idx + 2] = static_cast<uint8_t>(Clamp01(pb * inv_a) * 255.0f + 0.5f);
+				baked.front_haze.pixels[idx + 3] = static_cast<uint8_t>(Clamp01(pa) * 255.0f + 0.5f);
+			}
+			else
+			{
+				baked.front_haze.pixels[idx + 0] = 0;
+				baked.front_haze.pixels[idx + 1] = 0;
+				baked.front_haze.pixels[idx + 2] = 0;
+				baked.front_haze.pixels[idx + 3] = 0;
+			}
+		}
+	}
+
+	const auto [inserted, ok] = m_atmosphere.emplace(key, std::move(baked));
+	(void)ok;
+	return inserted->second;
+}
+
+namespace
+{
 using namespace estratos;
 
 constexpr Color kTextSoft = HexColor(0xC9D0F2);
@@ -265,10 +451,32 @@ struct CubeSpec
 	bool dark;
 };
 
-const std::vector<CubeSpec>& Cubes()
+struct PrecomputedCube
 {
-	static const std::vector<CubeSpec> cubes = [] {
-		std::vector<CubeSpec> out;
+	V3 base_center;
+	V3 corner_offsets[8];
+	V3 face_normals[6];
+	V3 face_mid_offsets[6];
+	Color face_fill_base[6];
+	Color face_edge_base[6];
+	float fade_base = 0.0f;
+	float bob_phase = 0.0f;
+	float bob_speed = 0.0f;
+	float edge_width_base = 1.0f;
+	bool valid_face[6] = {};
+};
+
+static constexpr int kCubeFaces[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};
+
+const std::vector<PrecomputedCube>& PrecomputedCubes()
+{
+	static const std::vector<PrecomputedCube> cubes = [] {
+		constexpr float kYaw = 0.45f + 41.0f * 0.035f;
+		constexpr float kPitch = -0.18f;
+		constexpr float kDepth = 5.2f;
+		const V3 light = {-0.38f, 0.78f, -0.50f};
+		std::vector<PrecomputedCube> out;
+		out.reserve(26);
 		uint64_t state = 0x9E3779B97F4A7C15ull;
 		auto rnd = [&]() {
 			state = state * 6364136223846793005ull + 1442695040888963407ull;
@@ -283,8 +491,55 @@ const std::vector<CubeSpec>& Cubes()
 			c.bob_phase = rnd() * 6.28f;
 			c.bob_speed = 0.45f + rnd() * 0.30f; // one rise and fall every 8 to 14 seconds
 			c.dark = (i % 6) == 3;
-			out.push_back(c);
+
+			PrecomputedCube pc;
+			const V3 world = RotateXYZ(c.pos, kPitch, kYaw, 0.0f);
+			pc.base_center = {world.x, world.y, world.z + kDepth};
+			pc.fade_base = Clamp01(1.25f - (pc.base_center.z - 3.0f) / 5.0f);
+			pc.bob_phase = c.bob_phase;
+			pc.bob_speed = c.bob_speed;
+			pc.edge_width_base = 1.5f * (4.5f / pc.base_center.z);
+			for (int ci = 0; ci < 8; ci++)
+			{
+				V3 local = {(ci & 1) ? c.size : -c.size, (ci & 2) ? c.size : -c.size, (ci & 4) ? c.size : -c.size};
+				local = RotateXYZ(local, c.tilt.x, c.tilt.y, c.tilt.z);
+				pc.corner_offsets[ci] = RotateXYZ(local, kPitch, kYaw, 0.0f);
+			}
+			for (int fi = 0; fi < 6; fi++)
+			{
+				const V3& a = pc.corner_offsets[kCubeFaces[fi][0]];
+				const V3& b = pc.corner_offsets[kCubeFaces[fi][1]];
+				const V3& d = pc.corner_offsets[kCubeFaces[fi][2]];
+				const V3 e1 = {b.x - a.x, b.y - a.y, b.z - a.z};
+				const V3 e2 = {d.x - a.x, d.y - a.y, d.z - a.z};
+				V3 n = {e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
+				const float len = std::sqrt(Dot3(n, n));
+				if (len <= 1e-6f)
+					continue;
+				n = {n.x / len, n.y / len, n.z / len};
+				const V3 mid = {(a.x + d.x) * 0.5f, (a.y + d.y) * 0.5f, (a.z + d.z) * 0.5f};
+				if (Dot3(n, mid) < 0.0f)
+					n = {-n.x, -n.y, -n.z};
+				pc.valid_face[fi] = true;
+				pc.face_normals[fi] = n;
+				pc.face_mid_offsets[fi] = mid;
+				const float lit = Clamp01((Dot3(n, light) + 0.35f) / 1.35f);
+				if (c.dark)
+				{
+					pc.face_fill_base[fi] = WithAlpha(Mix(HexColor(0x03040F), HexColor(0x1C2163), lit * 0.75f), 0.94f);
+					pc.face_edge_base[fi] = WithAlpha(HexColor(0x6A74D8), 0.22f);
+				}
+				else
+				{
+					pc.face_fill_base[fi] = WithAlpha(Mix(HexColor(0x2A32A6), kGlass, 0.20f + lit * 0.80f), 0.08f + lit * 0.24f);
+					pc.face_edge_base[fi] = WithAlpha(kGlassEdge, 0.16f + lit * 0.26f);
+				}
+			}
+			out.push_back(pc);
 		}
+		std::sort(out.begin(), out.end(), [](const PrecomputedCube& a, const PrecomputedCube& b) {
+			return a.base_center.z > b.base_center.z;
+		});
 		return out;
 	}();
 	return cubes;
@@ -454,25 +709,62 @@ private:
 		if (max_width <= 0 || Width(text, px) <= max_width)
 			return text;
 		static const std::string ellipsis = "…";
-		size_t len = text.size();
-		while (len > 0)
+		// Collect UTF-8 codepoint boundary offsets so binary search runs in O(log N) Measure calls.
+		std::vector<size_t> boundaries;
+		boundaries.reserve(text.size() + 1);
+		boundaries.push_back(0);
+		for (size_t i = 1; i <= text.size(); i++)
 		{
-			while (len > 0 && (static_cast<unsigned char>(text[len]) & 0xc0) == 0x80)
-				len--;
-			const std::string candidate = text.substr(0, len) + ellipsis;
-			if (Width(candidate, px) <= max_width)
-				return candidate;
-			len--;
+			if (i == text.size() || (static_cast<unsigned char>(text[i]) & 0xc0) != 0x80)
+				boundaries.push_back(i);
 		}
-		return ellipsis;
+		size_t lo = 0;
+		size_t hi = boundaries.size() - 1;
+		size_t best = 0;
+		while (lo <= hi)
+		{
+			const size_t mid = lo + (hi - lo) / 2;
+			const std::string candidate = text.substr(0, boundaries[mid]) + ellipsis;
+			if (Width(candidate, px) <= max_width)
+			{
+				best = mid;
+				lo = mid + 1;
+			}
+			else
+			{
+				if (mid == 0)
+					break;
+				hi = mid - 1;
+			}
+		}
+		return best == 0 ? ellipsis : text.substr(0, boundaries[best]) + ellipsis;
 	}
 
-	float Text(const std::string& text, float x, float baseline, float px, Color color, float weight = 0.0f,
+	void Text(const std::string& text, float x, float baseline, float px, Color color, float weight = 0.0f,
 		int align = 0, float max_width = -1.0f)
 	{
-		const std::string fitted = Ellipsize(text, px, max_width);
-		m_out.AddText(m_fonts, fitted, x, baseline, px, color, weight, align);
-		return Width(fitted, px);
+		if (max_width > 0.0f)
+		{
+			const std::string fitted = Ellipsize(text, px, max_width);
+			m_out.AddText(m_fonts, fitted, x, baseline, px, color, weight, align);
+		}
+		else
+		{
+			m_out.AddText(m_fonts, text, x, baseline, px, color, weight, align);
+		}
+	}
+
+	float TextMeasured(const std::string& text, float x, float baseline, float px, Color color, float weight = 0.0f,
+		int align = 0, float max_width = -1.0f)
+	{
+		if (max_width > 0.0f)
+		{
+			const std::string fitted = Ellipsize(text, px, max_width);
+			m_out.AddText(m_fonts, fitted, x, baseline, px, color, weight, align);
+			return Width(fitted, px);
+		}
+		m_out.AddText(m_fonts, text, x, baseline, px, color, weight, align);
+		return Width(text, px);
 	}
 
 	std::vector<std::string> Wrap(const std::string& text, float px, float max_width, size_t max_lines = 3) const
@@ -583,6 +875,20 @@ private:
 	// ---------------------------------------------------------------------------------------------------------------
 	// Background: void, nebula and the glass cube field.
 
+	int LookGroupFor(Screen screen) const
+	{
+		switch (screen)
+		{
+			case Screen::Boot: return 0;
+			case Screen::Home: return 1;
+			case Screen::FirstRun: return 2;
+			case Screen::PauseOverlay: return 3;
+			case Screen::GameDetail:
+			case Screen::Accessibility: return 4;
+			default: return 5;
+		}
+	}
+
 	Look LookFor(Screen screen) const
 	{
 		switch (screen)
@@ -603,39 +909,24 @@ private:
 		const float h = static_cast<float>(m_l.height);
 		const Look look = LookFor(m_view.screen);
 		const float hc_dim = m_view.high_contrast ? 0.45f : 1.0f;
-		Grad(0, 0, w, h, kVoidTop, HexColor(0x0A0D36), kVoid, kVoid);
 		if (!look.field)
+		{
+			m_out.AddOpaqueGrad(0, 0, w, h, kVoidTop, HexColor(0x0A0D36), kVoid, kVoid);
+			m_out.SetOpaqueFullscreenBackdrop(true);
 			return;
-		// Each screen frames the field its own way. The framing cuts with the screen instead of moving a camera:
-		// a background that sweeps and zooms on every press is tiring to watch.
+		}
+		// Each screen frames the field its own way. The static void gradient, glow pools and fog
+		// layers are pre-composited once per look so 1080p linear swapchain rendering uses one
+		// opaque backdrop pass + cubes + one front haze pass instead of ~10 full-screen blends.
+		const EstratosScene::BakedAtmosphere& atmo = m_scene.AtmosphereFor(
+			LookGroupFor(m_view.screen), m_view.high_contrast, m_l.width, m_l.height, look.cx, look.cy, look.left_shade);
+		m_out.AddOpaqueImage(&atmo.backdrop, 0.0f, 0.0f, w, h);
+		m_out.SetOpaqueFullscreenBackdrop(true);
 		const float cx = w * look.cx;
 		const float cy = h * look.cy;
-		// Nebula: broad light pools and three still haze layers.
-		Glow(cx, cy, h * 0.95f, WithAlpha(kNebula, 0.50f * hc_dim));
-		Glow(cx - w * 0.16f, cy + h * 0.22f, h * 0.60f, WithAlpha(kViolet, 0.26f * hc_dim));
-		Glow(w * 0.12f, h * 0.05f, h * 0.55f, WithAlpha(kDeep, 0.65f * hc_dim));
-		const Texture2D* fog = m_scene.FogTexture();
-		const float fw = w * 1.35f, fh = h * 1.35f;
-		m_out.AddImageUV(fog, -w * 0.17f, -h * 0.17f, fw, fh, 0.0f, 0.0f, 1.0f, 1.0f,
-			WithAlpha(HexColor(0x4656E6), 0.30f * hc_dim));
-		m_out.AddImageUV(fog, -w * 0.20f, -h * 0.10f, fw, fh, 1.0f, 1.0f, 0.0f,
-			0.0f, WithAlpha(HexColor(0x6A48D6), 0.16f * hc_dim));
 		CubeField(cx, cy, h * 0.95f * look.zoom, look.intensity * hc_dim);
-		m_out.AddImageUV(fog, -w * 0.12f, -h * 0.22f, fw, fh, 0.0f, 1.0f, 1.0f,
-			0.0f, WithAlpha(HexColor(0x3A48D0), 0.14f * hc_dim));
-		// Readability: shade behind left-aligned content, the footer band and the corners.
-		if (look.left_shade > 0.0f)
-			HGrad(0, 0, w * 0.62f, h, WithAlpha(kVoid, look.left_shade), WithAlpha(kVoid, 0.0f));
-		VGrad(0, h * 0.80f, w, h, WithAlpha(kVoid, 0.0f), WithAlpha(kVoid, 0.70f));
-		VGrad(0, 0, w, h * 0.16f, WithAlpha(kVoid, 0.45f), WithAlpha(kVoid, 0.0f));
+		m_out.AddImage(&atmo.front_haze, 0.0f, 0.0f, w, h);
 	}
-
-	struct ProjectedCube
-	{
-		const CubeSpec* spec;
-		V3 corners[8];
-		V3 center;
-	};
 
 	bool Project(V3 p, float cx, float cy, float f, float& sx, float& sy) const
 	{
@@ -651,79 +942,48 @@ private:
 		if (intensity <= 0.01f)
 			return;
 		// The field holds one fixed view. Each cube floats up and down a little around its own place, at its own pace.
-		constexpr float kYaw = 0.45f + 41.0f * 0.035f;
-		constexpr float kPitch = -0.18f;
-		constexpr float kDepth = 5.2f;
 		constexpr float kBob = 0.035f; // world units, about a sixth of an average cube
-		std::vector<ProjectedCube> cubes;
-		cubes.reserve(Cubes().size());
-		for (const CubeSpec& spec : Cubes())
+		for (const PrecomputedCube& cube : PrecomputedCubes())
 		{
-			ProjectedCube pc;
-			pc.spec = &spec;
-			const V3 world = RotateXYZ(spec.pos, kPitch, kYaw, 0.0f);
-			pc.center = {world.x, world.y + kBob * std::sin(spec.bob_phase + m_t * spec.bob_speed), world.z + kDepth};
-			for (int i = 0; i < 8; i++)
-			{
-				V3 local = {(i & 1) ? spec.size : -spec.size, (i & 2) ? spec.size : -spec.size, (i & 4) ? spec.size : -spec.size};
-				local = RotateXYZ(local, spec.tilt.x, spec.tilt.y, spec.tilt.z);
-				local = RotateXYZ(local, kPitch, kYaw, 0.0f);
-				pc.corners[i] = {pc.center.x + local.x, pc.center.y + local.y, pc.center.z + local.z};
-			}
-			cubes.push_back(pc);
-		}
-		std::sort(cubes.begin(), cubes.end(), [](const ProjectedCube& a, const ProjectedCube& b) { return a.center.z > b.center.z; });
-
-		static const int kFaces[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};
-		const V3 light = {-0.38f, 0.78f, -0.50f};
-		for (const ProjectedCube& cube : cubes)
-		{
-			const float fade = Clamp01(1.25f - (cube.center.z - 3.0f) / 5.0f) * intensity;
+			const float fade = cube.fade_base * intensity;
+			if (fade <= 0.001f)
+				continue;
+			const float bob_y = m_view.reduce_motion ? 0.0f : kBob * std::sin(cube.bob_phase + m_t * cube.bob_speed);
+			const V3 center = {cube.base_center.x, cube.base_center.y + bob_y, cube.base_center.z};
 			float sx[8], sy[8];
 			bool ok = true;
 			for (int i = 0; i < 8; i++)
-				ok = ok && Project(cube.corners[i], cx, cy, f, sx[i], sy[i]);
+			{
+				const V3 corner = {center.x + cube.corner_offsets[i].x, center.y + cube.corner_offsets[i].y,
+					center.z + cube.corner_offsets[i].z};
+				if (!Project(corner, cx, cy, f, sx[i], sy[i]))
+				{
+					ok = false;
+					break;
+				}
+			}
 			if (!ok)
 				continue;
+			const float edge_w = std::max(1.0f, m_l.scale * cube.edge_width_base);
 			for (int fi = 0; fi < 6; fi++)
 			{
-				const V3& a = cube.corners[kFaces[fi][0]];
-				const V3& b = cube.corners[kFaces[fi][1]];
-				const V3& c = cube.corners[kFaces[fi][2]];
-				const V3 e1 = {b.x - a.x, b.y - a.y, b.z - a.z};
-				const V3 e2 = {c.x - a.x, c.y - a.y, c.z - a.z};
-				V3 n = {e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
-				const float len = std::sqrt(Dot3(n, n));
-				if (len <= 1e-6f)
+				if (!cube.valid_face[fi])
 					continue;
-				n = {n.x / len, n.y / len, n.z / len};
-				// Outward normal: the face centre lies away from the cube centre along it.
-				V3 fc = {(a.x + c.x) * 0.5f - cube.center.x, (a.y + c.y) * 0.5f - cube.center.y, (a.z + c.z) * 0.5f - cube.center.z};
-				if (Dot3(n, fc) < 0)
-					n = {-n.x, -n.y, -n.z};
-				const V3 to_face = {(a.x + c.x) * 0.5f, (a.y + c.y) * 0.5f, (a.z + c.z) * 0.5f};
-				if (Dot3(n, to_face) >= 0)
+				const V3& n = cube.face_normals[fi];
+				const V3 to_face = {center.x + cube.face_mid_offsets[fi].x, center.y + cube.face_mid_offsets[fi].y,
+					center.z + cube.face_mid_offsets[fi].z};
+				if (Dot3(n, to_face) >= 0.0f)
 					continue; // back face
-				const float lit = Clamp01((Dot3(n, light) + 0.35f) / 1.35f);
-				std::vector<std::pair<float, float>> poly;
-				for (int k = 0; k < 4; k++)
-					poly.push_back({sx[kFaces[fi][k]], sy[kFaces[fi][k]]});
-				if (cube.spec->dark)
-				{
-					m_out.AddPoly(poly, WithAlpha(Mix(HexColor(0x03040F), HexColor(0x1C2163), lit * 0.75f), 0.94f * fade));
-				}
-				else
-				{
-					m_out.AddPoly(poly, WithAlpha(Mix(HexColor(0x2A32A6), kGlass, 0.20f + lit * 0.80f), (0.08f + lit * 0.24f) * fade));
-				}
-				const float edge_w = std::max(1.0f, m_l.scale * 1.5f * (4.5f / cube.center.z));
-				const Color edge = cube.spec->dark ? WithAlpha(HexColor(0x6A74D8), 0.22f * fade) :
-					WithAlpha(kGlassEdge, (0.16f + lit * 0.26f) * fade);
-				for (int k = 0; k < 4; k++)
-				{
-					const int i0 = kFaces[fi][k], i1 = kFaces[fi][(k + 1) % 4];
-					m_out.AddLine(sx[i0], sy[i0], sx[i1], sy[i1], edge_w, edge);
-				}
+				const int i0 = kCubeFaces[fi][0], i1 = kCubeFaces[fi][1], i2 = kCubeFaces[fi][2], i3 = kCubeFaces[fi][3];
+				Color fill = cube.face_fill_base[fi];
+				fill.a *= fade;
+				m_out.AddQuadPoints(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2], sx[i3], sy[i3], fill);
+				Color edge = cube.face_edge_base[fi];
+				edge.a *= fade;
+				m_out.AddLine(sx[i0], sy[i0], sx[i1], sy[i1], edge_w, edge);
+				m_out.AddLine(sx[i1], sy[i1], sx[i2], sy[i2], edge_w, edge);
+				m_out.AddLine(sx[i2], sy[i2], sx[i3], sy[i3], edge_w, edge);
+				m_out.AddLine(sx[i3], sy[i3], sx[i0], sy[i0], edge_w, edge);
 			}
 		}
 	}
@@ -820,9 +1080,9 @@ private:
 		const float px = h * 0.46f;
 		const float baseline = y + h * 0.66f;
 		int letter = 0;
-		for (char c : std::string("CALIZA"))
+		static const std::string kWordmarkLetters[6] = {"C", "A", "L", "I", "Z", "A"};
+		for (const std::string& one : kWordmarkLetters)
 		{
-			const std::string one(1, c);
 			const size_t layer = m_out.VertexCount();
 			m_out.AddText(m_fonts, one, pen, baseline, px, kText, 0.30f);
 			if (assemble)
@@ -1052,7 +1312,7 @@ private:
 	{
 		Logo(m_l.safe_x, m_l.safe_y - S(10.0f), S(34.0f));
 		const float title_base = m_l.safe_y + S(92.0f);
-		const float tw = Text(m_view.title, m_l.safe_x, title_base, m_l.title, kText, -0.25f, 0, m_l.right - m_l.safe_x);
+		const float tw = TextMeasured(m_view.title, m_l.safe_x, title_base, m_l.title, kText, -0.25f, 0, m_l.right - m_l.safe_x);
 		if (!m_view.subtitle.empty() && m_view.screen != Screen::Diagnostics)
 		{
 			const float sx = m_l.safe_x + tw + S(28.0f);
@@ -1110,8 +1370,8 @@ private:
 		{
 			Color c;
 			const char* glyph = Glyph(prompt.glyph, c);
-			x += Text(glyph, x, baseline + px * 0.05f, px * 1.1f, c, 0.2f) + S(10.0f);
-			x += Text(prompt.label, x, baseline, px, kText, 0.05f) + S(40.0f);
+			x += TextMeasured(glyph, x, baseline + px * 0.05f, px * 1.1f, c, 0.2f) + S(10.0f);
+			x += TextMeasured(prompt.label, x, baseline, px, kText, 0.05f) + S(40.0f);
 		}
 		if (!m_view.status.empty() && !m_status_shown)
 		{
@@ -1577,9 +1837,9 @@ private:
 			float vx = x + pad + slide;
 			if (entry->option_index >= 0)
 			{
-				vx += Text(fe::icon::DpadLeft, vx, yy + m_l.body * 1.05f, m_l.body, kTextFaint) + S(12.0f);
+				vx += TextMeasured(fe::icon::DpadLeft, vx, yy + m_l.body * 1.05f, m_l.body, kTextFaint) + S(12.0f);
 			}
-			vx += Text(DisplayValue(entry->value), vx, yy + m_l.body * 1.05f, m_l.body * 1.15f, Mix(kText, kIce, p), 0.2f, 0, iw * 0.7f);
+			vx += TextMeasured(DisplayValue(entry->value), vx, yy + m_l.body * 1.05f, m_l.body * 1.15f, Mix(kText, kIce, p), 0.2f, 0, iw * 0.7f);
 			if (entry->option_index >= 0)
 			{
 				Text(fe::icon::DpadRight, vx + S(12.0f), yy + m_l.body * 1.05f, m_l.body, kTextFaint);
@@ -1849,7 +2109,7 @@ private:
 		Panel(x, y, w, h, 0.96f);
 		Text(m_view.keyboard.title, x + S(48.0f), y + S(62.0f), m_l.body * 1.1f, kText, 0.0f);
 		const float field_y = y + S(126.0f);
-		const float tw = Text(m_view.keyboard.text, x + S(48.0f), field_y, m_l.body * 1.15f, kIce, 0.1f, 0, w - S(110.0f));
+		const float tw = TextMeasured(m_view.keyboard.text, x + S(48.0f), field_y, m_l.body * 1.15f, kIce, 0.1f, 0, w - S(110.0f));
 		if (m_view.reduce_motion || std::fmod(m_ui_t, 1.0f) < 0.6f)
 			m_out.AddSolidQuad(x + S(52.0f) + tw, field_y - m_l.body * 0.95f, x + S(55.0f) + tw, field_y + S(6.0f), kIce);
 		Hairline(x + S(48.0f), field_y + S(18.0f), x + w - S(48.0f), WithAlpha(kGlassEdge, 0.6f), WithAlpha(kGlassEdge, 0.1f));
@@ -1881,14 +2141,20 @@ private:
 
 } // namespace
 
+void EstratosScene::BuildInto(DrawList& out, const UiView& view, uint32_t width, uint32_t height, double seconds)
+{
+	out.Clear();
+	if (!m_ready)
+		return;
+	Painter painter(*this, out, view, width, height, seconds);
+	painter.Paint();
+}
+
 DrawList EstratosScene::Build(const UiView& view, uint32_t width, uint32_t height, double seconds)
 {
 	DrawList out;
-	out.Reserve(65536);
-	if (!m_ready)
-		return out;
-	Painter painter(*this, out, view, width, height, seconds);
-	painter.Paint();
+	out.Reserve(16384);
+	BuildInto(out, view, width, height, seconds);
 	return out;
 }
 } // namespace caliza

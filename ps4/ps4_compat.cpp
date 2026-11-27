@@ -77,10 +77,14 @@ void orbis_ps4_load_system_modules()
 int sceKernelEnableDmemAliasing(void);
 int sceKernelEnableDmemAliasing2(void);
 int g_orbis_ps4_dmem_aliasing = 0;
+int g_orbis_ps4_dmem_aliasing_r1 = -1;
+int g_orbis_ps4_dmem_aliasing_r2 = -1;
 int orbis_ps4_enable_dmem_aliasing()
 {
 	const int r1 = sceKernelEnableDmemAliasing();
 	const int r2 = r1 == 0 ? 0 : sceKernelEnableDmemAliasing2();
+	g_orbis_ps4_dmem_aliasing_r1 = r1;
+	g_orbis_ps4_dmem_aliasing_r2 = r2;
 	g_orbis_ps4_dmem_aliasing = r1 == 0 || r2 == 0;
 	char line[128];
 	std::snprintf(line, sizeof(line), "[pcsx2] direct memory aliasing: %#x, aliasing2: %#x (fastmem %s)",

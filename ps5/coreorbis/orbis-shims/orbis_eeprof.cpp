@@ -61,6 +61,7 @@
 extern std::atomic<int> g_orbis_ee_waiting; // pcsx2/MTGS.cpp
 extern std::atomic<int> g_orbis_vu_waiting; // pcsx2/MTVU.cpp (vk-285-29)
 extern "C" int sceKernelGetCurrentCpu(void);
+extern "C" const unsigned char __orbis_text_start[], __orbis_text_end[];
 
 void OrbisEEProfStart();
 void OrbisGSProfStart();
@@ -74,6 +75,7 @@ const char* const kPath = "eeprof.bin";
 const char* const kGSPath = "gsprof.bin";
 const char* const kVUPath = "vuprof.bin"; // vk-285-29: the MTVU (VU1) thread
 constexpr uint32_t kMaxSamples = 2u << 20; // 16 MiB: about 35 minutes at 1 kHz
+constexpr uint32_t kDualMaxSamples = 1u << 20; // 8 MiB per thread when profiling EE+VU1 together
 constexpr long kPeriodUs = 1000;
 constexpr unsigned kFlushSeconds = 3;
 
@@ -111,39 +113,75 @@ struct JitEntry
 };
 static_assert(sizeof(JitEntry) == 64);
 
-uint64_t* s_samples;
-std::atomic<uint32_t> s_count{0};
-
 // vk-285-11: a sample in the system libraries (memcpy was 3.9% in vk-285-10) also keeps the top six
 // words of the stack, so the offline tool can find the eboot or JIT return address that called it.
 constexpr uint64_t kLibLo = 0x800000000ull, kLibHi = 0x900000000ull; // libkernel and the other modules
-constexpr uint32_t kStackWords = 6, kMaxLibSamples = 1u << 16;
+constexpr uint32_t kStackWords = 6, kMaxLibSamples = 1u << 16, kDualMaxLibSamples = 1u << 15;
 struct LibSample
 {
 	uint64_t index;
 	uint64_t words[kStackWords];
 };
 static_assert(sizeof(LibSample) == 56);
-LibSample* s_lib_samples;
-std::atomic<uint32_t> s_lib_count{0};
-std::atomic<uint32_t> s_dropped{0};
-std::atomic<uint32_t> s_sent{0};
-std::atomic<uint32_t> s_skipped{0};
-std::atomic<int> s_kill_error{0};
-std::atomic<bool> s_started{false};
-std::atomic<bool> s_running{false};
-bool s_gs_mode = false; // vk-285-24: the target is not the EE thread (no EE wait skipping)
-int s_mode = 0; // vk-285-29: 0 the EE thread, 1 the GS thread, 2 the VU1 (MTVU) thread
-pthread_t s_ee; // the profiled thread
-uint32_t s_rip_index = 0xe0 / 8;
-uint64_t s_ee_stack;
-// vk-285-36: the profiled thread's stack, [s_stack_lo, s_stack_hi) (0 when pthread_attr_get_np did not
-// say). A library sample's words are then the first six words within kScanWords above RSP that could
-// be eboot return addresses, not the top six words: a wait deep in libkernel (the GS thread's 40% at
-// R&C3's slowdown, vk-285-35) had no eboot address among its top six.
-uint64_t s_stack_lo, s_stack_hi;
+
 constexpr uint32_t kScanWords = 512; // 4 KiB of stack
-constexpr uint64_t kEbootLo = 0x400000ull, kEbootHi = 0x10000000ull; // eeprof.py checks the call site
+
+struct ProfileSession
+{
+	uint64_t* samples = nullptr;
+	uint32_t max_samples = 0;
+	std::atomic<uint32_t> count{0};
+	LibSample* lib_samples = nullptr;
+	uint32_t max_lib_samples = 0;
+	std::atomic<uint32_t> lib_count{0};
+	std::atomic<uint32_t> dropped{0};
+	std::atomic<uint32_t> sent{0};
+	std::atomic<uint32_t> skipped{0};
+	std::atomic<int> kill_error{0};
+	std::atomic<bool> started{false};
+	std::atomic<bool> active{false};
+	std::atomic<bool> running{false};
+	int mode = 0; // 0 EE, 1 GS, 2 VU1
+	pthread_t target{};
+	uint64_t thread_stack = 0;
+	uint64_t stack_lo = 0;
+	uint64_t stack_hi = 0;
+	std::vector<JitEntry> jit_pending;
+};
+
+ProfileSession s_sessions[3]; // 0 EE, 1 GS, 2 VU1
+uint32_t s_rip_index = 0xe0 / 8;
+std::mutex s_sig_mutex;
+bool s_rip_calibrated = false;
+bool s_sample_handler_installed = false;
+
+bool InEbootText(uint64_t a)
+{
+	return a >= reinterpret_cast<uint64_t>(__orbis_text_start) && a < reinterpret_cast<uint64_t>(__orbis_text_end);
+}
+
+bool AnyFlagProfStarted()
+{
+	for (const ProfileSession& s : s_sessions)
+		if (s.started.load(std::memory_order_relaxed))
+			return true;
+	return false;
+}
+
+const char* ModeTag(int mode)
+{
+	return mode == 2 ? "vuprof" : mode == 1 ? "gsprof" : "eeprof";
+}
+
+const char* ModeName(int mode)
+{
+	return mode == 2 ? "VU1" : mode == 1 ? "GS" : "EE";
+}
+
+const char* ModePath(int mode)
+{
+	return mode == 2 ? kVUPath : mode == 1 ? kGSPath : kPath;
+}
 
 std::mutex& JitMutex()
 {
@@ -151,29 +189,33 @@ std::mutex& JitMutex()
 	return m;
 }
 
-std::vector<JitEntry>& JitPending()
-{
-	static std::vector<JitEntry> v;
-	return v;
-}
-
-// On the EE thread only: the only thread SIGPROF is sent to.
+// Dispatches SIGPROF on the interrupted target thread (EE, GS, or VU1) to its ProfileSession.
 void SampleHandler(int, siginfo_t*, void* ctx)
 {
 	if (!ctx)
 		return;
-	const uint64_t rip = static_cast<const uint64_t*>(ctx)[s_rip_index];
-	const uint32_t i = s_count.load(std::memory_order_relaxed);
-	if (i >= kMaxSamples)
+	const pthread_t self = pthread_self();
+	ProfileSession* sess = nullptr;
+	for (int m = 0; m < 3; m++)
 	{
-		s_dropped.fetch_add(1, std::memory_order_relaxed);
+		if (s_sessions[m].active.load(std::memory_order_acquire) && pthread_equal(self, s_sessions[m].target))
+		{
+			sess = &s_sessions[m];
+			break;
+		}
+	}
+	if (!sess)
+		return;
+	const uint64_t rip = static_cast<const uint64_t*>(ctx)[s_rip_index];
+	const uint32_t i = sess->count.load(std::memory_order_relaxed);
+	if (i >= sess->max_samples)
+	{
+		sess->dropped.fetch_add(1, std::memory_order_relaxed);
 		return;
 	}
-	s_samples[i] = rip;
+	sess->samples[i] = rip;
 #ifdef ORBIS_PS4
-	// PS4 port (AI-assisted): memcpy and memmove are the eboot's own here (CEMUPS4's port/ps4_string.c), not a system
-	// library's, and were 4.7% of the EE thread in GTA San Andreas with no caller known: their samples keep the stack
-	// too. 0x400 bytes covers each routine (both are about 0x100). Needs proper testing.
+	// PS4: memcpy and memmove live in the eboot, so capture their stack callers alongside library samples.
 	const uint64_t copy_lo = reinterpret_cast<uint64_t>(&memcpy), move_lo = reinterpret_cast<uint64_t>(&memmove);
 	const bool in_copy = (rip >= copy_lo && rip < copy_lo + 0x400) || (rip >= move_lo && rip < move_lo + 0x400);
 	if ((rip >= kLibLo && rip < kLibHi) || in_copy)
@@ -181,22 +223,22 @@ void SampleHandler(int, siginfo_t*, void* ctx)
 	if (rip >= kLibLo && rip < kLibHi)
 #endif
 	{
-		const uint32_t j = s_lib_count.load(std::memory_order_relaxed);
-		if (j < kMaxLibSamples)
+		const uint32_t j = sess->lib_count.load(std::memory_order_relaxed);
+		if (j < sess->max_lib_samples)
 		{
 			// The interrupted thread's own stack: RSP is three slots above RIP in the context.
 			const uint64_t* sp = reinterpret_cast<const uint64_t*>(static_cast<const uint64_t*>(ctx)[s_rip_index + 3]);
-			LibSample& l = s_lib_samples[j];
+			LibSample& l = sess->lib_samples[j];
 			l.index = i;
 			const uint64_t at = reinterpret_cast<uint64_t>(sp);
-			if (s_stack_hi != 0 && at >= s_stack_lo && at + 8 * kStackWords <= s_stack_hi)
+			if (sess->stack_hi != 0 && at >= sess->stack_lo && at + 8 * kStackWords <= sess->stack_hi)
 			{
 				// vk-285-36: the first six possible eboot return addresses above RSP, within the stack.
-				const uint64_t end = at + 8ull * kScanWords < s_stack_hi ? at + 8ull * kScanWords : s_stack_hi;
+				const uint64_t end = at + 8ull * kScanWords < sess->stack_hi ? at + 8ull * kScanWords : sess->stack_hi;
 				uint32_t found = 0;
 				for (const uint64_t* p = sp; reinterpret_cast<uint64_t>(p) + 8 <= end && found < kStackWords; p++)
 				{
-					if (*p >= kEbootLo && *p < kEbootHi)
+					if (InEbootText(*p))
 						l.words[found++] = *p;
 				}
 				for (; found < kStackWords; found++)
@@ -207,10 +249,10 @@ void SampleHandler(int, siginfo_t*, void* ctx)
 				for (uint32_t k = 0; k < kStackWords; k++)
 					l.words[k] = sp[k];
 			}
-			s_lib_count.store(j + 1, std::memory_order_release);
+			sess->lib_count.store(j + 1, std::memory_order_release);
 		}
 	}
-	s_count.store(i + 1, std::memory_order_release);
+	sess->count.store(i + 1, std::memory_order_release);
 }
 
 volatile uint64_t s_calibration[0x140 / 8];
@@ -237,9 +279,12 @@ bool Install(void (*handler)(int, siginfo_t*, void*))
 }
 
 // One signal to this thread: which slot of the context holds its stack pointer says which
-// layout the kernel uses. The PS5 one (RSP at +0xf8, RIP at +0xe0) is the default.
-void Calibrate()
+// layout the kernel uses. Orbis shifted (+0xf8/+0xe0) is checked alongside FreeBSD (+0xc8/+0xb0).
+void CalibrateLocked()
 {
+	if (s_rip_calibrated)
+		return;
+	s_rip_calibrated = true;
 	volatile int here = 0;
 	const uint64_t local = reinterpret_cast<uint64_t>(&here);
 	s_calibrated = 0;
@@ -249,16 +294,34 @@ void Calibrate()
 		return;
 	}
 	auto on_stack = [local](uint64_t v) { return v > local - (1u << 20) && v < local + (1u << 20); };
-	const uint64_t rsp_ps5 = s_calibration[0xf8 / 8], rsp_bsd = s_calibration[0xc8 / 8];
-	if (on_stack(rsp_ps5))
+	const uint64_t rsp_orbis = s_calibration[0xf8 / 8], rsp_bsd = s_calibration[0xc8 / 8];
+	if (on_stack(rsp_orbis))
 		s_rip_index = 0xe0 / 8;
 	else if (on_stack(rsp_bsd))
 		s_rip_index = 0xb0 / 8;
 	std::printf("[eeprof] context check: local %#llx, rsp@+0xf8 %#llx, rsp@+0xc8 %#llx, rip@+0xe0 %#llx, rip@+0xb0 %#llx -> RIP at +%#x%s\n",
-		static_cast<unsigned long long>(local), static_cast<unsigned long long>(rsp_ps5),
+		static_cast<unsigned long long>(local), static_cast<unsigned long long>(rsp_orbis),
 		static_cast<unsigned long long>(rsp_bsd), static_cast<unsigned long long>(s_calibration[0xe0 / 8]),
 		static_cast<unsigned long long>(s_calibration[0xb0 / 8]), s_rip_index * 8,
-		(on_stack(rsp_ps5) || on_stack(rsp_bsd)) ? "" : " (neither slot held this stack; kept the default)");
+		(on_stack(rsp_orbis) || on_stack(rsp_bsd)) ? "" : " (neither slot held this stack; kept the default)");
+}
+
+void CalibrateOnce()
+{
+	std::lock_guard<std::mutex> lock(s_sig_mutex);
+	CalibrateLocked();
+}
+
+bool EnsureSampleHandler()
+{
+	std::lock_guard<std::mutex> lock(s_sig_mutex);
+	if (s_sample_handler_installed)
+		return true;
+	CalibrateLocked();
+	if (!Install(SampleHandler))
+		return false;
+	s_sample_handler_installed = true;
+	return true;
 }
 
 // vk-285-88: a profiled thread pinned alone to a CPU (live.ini pin=3) got its SIGPROF only at its next
@@ -268,85 +331,85 @@ void Calibrate()
 // the instruction it was interrupted at.
 extern "C" int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
 extern "C" int scePthreadSetaffinity(pthread_t thread, unsigned long long mask);
-static void FollowAffinity()
+static void FollowAffinity(const ProfileSession& sess, unsigned long long& last_mask)
 {
-	static unsigned long long s_last = 0;
 	unsigned long long mask = 0;
-	if (scePthreadGetaffinity(s_ee, &mask) != 0 || mask == 0 || mask == s_last)
+	if (scePthreadGetaffinity(sess.target, &mask) != 0 || mask == 0 || mask == last_mask)
 		return;
-	s_last = mask;
+	last_mask = mask;
 	const int rc = scePthreadSetaffinity(pthread_self(), mask);
-	std::printf("[eeprof] sampler follows the profiled thread's CPUs %#llx (rc=%d)\n", mask, rc);
+	std::printf("[%s] sampler follows the profiled thread's CPUs %#llx (rc=%d)\n", ModeTag(sess.mode), mask, rc);
 	std::fflush(stdout);
 }
 
-// vk-285-89: and at the highest game priority (256; the PS5's range is 256-767, lower first), since
-// vk-285-88's sampler on the EE's CPU hardly ever got it: 475 samples in a minute, taken only when the EE
-// blocked. At that priority its wake-up preempts the profiled thread at once, every millisecond.
+// vk-285-89: and at the highest game priority (256; range is 256-767, lower first), since
+// a sampler on the EE's CPU at normal priority hardly ever preempted it.
 extern "C" int scePthreadGetprio(pthread_t thread, int* prio);
 extern "C" int scePthreadSetprio(pthread_t thread, int prio);
-static void RaisePriority()
+static void RaisePriority(const ProfileSession& sess)
 {
 	int target = -1, before = -1;
-	scePthreadGetprio(s_ee, &target);
+	scePthreadGetprio(sess.target, &target);
 	scePthreadGetprio(pthread_self(), &before);
 	const int rc = scePthreadSetprio(pthread_self(), 256);
 	int after = -1;
 	scePthreadGetprio(pthread_self(), &after);
-	std::printf("[eeprof] sampler priority %d -> %d (rc=%d), profiled thread's %d\n", before, after, rc, target);
+	std::printf("[%s] sampler priority %d -> %d (rc=%d), profiled thread's %d\n", ModeTag(sess.mode), before, after, rc, target);
 	std::fflush(stdout);
 }
 
-void* SamplerThread(void*)
+void* SamplerThread(void* arg)
 {
+	ProfileSession& sess = *static_cast<ProfileSession*>(arg);
 	const timespec period = {0, kPeriodUs * 1000};
 	unsigned tick = 0;
-	RaisePriority();
+	unsigned long long last_mask = 0;
+	RaisePriority(sess);
 	for (;;)
 	{
 		if ((tick++ & 255u) == 0)
-			FollowAffinity();
+			FollowAffinity(sess, last_mask);
 		nanosleep(&period, nullptr);
-		if (s_count.load(std::memory_order_relaxed) >= kMaxSamples)
+		if (sess.count.load(std::memory_order_relaxed) >= sess.max_samples)
 			continue;
 		// vk-285-29: the VU1 thread's ring wait is skipped the same way, so its samples are busy time.
-		if ((s_mode == 0 && g_orbis_ee_waiting.load(std::memory_order_relaxed) != 0) ||
-			(s_mode == 2 && g_orbis_vu_waiting.load(std::memory_order_relaxed) != 0))
+		if ((sess.mode == 0 && g_orbis_ee_waiting.load(std::memory_order_relaxed) != 0) ||
+			(sess.mode == 2 && g_orbis_vu_waiting.load(std::memory_order_relaxed) != 0))
 		{
-			s_skipped.fetch_add(1, std::memory_order_relaxed);
+			sess.skipped.fetch_add(1, std::memory_order_relaxed);
 			continue;
 		}
-		const int rc = pthread_kill(s_ee, SIGPROF);
+		const int rc = pthread_kill(sess.target, SIGPROF);
 		if (rc == 0)
-			s_sent.fetch_add(1, std::memory_order_relaxed);
+			sess.sent.fetch_add(1, std::memory_order_relaxed);
 		else
-			s_kill_error.store(rc, std::memory_order_relaxed);
+			sess.kill_error.store(rc, std::memory_order_relaxed);
 	}
 	return nullptr;
 }
 
-void Flush(FILE* f, uint32_t& written, uint32_t& lib_written)
+void Flush(ProfileSession& sess, FILE* f, uint32_t& written, uint32_t& lib_written)
 {
-	const uint32_t n = s_count.load(std::memory_order_acquire);
+	const uint32_t n = sess.count.load(std::memory_order_acquire);
 	if (n > written)
 	{
 		const RecordHeader r = {1, n - written, written};
 		std::fwrite(&r, sizeof(r), 1, f);
-		std::fwrite(s_samples + written, sizeof(uint64_t), n - written, f);
+		std::fwrite(sess.samples + written, sizeof(uint64_t), n - written, f);
 		written = n;
 	}
-	const uint32_t nl = s_lib_count.load(std::memory_order_acquire);
+	const uint32_t nl = sess.lib_count.load(std::memory_order_acquire);
 	if (nl > lib_written)
 	{
 		const RecordHeader r = {3, nl - lib_written, lib_written};
 		std::fwrite(&r, sizeof(r), 1, f);
-		std::fwrite(s_lib_samples + lib_written, sizeof(LibSample), nl - lib_written, f);
+		std::fwrite(sess.lib_samples + lib_written, sizeof(LibSample), nl - lib_written, f);
 		lib_written = nl;
 	}
 	std::vector<JitEntry> jit;
 	{
 		std::lock_guard<std::mutex> lock(JitMutex());
-		jit.swap(JitPending());
+		jit.swap(sess.jit_pending);
 	}
 	if (!jit.empty())
 	{
@@ -357,16 +420,20 @@ void Flush(FILE* f, uint32_t& written, uint32_t& lib_written)
 	std::fflush(f);
 }
 
-void* WriterThread(void*)
+void* WriterThread(void* arg)
 {
-	const std::string out = OrbisLogPath(s_mode == 2 ? kVUPath : s_gs_mode ? kGSPath : kPath); // vk-285-33
+	ProfileSession& sess = *static_cast<ProfileSession*>(arg);
+#ifdef ORBIS_PS4
+	scePthreadSetprio(pthread_self(), 740);
+#endif
+	const std::string out = OrbisLogPath(ModePath(sess.mode)); // vk-285-33
 	const char* const path = out.c_str();
 	FILE* f = std::fopen(path, "wb");
 	if (!f)
 	{
-		std::printf("[eeprof] cannot write %s (errno=%d); profiler off\n", path, errno);
+		std::printf("[%s] cannot write %s (errno=%d); profiler off\n", ModeTag(sess.mode), path, errno);
 		std::fflush(stdout);
-		s_running.store(false, std::memory_order_relaxed);
+		sess.running.store(false, std::memory_order_relaxed);
 		return nullptr;
 	}
 	FileHeader h = {};
@@ -376,9 +443,9 @@ void* WriterThread(void*)
 	h.code_base = reinterpret_cast<uint64_t>(SysMemory::GetCodePtr(0));
 	h.code_size = HostMemoryMap::CodeSize;
 	h.self_fn = reinterpret_cast<uint64_t>(&OrbisEEProfStart);
-	h.ee_stack = s_ee_stack;
+	h.ee_stack = sess.thread_stack;
 	h.period_us = kPeriodUs;
-	h.thread = static_cast<uint64_t>(s_mode);
+	h.thread = static_cast<uint64_t>(sess.mode);
 	std::fwrite(&h, sizeof(h), 1, f);
 	std::fflush(f);
 	uint32_t written = 0, lib_written = 0;
@@ -386,7 +453,7 @@ void* WriterThread(void*)
 	{
 		const timespec wait = {kFlushSeconds, 0};
 		nanosleep(&wait, nullptr);
-		Flush(f, written, lib_written);
+		Flush(sess, f, written, lib_written);
 	}
 	return nullptr;
 }
@@ -396,11 +463,21 @@ namespace
 {
 // vk-285-12: opt-in. Decided once, before the first JIT registration, so nothing is
 // buffered when the profiler is off.
+bool WantEEProf()
+{
+	static const bool wanted = (OrbisFlag("eeprof") || OrbisFlag("eevuprof")) && !OrbisFlag("prof");
+	return wanted;
+}
+
+bool WantVUProf()
+{
+	static const bool wanted = (OrbisFlag("vuprof") || OrbisFlag("eevuprof")) && !OrbisFlag("prof");
+	return wanted;
+}
+
 bool ProfilerWanted()
 {
-	// vk-285-29: the VU1 profile needs the JIT registrations too (its samples land in VU1 programs).
-	static const bool wanted = (OrbisFlag("eeprof") || OrbisFlag("vuprof")) && !OrbisFlag("prof"); // vk-285-33: flags/
-	return wanted;
+	return WantEEProf() || WantVUProf();
 }
 } // namespace
 
@@ -412,13 +489,21 @@ void OrbisJitRegister(const char* group, const void* ptr, size_t size, u64 key, 
 	e.ptr = reinterpret_cast<uint64_t>(ptr);
 	e.key = key;
 	e.size = static_cast<uint32_t>(size);
-	e.at = s_count.load(std::memory_order_relaxed);
 	if (group)
 		std::strncpy(e.group, group, sizeof(e.group) - 1);
 	if (name)
 		std::strncpy(e.name, name, sizeof(e.name) - 1);
 	std::lock_guard<std::mutex> lock(JitMutex());
-	JitPending().push_back(e);
+	if (WantEEProf())
+	{
+		e.at = s_sessions[0].count.load(std::memory_order_relaxed);
+		s_sessions[0].jit_pending.push_back(e);
+	}
+	if (WantVUProf())
+	{
+		e.at = s_sessions[2].count.load(std::memory_order_relaxed);
+		s_sessions[2].jit_pending.push_back(e);
+	}
 }
 
 namespace
@@ -426,19 +511,23 @@ namespace
 // Starts sampling the calling thread: mode 0 the EE thread, 1 the GS thread, 2 the VU1 thread.
 void StartOnThisThread(int mode)
 {
-	const bool gs = mode == 1;
-	s_mode = mode;
-	s_gs_mode = mode != 0;
-	s_samples = new (std::nothrow) uint64_t[kMaxSamples];
-	s_lib_samples = new (std::nothrow) LibSample[kMaxLibSamples];
-	if (!s_samples || !s_lib_samples)
+	ProfileSession& sess = s_sessions[mode];
+	const bool dual = WantEEProf() && WantVUProf();
+	const uint32_t max_samples = dual ? kDualMaxSamples : kMaxSamples;
+	const uint32_t max_lib_samples = dual ? kDualMaxLibSamples : kMaxLibSamples;
+	sess.mode = mode;
+	sess.max_samples = max_samples;
+	sess.max_lib_samples = max_lib_samples;
+	sess.samples = new (std::nothrow) uint64_t[max_samples];
+	sess.lib_samples = new (std::nothrow) LibSample[max_lib_samples];
+	if (!sess.samples || !sess.lib_samples)
 	{
-		std::printf("[eeprof] no memory for %u samples; profiler off\n", kMaxSamples);
+		std::printf("[%s] no memory for %u samples; profiler off\n", ModeTag(mode), max_samples);
 		std::fflush(stdout);
 		return;
 	}
 	volatile int here = 0;
-	s_ee_stack = reinterpret_cast<uint64_t>(&here);
+	sess.thread_stack = reinterpret_cast<uint64_t>(&here);
 	// vk-285-36: the stack's bounds, for the library samples' deeper scan (SampleHandler).
 	{
 		pthread_attr_t attr;
@@ -448,39 +537,43 @@ void StartOnThisThread(int mode)
 			size_t stack_size = 0;
 			if (pthread_attr_get_np(pthread_self(), &attr) == 0 &&
 				pthread_attr_getstack(&attr, &stack_addr, &stack_size) == 0 && stack_addr != nullptr &&
-				s_ee_stack >= reinterpret_cast<uint64_t>(stack_addr) &&
-				s_ee_stack < reinterpret_cast<uint64_t>(stack_addr) + stack_size)
+				sess.thread_stack >= reinterpret_cast<uint64_t>(stack_addr) &&
+				sess.thread_stack < reinterpret_cast<uint64_t>(stack_addr) + stack_size)
 			{
-				s_stack_lo = reinterpret_cast<uint64_t>(stack_addr);
-				s_stack_hi = s_stack_lo + stack_size;
+				sess.stack_lo = reinterpret_cast<uint64_t>(stack_addr);
+				sess.stack_hi = sess.stack_lo + stack_size;
 			}
 			pthread_attr_destroy(&attr);
 		}
-		std::printf("[eeprof] stack %#llx-%#llx (here %#llx)%s\n", static_cast<unsigned long long>(s_stack_lo),
-			static_cast<unsigned long long>(s_stack_hi), static_cast<unsigned long long>(s_ee_stack),
-			s_stack_hi != 0 ? "" : ": unknown, library samples keep their top six words");
+		std::printf("[%s] stack %#llx-%#llx (here %#llx)%s\n", ModeTag(mode),
+			static_cast<unsigned long long>(sess.stack_lo), static_cast<unsigned long long>(sess.stack_hi),
+			static_cast<unsigned long long>(sess.thread_stack),
+			sess.stack_hi != 0 ? "" : ": unknown, library samples keep their top six words");
 	}
-	s_ee = pthread_self();
-	Calibrate();
-	if (!Install(SampleHandler))
+	sess.target = pthread_self();
+	sess.active.store(true, std::memory_order_release);
+	if (!EnsureSampleHandler())
 	{
-		std::printf("[eeprof] sigaction failed (errno=%d); profiler off\n", errno);
+		sess.active.store(false, std::memory_order_release);
+		std::printf("[%s] sigaction failed (errno=%d); profiler off\n", ModeTag(mode), errno);
 		std::fflush(stdout);
 		return;
 	}
-	s_running.store(true, std::memory_order_relaxed);
+	sess.running.store(true, std::memory_order_relaxed);
 	pthread_t writer, sampler;
-	const int rw = pthread_create(&writer, nullptr, WriterThread, nullptr);
-	const int rs = pthread_create(&sampler, nullptr, SamplerThread, nullptr);
+	const int rw = pthread_create(&writer, nullptr, WriterThread, &sess);
+	const int rs = pthread_create(&sampler, nullptr, SamplerThread, &sess);
 	if (rw == 0)
 		pthread_detach(writer);
 	if (rs == 0)
 		pthread_detach(sampler);
-	PrintLibraryAddresses();
-	std::printf("[eeprof] start: %s thread %#llx, code %p + %#x, eboot fn %p, every %ld us, writer %d sampler %d -> %s\n",
-		mode == 2 ? "VU1" : gs ? "GS" : "EE", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(s_ee)),
+	static std::atomic<bool> s_libs_printed{false};
+	if (!s_libs_printed.exchange(true, std::memory_order_relaxed))
+		PrintLibraryAddresses();
+	std::printf("[%s] start: %s thread %#llx, code %p + %#x, eboot fn %p, every %ld us, writer %d sampler %d -> %s\n",
+		ModeTag(mode), ModeName(mode), static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(sess.target)),
 		SysMemory::GetCodePtr(0), HostMemoryMap::CodeSize, reinterpret_cast<void*>(&OrbisEEProfStart), kPeriodUs, rw, rs,
-		OrbisLogPath(mode == 2 ? kVUPath : gs ? kGSPath : kPath).c_str());
+		OrbisLogPath(ModePath(mode)).c_str());
 	std::fflush(stdout);
 }
 } // namespace
@@ -497,40 +590,38 @@ void OrbisEEProfStart()
 		return;
 	if (!ProfilerWanted())
 	{
-		std::printf("[eeprof] off (opt-in: create /data/caliza/eeprof, or /data/caliza/gsprof for the GS thread)\n");
+		std::printf("[eeprof] off (opt-in: /data/caliza/eeprof, vuprof, eevuprof, or gsprof)\n");
 		std::fflush(stdout);
 		return;
 	}
-	if (!OrbisFlag("eeprof"))
+	if (!WantEEProf())
 		return; // vk-285-29: vuprof alone asks for the VU1 thread (OrbisVUProfStart)
-	if (s_started.exchange(true))
+	if (s_sessions[0].started.exchange(true))
 		return;
 	StartOnThisThread(0);
 }
 
 // vk-285-24: GSRenderer.cpp's OrbisPrintLoad calls this once a second on the GS thread; it starts
-// the profiler on that thread once /data/caliza/gsprof exists (and no profiler runs yet).
+// the profiler on that thread once /data/caliza/gsprof exists.
 void OrbisGSProfStart()
 {
-	if (s_started.load(std::memory_order_relaxed))
+	if (s_sessions[1].started.load(std::memory_order_relaxed))
 		return;
-	if (!OrbisFlag("gsprof"))
+	if (!OrbisFlag("gsprof") || OrbisFlag("prof"))
 		return;
-	if (s_started.exchange(true))
+	if (s_sessions[1].started.exchange(true))
 		return;
 	StartOnThisThread(1);
 }
 
 // vk-285-29: the MTVU thread calls this each time its ring runs dry; it starts the profiler on
-// that thread when /data/caliza/vuprof was there at start (ProfilerWanted, which also keeps the
-// JIT registrations the VU1 samples are named by) and no profiler runs yet.
+// that thread when /data/caliza/vuprof or /data/caliza/eevuprof was present at start.
 void OrbisVUProfStart()
 {
 	OrbisAutoProfNoteThread(2); // vk-285-118
-	if (s_started.load(std::memory_order_relaxed))
+	if (s_sessions[2].started.load(std::memory_order_relaxed))
 		return;
-	static const bool s_vu_wanted = ProfilerWanted() && OrbisFlag("vuprof");
-	if (!s_vu_wanted || s_started.exchange(true))
+	if (!WantVUProf() || s_sessions[2].started.exchange(true))
 		return;
 	StartOnThisThread(2);
 }
@@ -574,17 +665,20 @@ static void PrintLibraryAddresses()
 // GSRenderer.cpp's OrbisPrintLoad calls this after each [load] line (GS thread).
 void OrbisEEProfMark()
 {
-	if (!s_running.load(std::memory_order_relaxed))
-		return;
-	const int err = s_kill_error.load(std::memory_order_relaxed);
-	// vk-285-107: through the deferred log, as one line. This runs on the GS thread once a second, and a direct
-	// printf there waited on stdout's lock while the ticker thread wrote to /data (vk-285-106's [vsslow], ~33 ms).
-	char kill[32] = "";
-	if (err)
-		std::snprintf(kill, sizeof(kill), " kill_error=%d", err);
-	OrbisDeferredPrintf("[%s] n=%u sent=%u skipped=%u dropped=%u%s\n", s_mode == 2 ? "vuprof" : s_gs_mode ? "gsprof" : "eeprof",
-		s_count.load(std::memory_order_relaxed), s_sent.load(std::memory_order_relaxed),
-		s_skipped.load(std::memory_order_relaxed), s_dropped.load(std::memory_order_relaxed), kill);
+	for (const ProfileSession& sess : s_sessions)
+	{
+		if (!sess.running.load(std::memory_order_relaxed))
+			continue;
+		const int err = sess.kill_error.load(std::memory_order_relaxed);
+		// vk-285-107: through the deferred log, as one line. This runs on the GS thread once a second, and a direct
+		// printf there waited on stdout's lock while the ticker thread wrote to /data (vk-285-106's [vsslow], ~33 ms).
+		char kill[32] = "";
+		if (err)
+			std::snprintf(kill, sizeof(kill), " kill_error=%d", err);
+		OrbisDeferredPrintf("[%s] n=%u sent=%u skipped=%u dropped=%u%s\n", ModeTag(sess.mode),
+			sess.count.load(std::memory_order_relaxed), sess.sent.load(std::memory_order_relaxed),
+			sess.skipped.load(std::memory_order_relaxed), sess.dropped.load(std::memory_order_relaxed), kill);
+	}
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -624,20 +718,12 @@ char s_auto_head[200];
 int s_auto_index = 0;
 
 } // namespace
-// vk-285-119: the eboot's code, from the port's linker script (orbis-shims/ehframe.ld).
-extern "C" const unsigned char __orbis_text_start[], __orbis_text_end[];
 namespace
 {
-// vk-285-119 (AI-assisted): a word on the stack counts as the eboot code that called a library only when it is inside
-// the eboot's .text. vk-285-118 took anything within 128 MiB of ref, and with the eboot at 0x400000 that let in every
-// small integer on the stack: the testers' "callers" were mostly 0x10, 0x4 and 0x1 (shown as -0xa530a0, -0xa530ac,
-// -0xa530af), which said nothing about the GS thread's 31% in two libkernel addresses. (The bytes before the word are
-// not read to check for a call: a fault in this signal handler would end the app.)
 bool AutoInEboot(uint64_t a)
 {
-	return a >= reinterpret_cast<uint64_t>(__orbis_text_start) && a < reinterpret_cast<uint64_t>(__orbis_text_end);
+	return InEbootText(a);
 }
-
 
 void AutoHandler(int, siginfo_t*, void* ctx)
 {
@@ -649,7 +735,13 @@ void AutoHandler(int, siginfo_t*, void* ctx)
 	const uint64_t* q = static_cast<const uint64_t*>(ctx);
 	const uint64_t rip = q[s_rip_index];
 	uint64_t caller = 0;
+#ifdef ORBIS_PS4
+	const uint64_t copy_lo = reinterpret_cast<uint64_t>(&memcpy), move_lo = reinterpret_cast<uint64_t>(&memmove);
+	const bool in_copy = (rip >= copy_lo && rip < copy_lo + 0x400) || (rip >= move_lo && rip < move_lo + 0x400);
+	if (((rip >= kLibLo && rip < kLibHi) || in_copy) && s_auto_hi != 0)
+#else
 	if (rip >= kLibLo && rip < kLibHi && s_auto_hi != 0)
+#endif
 	{
 		const uint64_t* sp = reinterpret_cast<const uint64_t*>(q[s_rip_index + 3]);
 		const uint64_t at = reinterpret_cast<uint64_t>(sp);
@@ -734,6 +826,8 @@ void AutoReport()
 		{
 			eboot++;
 			AddBucket(eb, (static_cast<int64_t>(r) - static_cast<int64_t>(s_auto_ref)) & ~int64_t{63});
+			if (s_auto[i].caller)
+				AddBucket(cb, static_cast<int64_t>(s_auto[i].caller) - static_cast<int64_t>(s_auto_ref));
 		}
 		else
 			other++;
@@ -847,9 +941,9 @@ void OrbisAutoProfSecond(float speed, float ee, float gs, float vu)
 #else
 	static const bool off = OrbisFlag("noautoprof");
 #endif
-	static int slow = 0, windows = 0;
+	static int slow = 0, windows = 0, last_which = -1;
 	static timespec last = {0, 0};
-	if (off || s_started.load(std::memory_order_relaxed) || windows >= kAutoWindows)
+	if (off || AnyFlagProfStarted() || windows >= kAutoWindows)
 		return;
 	// The switch autoprof_now (a test): one window 20 s into the game whatever the speed.
 	static const bool now_flag = OrbisFlag("autoprof_now");
@@ -863,17 +957,28 @@ void OrbisAutoProfSecond(float speed, float ee, float gs, float vu)
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	if (windows > 0 && now.tv_sec - last.tv_sec < kAutoGapSeconds)
 		return;
+	const bool has_ee = s_auto_thread[0].load(std::memory_order_relaxed) != 0;
+	const bool has_vu = s_auto_thread[2].load(std::memory_order_relaxed) != 0;
 	int which = 1;
 	float best = gs;
-	if (ee > best && s_auto_thread[0].load(std::memory_order_relaxed))
+	if (ee > best && has_ee)
 	{
 		which = 0;
 		best = ee;
 	}
-	if (vu > best && s_auto_thread[2].load(std::memory_order_relaxed))
+	if (vu > best && has_vu)
 	{
 		which = 2;
 		best = vu;
+	}
+	// When both EE and VU1 are saturated (e.g. both at 100%), alternate between them across
+	// windows instead of letting EE win every tie.
+	if (has_ee && has_vu && ee >= 85.0f && vu >= 85.0f && (best - std::min(ee, vu)) <= 5.0f)
+	{
+		if (last_which == 0)
+			which = 2;
+		else if (last_which == 2)
+			which = 0;
 	}
 	const uintptr_t handle = s_auto_thread[which].load(std::memory_order_relaxed);
 	if (!handle)
@@ -912,11 +1017,13 @@ void OrbisAutoProfSecond(float speed, float ee, float gs, float vu)
 			pthread_attr_destroy(&attr);
 		}
 	}
+	CalibrateOnce();
 	if (!Install(AutoHandler))
 	{
 		windows = kAutoWindows;
 		return;
 	}
+	last_which = which;
 	s_auto_index = ++windows;
 	last = now;
 	std::snprintf(s_auto_head, sizeof(s_auto_head), "%s thread (speed %.0f%%, load ee %.0f gs %.0f vu %.0f)", kAutoThreadName[which], speed, ee, gs, vu);

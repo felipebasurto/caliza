@@ -581,6 +581,12 @@ public:
 			writeBackReg(xRegister32(i), false);
 	}
 
+	void setZero(const xmm& reg)
+	{
+		if (reg.Id < xmmTotal)
+			xmmMap[reg.Id].isZero = true;
+	}
+
 	bool checkVFClamp(int regId)
 	{
 		if (regId != xmmPQ.Id && ((xmmMap[regId].VFreg == 33 && !EmuConfig.Gamefixes.IbitHack) || xmmMap[regId].isZero))
@@ -809,7 +815,8 @@ public:
 						}
 						xmmMap[z].VFreg = vfWriteReg;
 						xmmMap[z].xyzw = xyzw;
-						xmmMap[z].isZero = (vfLoadReg == 0);
+						xmmMap[z].isZero = (vfLoadReg == 0) ||
+							(vfWriteReg <= 0 && vfLoadReg == 33 && index == 1 && !EmuConfig.Gamefixes.IbitHack);
 					}
 					xmmMap[z].count = counter;
 					xmmMap[z].isNeeded = true;
@@ -849,7 +856,8 @@ public:
 			xmmMap[x].VFreg = vfLoadReg;
 			xmmMap[x].xyzw  = 0;
 		}
-		xmmMap[x].isZero = (vfLoadReg == 0);
+		xmmMap[x].isZero = (vfLoadReg == 0) ||
+			(vfWriteReg <= 0 && vfLoadReg == 33 && index == 1 && !EmuConfig.Gamefixes.IbitHack);
 		xmmMap[x].count    = counter;
 		xmmMap[x].isNeeded = true;
 		updateCOP2AllocState(x);

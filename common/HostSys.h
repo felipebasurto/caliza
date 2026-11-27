@@ -145,6 +145,7 @@ public:
 
 	__fi size_t GetSize() const { return m_size; }
 	__fi size_t GetNumPages() const { return m_num_pages; }
+	__fi size_t GetNumMappings() const { return m_num_mappings; }
 
 	__fi u8* BasePointer() const { return m_base_ptr; }
 	__fi u8* OffsetPointer(size_t offset) const { return m_base_ptr + offset; }

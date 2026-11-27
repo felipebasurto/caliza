@@ -22,6 +22,9 @@ static constexpr u32 MINIMUM_SIZE = 128 * 1024;
 // the EE's (a thread starts with its creator's CPUs, and the CPU thread may be pinned there already).
 void OrbisHelperThreadAdd(pthread_t thread);
 void OrbisHelperThreadRemove(pthread_t thread);
+#ifdef ORBIS_PS4
+extern "C" int scePthreadSetprio(pthread_t thread, int prio);
+#endif
 
 ThreadedFileReader::ThreadedFileReader()
 {
@@ -71,6 +74,10 @@ size_t ThreadedFileReader::CopyBlocks(void* dst, const void* src, size_t size) c
 void ThreadedFileReader::Loop()
 {
 	Threading::SetNameOfCurrentThread("ISO Decompress");
+#ifdef ORBIS_PS4
+	// Keep CHD/ISO decompression below EE/VU1/GS (680) and audio/pad (700) on helper cores.
+	scePthreadSetprio(pthread_self(), 730);
+#endif
 
 	std::unique_lock<std::mutex> lock(m_mtx);
 

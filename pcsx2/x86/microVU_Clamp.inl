@@ -7,13 +7,22 @@
 // Micro VU - Clamp Functions
 //------------------------------------------------------------------
 
-alignas(16) const u32 sse4_minvals[2][4] = {
-	{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, //1000
-	{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, //1111
+struct alignas(64) Sse4ClampVals
+{
+	u32 minvals[2][4];
+	u32 maxvals[2][4];
 };
-alignas(16) const u32 sse4_maxvals[2][4] = {
-	{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, //1000
-	{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, //1111
+static_assert(sizeof(Sse4ClampVals) == 64);
+
+const Sse4ClampVals sse4_clampvals = {
+	{
+		{0xff7fffff, 0xffffffff, 0xffffffff, 0xffffffff}, //1000
+		{0xff7fffff, 0xff7fffff, 0xff7fffff, 0xff7fffff}, //1111
+	},
+	{
+		{0x7f7fffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}, //1000
+		{0x7f7fffff, 0x7f7fffff, 0x7f7fffff, 0x7f7fffff}, //1111
+	},
 };
 
 // Used for Result Clamping
@@ -50,8 +59,8 @@ void mVUclamp2(microVU& mVU, const xmm& reg, const xmm& regT1in, int xyzw, bool 
 	if (((!clampE && CHECK_VU_SIGN_OVERFLOW(mVU.index)) || (clampE && bClampE && CHECK_VU_SIGN_OVERFLOW(mVU.index))) && mVU.regAlloc->checkVFClamp(reg.Id))
 	{
 		int i = (xyzw == 1 || xyzw == 2 || xyzw == 4 || xyzw == 8) ? 0 : 1;
-		xPMIN.SD(reg, ptr128[&sse4_maxvals[i][0]]);
-		xPMIN.UD(reg, ptr128[&sse4_minvals[i][0]]);
+		xPMIN.SD(reg, ptr128[&sse4_clampvals.maxvals[i][0]]);
+		xPMIN.UD(reg, ptr128[&sse4_clampvals.minvals[i][0]]);
 		return;
 	}
 	else

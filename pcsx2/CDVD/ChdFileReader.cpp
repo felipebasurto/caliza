@@ -36,6 +36,7 @@ private:
 	std::unique_ptr<u8[]> m_file_cache;
 	s64 m_file_cache_size;
 	s64 m_file_cache_pos;
+	s64 m_file_pos = -1;
 
 public:
 	ChdCoreFileWrapper(std::FILE* file, ChdCoreFileWrapper* parent)
@@ -106,6 +107,7 @@ private:
 		}
 
 		m_file_cache = std::make_unique_for_overwrite<u8[]>(m_file_cache_size);
+		m_file_pos = -1;
 		if (FileSystem::FSeek64(m_file, 0, SEEK_SET) != 0 ||
 			FileSystem::ReadFileWithPartialProgress(
 				m_file, m_file_cache.get(), m_file_cache_size, progress,
@@ -148,7 +150,10 @@ private:
 		if (fileWrapper->m_file_cache)
 			return fileWrapper->m_file_cache_size;
 		else
+		{
+			fileWrapper->m_file_pos = -1;
 			return static_cast<u64>(FileSystem::FSize64(fileWrapper->m_file));
+		}
 	}
 
 	static size_t FRead(void* buffer, size_t elmSize, size_t elmCount, core_file* file)
@@ -163,7 +168,17 @@ private:
 			return elmCount;
 		}
 		else
-			return std::fread(buffer, elmSize, elmCount, fileWrapper->m_file);
+		{
+			const size_t n = std::fread(buffer, elmSize, elmCount, fileWrapper->m_file);
+			if (fileWrapper->m_file_pos >= 0)
+			{
+				if (n == elmCount)
+					fileWrapper->m_file_pos += static_cast<s64>(n * elmSize);
+				else
+					fileWrapper->m_file_pos = -1;
+			}
+			return n;
+		}
 	}
 
 	static int FClose(core_file* file)
@@ -196,7 +211,25 @@ private:
 			return 0;
 		}
 		else
-			return FileSystem::FSeek64(fileWrapper->m_file, offset, whence);
+		{
+			if (whence == SEEK_SET && fileWrapper->m_file_pos == offset)
+				return 0;
+			const int rc = FileSystem::FSeek64(fileWrapper->m_file, offset, whence);
+			if (rc == 0)
+			{
+				if (whence == SEEK_SET)
+					fileWrapper->m_file_pos = offset;
+				else if (whence == SEEK_CUR && fileWrapper->m_file_pos >= 0)
+					fileWrapper->m_file_pos += offset;
+				else
+					fileWrapper->m_file_pos = -1;
+			}
+			else
+			{
+				fileWrapper->m_file_pos = -1;
+			}
+			return rc;
+		}
 	}
 };
 
@@ -373,6 +406,8 @@ bool ChdFileReader::Open2(std::string filename, Error* error)
 	auto fp = FileSystem::OpenManagedSharedCFile(m_filename.c_str(), "rb", FileSystem::FileShareMode::DenyWrite, error);
 	if (!fp)
 		return false;
+	// Coalesce sequential small CHD hunk reads (e.g. 4 KiB DVD hunks over USB) into 128 KiB stdio reads.
+	std::setvbuf(fp.get(), nullptr, _IOFBF, 128 * 1024);
 
 	ChdFile = OpenCHD(m_filename, std::move(fp), error, 0);
 	if (!ChdFile)

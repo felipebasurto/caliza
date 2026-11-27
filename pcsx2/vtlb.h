@@ -39,7 +39,20 @@ template<> struct vtlbMemFP<128,  true> { typedef vtlbMemW128FP fn; static const
 
 typedef u32 vtlbHandler;
 
+struct VtlbFastmemStats
+{
+	u64 emit_fast = 0;
+	u64 emit_slow = 0;
+	u64 emit_const = 0;
+	u64 backpatches = 0;
+	u32 mapped_pages = 0;
+	u32 faulting_pcs = 0;
+};
+
 extern bool vtlb_IsFastmemAvailable();
+extern VtlbFastmemStats vtlb_GetFastmemStats();
+extern void vtlb_RecordFastmemEmit(bool fast);
+extern void vtlb_RecordConstEmit();
 extern bool vtlb_Core_Alloc();
 extern void vtlb_Core_Free();
 extern void vtlb_Alloc_Ppmap();

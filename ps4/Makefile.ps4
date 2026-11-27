@@ -56,8 +56,9 @@ PS4_CXX_FLAGS := -nostdinc++ -isystem $(PS4_SYSROOT)/include/c++/v1 $(PS4_C_FLAG
 # the narrower store and waits until the store reaches the cache, behind every older store in the queue.
 # vk-285-101's GS profile had 3.8% of the thread on one such load (ApplyTFXState's m_dirty_flags after
 # SetScissor's orb); PCSX2's register and flag words (VIF/DMA/GIF bitfields, EE state) get the same treatment.
-# That profile was Zen 2's store queue. Jaguar is in-order with a different memory pipeline, so the same
-# narrowing can help, hurt or do nothing there: compare NARROW=0 and NARROW=1 rather than keeping the PS5 answer.
+# That profile was Zen 2's store queue. Jaguar (btver2) is a 2-wide out-of-order core with a 20-entry store
+# queue and 32 KiB L1 caches; store-to-load forwarding stalls on narrow stores are structurally similar, but
+# compare NARROW=0 and NARROW=1 on PS4 hardware rather than assuming the PS5 delta carries over unchanged.
 NARROW ?= 1
 ifeq ($(NARROW),1)
 NARROW_FLAGS := -mllvm -combiner-reduce-load-op-store-width=false
@@ -299,6 +300,7 @@ SRCS := $(SRCS) $(PCSX2)/pcsx2/Achievements.cpp $(DEV9_SRCS)
 C_SRCS := $(RCHEEVOS_SRCS) $(DEMANGLE_SRCS)
 
 CFLAGS := $(PS4_C_FLAGS) -O3 -DNDEBUG -march=btver2 $(NARROW_FLAGS) $(LTO_FLAGS) -D_M_X86=1 \
+  -ffunction-sections -fdata-sections -fvisibility=hidden \
   -DRC_NO_THREADS=1 -DRC_HASH_NO_DISC -DRC_HASH_NO_ENCRYPTED -DRC_HASH_NO_ROM -DRC_HASH_NO_ZIP \
   -include string.h -include stdlib.h \
   -I$(PCSX2)/3rdparty/rcheevos/include -I$(PCSX2)/3rdparty/demangler/include

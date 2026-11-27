@@ -61,6 +61,7 @@ struct DrawBatch
 	const Texture2D* texture = nullptr; // nullptr means the font atlas/neutral texture
 	size_t first = 0;
 	size_t count = 0;
+	bool opaque = false; // skips alpha blending when the quad overwrites destination pixels
 };
 
 class DrawList
@@ -71,14 +72,20 @@ public:
 
 	void AddTriangle(const Texture2D* texture, const DrawVertex& a, const DrawVertex& b, const DrawVertex& c);
 	void AddSolidQuad(float x0, float y0, float x1, float y1, Color color);
+	void AddQuadPoints(float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3, Color color);
+	void AddOpaqueGrad(float x0, float y0, float x1, float y1, Color tl, Color tr, Color br, Color bl);
 	void AddPoly(const std::vector<std::pair<float, float>>& points, Color color);
 	void AddRoundedRect(float x, float y, float w, float h, float radius, Color color);
 	void AddLine(float x0, float y0, float x1, float y1, float width, Color color);
 	void AddImage(const Texture2D* texture, float x, float y, float w, float h, Color tint = {});
+	void AddOpaqueImage(const Texture2D* texture, float x, float y, float w, float h, Color tint = {});
 	void AddImageUV(const Texture2D* texture, float x, float y, float w, float h, float u0, float v0, float u1,
 		float v1, Color tint = {});
 	void AddText(const fe::Fonts& fonts, const std::string& utf8, float x, float baseline, float px, Color color,
 		float weight = 0.0f, int align = 0); // 0 left, 1 centre, 2 right
+
+	void SetOpaqueFullscreenBackdrop(bool value) { m_opaque_fullscreen = value; }
+	bool HasOpaqueFullscreenBackdrop() const { return m_opaque_fullscreen; }
 
 	// Moves, scales (about ox, oy) and fades every vertex added since `first`. Animation uses it to treat a group of
 	// primitives as one layer without each primitive knowing about motion.
@@ -89,9 +96,10 @@ public:
 	const std::vector<DrawBatch>& Batches() const { return m_batches; }
 
 private:
-	void Append(const Texture2D* texture, const DrawVertex* vertices, size_t count);
+	void Append(const Texture2D* texture, const DrawVertex* vertices, size_t count, bool opaque = false);
 
 	std::vector<DrawVertex> m_vertices;
 	std::vector<DrawBatch> m_batches;
+	bool m_opaque_fullscreen = false;
 };
 } // namespace caliza

@@ -418,7 +418,10 @@ const std::vector<OptionGroup>& OptionGroups()
 					{{"-3", "50%"}, {"-2", "60%"}, {"-1", "75%"}, {"0", "100%"}, {"1", "130%"}, {"2", "180%"}, {"3", "300%"}},
 					"Above 100% can smooth out slowdown the PS2 had; some games dislike it."),
 				Seg("EmuCore/Speedhacks/EECycleSkip", "EE cycle skip", "0", "Cycle skip %", {{"0", "Off"}, {"1", "Mild"}, {"2", "Moderate"}, {"3", "Max"}}),
-				Toggle("EmuCore/Speedhacks/vuThread", "MTVU (VU1 on its own thread)", "false", "MTVU %", "", true),
+				Toggle("EmuCore/Speedhacks/vuThread", "MTVU (VU1 on its own thread)", "true", "MTVU %", "", true),
+				Seg("Caliza/VUClampMode", "VU clamp mode", "-1", "VU clamp %",
+					{{"-1", "Auto"}, {"0", "None"}, {"1", "Normal"}, {"2", "Extra"}, {"3", "Full"}},
+					"Auto uses the game database setting. Lowering this to Normal or None can speed up VU-heavy games where the database forces Full clamping, at the risk of lighting or geometry glitches."),
 				Seg("HWDownloadMode", "GPU readbacks", "0", "Readbacks %", {{"0", "Accurate"}, {"1", "Whole area"}, {"3", "Don't wait"}, {"4", "Skip"}},
 					"Some games read the picture back from the GPU, which is slow on the PS4. Accurate is PCSX2's default. Whole area reads "
 					"everything drawn since the last read in one go, so there are fewer stops. Don't wait doesn't stop the game for the GPU: "

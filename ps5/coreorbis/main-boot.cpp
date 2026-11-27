@@ -322,6 +322,13 @@ static void orbis_migrate_one_data_root(const std::string& source, const char* l
 // older PCSX2 root second as a gap filler. Migration is safe to retry after interruption.
 static void orbis_migrate_legacy_data()
 {
+  static bool s_legacy_migration_done = false;
+  if (s_legacy_migration_done)
+    return;
+  struct stat data_st = {};
+  if (stat("/data", &data_st) != 0 || !S_ISDIR(data_st.st_mode))
+    return; // retry once /data becomes visible after jailbreak
+  s_legacy_migration_done = true;
   orbis_migrate_one_data_root(caliza::legacy::RetiredDataRoot(), "previous installation");
   orbis_migrate_one_data_root(kOrbisLegacyDataRoot, "PCSX2 data");
 }
@@ -1926,9 +1933,10 @@ void orbis_reload_gs_ini_cpu()
     extern std::atomic<int> g_orbis_mtvu_spin;
     extern std::atomic<int> g_orbis_mtvu_batch;
     extern std::atomic<u32> g_orbis_mtvu_ring_kb;
-    printf("[gsini] applied: EECycleRate=%d FrameratePAL=%.2f extrathreads=%d TVShader=%d vuThread=%d vu1Instant=%d vu1Speed=%u mtvuSpin=%d mtvuBatch=%d mtvuRingKB=%u\n",
-      (int)EmuConfig.Speedhacks.EECycleRate, (double)EmuConfig.GS.FrameratePAL, (int)EmuConfig.GS.SWExtraThreads,
-      (int)EmuConfig.GS.TVShader, (int)EmuConfig.Speedhacks.vuThread, (int)EmuConfig.Speedhacks.vu1Instant,
+    printf("[gsini] applied: EECycleRate=%d EECycleSkip=%d FrameratePAL=%.2f extrathreads=%d TVShader=%d vuThread=%d vu1Instant=%d vuClamp=%u vu1Speed=%u mtvuSpin=%d mtvuBatch=%d mtvuRingKB=%u\n",
+      (int)EmuConfig.Speedhacks.EECycleRate, (int)EmuConfig.Speedhacks.EECycleSkip, (double)EmuConfig.GS.FrameratePAL,
+      (int)EmuConfig.GS.SWExtraThreads, (int)EmuConfig.GS.TVShader, (int)EmuConfig.Speedhacks.vuThread,
+      (int)EmuConfig.Speedhacks.vu1Instant, EmuConfig.Cpu.Recompiler.GetVUClampMode(),
       g_orbis_vu1_speed.load(std::memory_order_relaxed), g_orbis_mtvu_spin.load(std::memory_order_relaxed),
       g_orbis_mtvu_batch.load(std::memory_order_relaxed), g_orbis_mtvu_ring_kb.load(std::memory_order_relaxed)); // vk-285-84/90
   }
@@ -2003,6 +2011,7 @@ int sceKernelGetProsperoSystemSwVersion(void* version);
 unsigned long long sceKernelGetCpuFrequency(void);
 int sceKernelGetMainSocId(unsigned int* id);
 int sceKernelGetCpumode(void);
+int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
 int sysctlbyname(const char* name, void* oldp, size_t* oldlenp, const void* newp, size_t newlen);
 }
 
@@ -2082,7 +2091,13 @@ static std::string orbis_console_survey()
   info += buf;
   const unsigned long long hz = sceKernelGetCpuFrequency();
   const int cpumode = sceKernelGetCpumode();
-  printf("[console] CPU: %llu Hz, cpumode %d\n", hz, cpumode);
+  unsigned long long title_mask = 0;
+  if (scePthreadGetaffinity(pthread_self(), &title_mask) == 0 && title_mask != 0)
+  {
+    extern std::atomic<unsigned long long> g_orbis_title_cpu_mask;
+    g_orbis_title_cpu_mask.store(title_mask, std::memory_order_release);
+  }
+  printf("[console] CPU: %llu Hz, cpumode %d, affinity %#llx\n", hz, cpumode, title_mask);
   orbis_clock_survey(); // vk-285-100
   if (hz != 0)
     snprintf(buf, sizeof(buf), " \xC2\xB7 CPU %.2f GHz, mode %d", static_cast<double>(hz) / 1e9, cpumode);
@@ -3219,6 +3234,15 @@ extern "C" void ps4_boot_trace(const char* stage);
 extern "C" void orbis_ps4_load_system_modules(); // ps4/ps4_compat.cpp
 extern "C" int orbis_ps4_enable_dmem_aliasing(); // ps4/ps4_compat.cpp
 extern "C" int g_orbis_ps4_dmem_aliasing;        // ps4/ps4_compat.cpp: 1 when that worked
+extern "C" int g_orbis_ps4_dmem_aliasing_r1;     // ps4/ps4_compat.cpp: sceKernelEnableDmemAliasing rc
+extern "C" int g_orbis_ps4_dmem_aliasing_r2;     // ps4/ps4_compat.cpp: sceKernelEnableDmemAliasing2 rc
+#endif
+#ifdef ORBIS_VULKAN
+extern "C" int g_orbis_fastmem_reserve_rc;
+extern "C" unsigned long long g_orbis_fastmem_reserve_addr;
+extern "C" unsigned long long g_orbis_fastmem_map_ok;
+extern "C" unsigned long long g_orbis_fastmem_map_fail;
+extern "C" int g_orbis_fastmem_map_last_rc;
 #endif
 
 // The PS2's USB keyboard and mouse (orbis-shims/ProsperoKbdMouse.cpp), off with the flag file nousbkbm. PS4 port
@@ -3809,11 +3833,20 @@ int main()
       else if (nofastmem)
         state = "off (nofastmem)";
       s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableFastmem", fastmem);
-      printf("[boot] fastmem %s%s\n", state, fastmem && fastmem_flag ? " (flag fastmem present)" : "");
+      EmuConfig.Cpu.Recompiler.EnableFastmem = fastmem;
+      printf("[boot] fastmem %s%s (dmem_aliasing=%d r1=0x%x r2=0x%x)\n", state,
+        fastmem && fastmem_flag ? " (flag fastmem present)" : "",
+        g_orbis_ps4_dmem_aliasing,
+        static_cast<unsigned>(g_orbis_ps4_dmem_aliasing_r1),
+        static_cast<unsigned>(g_orbis_ps4_dmem_aliasing_r2));
     }
 #else
-    s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableFastmem", orbis_flag("fastmem"));
-    printf("[boot] fastmem %s\n", orbis_flag("fastmem") ? "on (flag fastmem)" : "off");
+    {
+      const bool fastmem = orbis_flag("fastmem");
+      s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableFastmem", fastmem);
+      EmuConfig.Cpu.Recompiler.EnableFastmem = fastmem;
+      printf("[boot] fastmem %s\n", fastmem ? "on (flag fastmem)" : "off");
+    }
 #endif
     s_base_si.SetBoolValue("EmuCore/CPU/Recompiler", "EnableEECache", false);
 #ifdef ORBIS_PS4
@@ -4212,10 +4245,54 @@ int main()
   else
     ORBIS_PS4_STEP("VMManager::Initialize failed");
   printf("[boot] Initialize=%d err=%s\n", (int)res, err.GetDescription().c_str());
+  if (res == VMBootResult::StartupSuccess)
+  {
+    VtlbFastmemStats fm = vtlb_GetFastmemStats();
+    if (CHECK_FASTMEM && fm.mapped_pages == 0)
+    {
+      vtlb_ResetFastmem();
+      fm = vtlb_GetFastmemStats();
+    }
+    printf("[fastmem] startup: check=%d cfg=%d avail=%d base=%p mapped_pages=%u"
+#ifdef ORBIS_PS4
+           " dmem_alias=%d(r1=0x%x,r2=0x%x)"
+#endif
+#ifdef ORBIS_VULKAN
+           " reserve_rc=0x%x maps_ok=%llu maps_fail=%llu last_rc=0x%x"
+#endif
+           " vu_clamp=%d/%d\n",
+           CHECK_FASTMEM ? 1 : 0,
+           EmuConfig.Cpu.Recompiler.EnableFastmem ? 1 : 0,
+           vtlb_IsFastmemAvailable() ? 1 : 0,
+           reinterpret_cast<void*>(vtlb_private::vtlbdata.fastmem_base),
+           fm.mapped_pages,
+#ifdef ORBIS_PS4
+           g_orbis_ps4_dmem_aliasing,
+           static_cast<unsigned>(g_orbis_ps4_dmem_aliasing_r1),
+           static_cast<unsigned>(g_orbis_ps4_dmem_aliasing_r2),
+#endif
+#ifdef ORBIS_VULKAN
+           static_cast<unsigned>(g_orbis_fastmem_reserve_rc),
+           g_orbis_fastmem_map_ok,
+           g_orbis_fastmem_map_fail,
+           static_cast<unsigned>(g_orbis_fastmem_map_last_rc),
+#endif
+           static_cast<int>(EmuConfig.Cpu.Recompiler.vu0Overflow) +
+               static_cast<int>(EmuConfig.Cpu.Recompiler.vu0ExtraOverflow) +
+               static_cast<int>(EmuConfig.Cpu.Recompiler.vu0SignOverflow),
+           static_cast<int>(EmuConfig.Cpu.Recompiler.vu1Overflow) +
+               static_cast<int>(EmuConfig.Cpu.Recompiler.vu1ExtraOverflow) +
+               static_cast<int>(EmuConfig.Cpu.Recompiler.vu1SignOverflow));
+  }
   fflush(stdout);
   // vk-285-47: the game's name and how it runs, instead of "VM init OK".
   if (res == VMBootResult::StartupSuccess)
   {
+    printf("[boot] runtime perf: EECycleRate=%d EECycleSkip=%d vuThread=%d vu1Instant=%d vuClamp=%u (override=%d)\n",
+      (int)EmuConfig.Speedhacks.EECycleRate, (int)EmuConfig.Speedhacks.EECycleSkip, (int)EmuConfig.Speedhacks.vuThread,
+      (int)EmuConfig.Speedhacks.vu1Instant, EmuConfig.Cpu.Recompiler.GetVUClampMode(),
+      s_base_si.GetIntValue("Caliza", "VUClampMode", -1));
+    fflush(stdout);
     std::string title = VMManager::GetTitle(true);
     if (title.empty() && system_menu)
       title = "PS2 system menu"; // 2026-10-08
@@ -4283,10 +4360,23 @@ int main()
   // Must be Running before Execute: IsExecutionInterrupted() returns true for any
   // other state, which makes the first event test exit the interpreter immediately.
   VMManager::SetState(VMState::Running);
+#ifdef ORBIS_PS4
+  // Enable Jaguar two-cluster pinning by default on PS4 (EE=CPU0, VU1=CPU1 on cluster 0;
+  // GS=CPU4 on cluster 1; helper threads on remaining CPUs). Create /data/caliza/flags/nopin
+  // or set pin=0 in live.ini to disable for A/B comparison. Needs proper testing on console.
+  if (!OrbisFlag("nopin"))
+  {
+    extern std::atomic<int> g_orbis_pin_request;
+    g_orbis_pin_request.store(1, std::memory_order_release);
+  }
+#endif
   {
     pthread_t pad_thread;
     if (pthread_create(&pad_thread, nullptr, orbis_pad_thread, nullptr) == 0)
+    {
+      OrbisHelperThreadAdd(pad_thread);
       pthread_detach(pad_thread);
+    }
   }
   // vk-285-72: the PS5's USB keyboard and mouse, read for the PS2's (orbis-shims/ProsperoKbdMouse.cpp).
   if (!orbis_no_usb_kbm())
@@ -4438,12 +4528,14 @@ int main()
       const TickClock::time_point t_lines = TickClock::now();
       {
         extern unsigned long long g_orbis_gs_idle_ticks, g_orbis_ee_waitgs_ticks, g_orbis_ee_stall_ticks, g_orbis_ee_waitgs_n, g_orbis_ee_stall_n;
+        extern unsigned long long g_orbis_ee_waitvu_ticks, g_orbis_ee_vuring_ticks;
         extern unsigned long long g_orbis_hwdraw_n;
-        static unsigned long long p0, p1, p2, p3, p4, p5;
-        printf("[threads] draws=%llu gs_idle_ms=%.0f ee_waitgs_ms=%.0f(%llu) ee_ringfull_ms=%.0f(%llu) ticker_cpu=%d\n",
+        static unsigned long long p0, p1, p2, p3, p4, p5, p6, p7;
+        printf("[threads] draws=%llu gs_idle_ms=%.0f ee_waitgs_ms=%.0f(%llu) ee_ringfull_ms=%.0f(%llu) ee_waitvu_ms=%.0f ee_vuring_ms=%.0f ticker_cpu=%d\n",
           g_orbis_hwdraw_n - p5, (g_orbis_gs_idle_ticks - p0) / 1596000.0, (g_orbis_ee_waitgs_ticks - p1) / 1596000.0, g_orbis_ee_waitgs_n - p3,
-          (g_orbis_ee_stall_ticks - p2) / 1596000.0, g_orbis_ee_stall_n - p4, cpu_start);
-        p0 = g_orbis_gs_idle_ticks; p1 = g_orbis_ee_waitgs_ticks; p2 = g_orbis_ee_stall_ticks; p3 = g_orbis_ee_waitgs_n; p4 = g_orbis_ee_stall_n; p5 = g_orbis_hwdraw_n;
+          (g_orbis_ee_stall_ticks - p2) / 1596000.0, g_orbis_ee_stall_n - p4,
+          (g_orbis_ee_waitvu_ticks - p6) / 1596000.0, (g_orbis_ee_vuring_ticks - p7) / 1596000.0, cpu_start);
+        p0 = g_orbis_gs_idle_ticks; p1 = g_orbis_ee_waitgs_ticks; p2 = g_orbis_ee_stall_ticks; p3 = g_orbis_ee_waitgs_n; p4 = g_orbis_ee_stall_n; p5 = g_orbis_hwdraw_n; p6 = g_orbis_ee_waitvu_ticks; p7 = g_orbis_ee_vuring_ticks;
       }
 #ifdef ORBIS_VULKAN
       {

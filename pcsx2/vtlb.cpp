@@ -1124,6 +1124,36 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 	s_fastmem_backpatch_info.emplace(code_address, info);
 }
 
+static std::atomic<u64> s_fastmem_emit_fast{0};
+static std::atomic<u64> s_fastmem_emit_slow{0};
+static std::atomic<u64> s_fastmem_emit_const{0};
+static std::atomic<u64> s_fastmem_backpatches{0};
+
+void vtlb_RecordFastmemEmit(bool fast)
+{
+	if (fast)
+		s_fastmem_emit_fast.fetch_add(1, std::memory_order_relaxed);
+	else
+		s_fastmem_emit_slow.fetch_add(1, std::memory_order_relaxed);
+}
+
+void vtlb_RecordConstEmit()
+{
+	s_fastmem_emit_const.fetch_add(1, std::memory_order_relaxed);
+}
+
+VtlbFastmemStats vtlb_GetFastmemStats()
+{
+	VtlbFastmemStats s{};
+	s.emit_fast = s_fastmem_emit_fast.load(std::memory_order_relaxed);
+	s.emit_slow = s_fastmem_emit_slow.load(std::memory_order_relaxed);
+	s.emit_const = s_fastmem_emit_const.load(std::memory_order_relaxed);
+	s.backpatches = s_fastmem_backpatches.load(std::memory_order_relaxed);
+	s.mapped_pages = s_fastmem_area ? static_cast<u32>(s_fastmem_area->GetNumMappings()) : 0;
+	s.faulting_pcs = static_cast<u32>(s_fastmem_faulting_pcs.size());
+	return s;
+}
+
 bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 {
 	uptr fastmem_start = (uptr)vtlbdata.fastmem_base;
@@ -1147,6 +1177,7 @@ bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 	// and store the pc in the faulting list, so that we don't emit another fastmem loadstore
 	s_fastmem_faulting_pcs.insert(info.guest_pc);
 	s_fastmem_backpatch_info.erase(iter);
+	s_fastmem_backpatches.fetch_add(1, std::memory_order_relaxed);
 	return true;
 }
 
@@ -1412,6 +1443,9 @@ bool vtlb_Core_Alloc()
 #ifdef ORBIS_VULKAN
 		// CHECK_FASTMEM includes vtlb_IsFastmemAvailable(), so Orbis recompiler and VTLB mapping
 		// paths degrade to non-fastmem accesses instead of dereferencing an empty reservation.
+		printf("[fastmem] alloc FAILED: SharedMemoryMappingArea::Create(%zu) returned null (continuing on slowmem)\n",
+			static_cast<size_t>(FASTMEM_AREA_SIZE));
+		fflush(stdout);
 		Console.Warning("Fastmem area reservation failed (continuing without fastmem).");
 #else
 		Host::ReportErrorAsync("Error", "Failed to allocate fastmem area.");
@@ -1423,6 +1457,12 @@ bool vtlb_Core_Alloc()
 	{
 		s_fastmem_virtual_mapping.resize(FASTMEM_PAGE_COUNT, NO_FASTMEM_MAPPING);
 		vtlbdata.fastmem_base = (uptr)s_fastmem_area->BasePointer();
+#ifdef ORBIS_VULKAN
+		printf("[fastmem] alloc ok: base=%p - %p\n",
+			reinterpret_cast<void*>(vtlbdata.fastmem_base),
+			reinterpret_cast<void*>(vtlbdata.fastmem_base + (FASTMEM_AREA_SIZE - 1)));
+		fflush(stdout);
+#endif
 		DevCon.WriteLn(Color_StrongGreen, "Fastmem area: %p - %p",
 			vtlbdata.fastmem_base, vtlbdata.fastmem_base + (FASTMEM_AREA_SIZE - 1));
 	}

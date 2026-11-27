@@ -587,7 +587,8 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
 #define clampOp(opX, isPS) \
 	do { \
 		mVUclamp3(mVU, to, t1, (isPS) ? 0xf : 0x8); \
-		mVUclamp3(mVU, from, t1, (isPS) ? 0xf : 0x8); \
+		if (from.Id != to.Id) \
+			mVUclamp3(mVU, from, t1, (isPS) ? 0xf : 0x8); \
 		opX(to, from); \
 		mVUclamp4(mVU, to, t1, (isPS) ? 0xf : 0x8); \
 	} while (0)

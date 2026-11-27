@@ -182,6 +182,43 @@ bool Vk2DRenderer::OneShotCommands(bool (*record)(void*, VkCommandBuffer), void*
 	return true;
 }
 
+void Vk2DRenderer::RecordTextureUpload(VkCommandBuffer cmd, const GpuTexture& texture, const Buffer& staging)
+{
+	ImageBarrier(cmd, texture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	VkBufferImageCopy copy = {};
+	copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+	copy.imageExtent = {texture.width, texture.height, 1};
+	m_vk->vkCmdCopyBufferToImage(cmd, staging.buffer, texture.image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	ImageBarrier(cmd, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+}
+
+bool Vk2DRenderer::AllocateTextureDescriptor(GpuTexture& gpu)
+{
+	VkDescriptorSetAllocateInfo allocate = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+	allocate.descriptorPool = m_descriptor_pool;
+	allocate.descriptorSetCount = 1;
+	allocate.pSetLayouts = &m_texture_layout;
+	const VkResult result = m_vk->vkAllocateDescriptorSets(m_device, &allocate, &gpu.descriptor);
+	if (result != VK_SUCCESS)
+		return Fail("vkAllocateDescriptorSets(texture)", result);
+	VkDescriptorImageInfo image = {};
+	image.sampler = m_sampler;
+	image.imageView = gpu.view;
+	image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	VkWriteDescriptorSet write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+	write.dstSet = gpu.descriptor;
+	write.dstBinding = 0;
+	write.descriptorCount = 1;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &image;
+	m_vk->vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+	return true;
+}
+
 bool Vk2DRenderer::UploadTexture(const Texture2D& source, GpuTexture& out)
 {
 	if (!CreateImage(static_cast<uint32_t>(source.width), static_cast<uint32_t>(source.height), TextureFormat(source.format), out))
@@ -189,7 +226,10 @@ bool Vk2DRenderer::UploadTexture(const Texture2D& source, GpuTexture& out)
 	Buffer staging;
 	const VkDeviceSize bytes = static_cast<VkDeviceSize>(source.pixels.size());
 	if (!CreateBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging))
+	{
+		DestroyTexture(out);
 		return false;
+	}
 	std::memcpy(staging.mapped, source.pixels.data(), static_cast<size_t>(bytes));
 	struct Upload
 	{
@@ -199,20 +239,13 @@ bool Vk2DRenderer::UploadTexture(const Texture2D& source, GpuTexture& out)
 	} upload{this, &out, &staging};
 	auto record = [](void* user_data, VkCommandBuffer cmd) {
 		Upload* up = static_cast<Upload*>(user_data);
-		up->self->ImageBarrier(cmd, up->texture->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-		VkBufferImageCopy copy = {};
-		copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-		copy.imageExtent = {up->texture->width, up->texture->height, 1};
-		up->self->m_vk->vkCmdCopyBufferToImage(cmd, up->staging->buffer, up->texture->image,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-		up->self->ImageBarrier(cmd, up->texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+		up->self->RecordTextureUpload(cmd, *up->texture, *up->staging);
 		return true;
 	};
 	const bool ok = OneShotCommands(record, &upload);
 	DestroyBuffer(staging);
+	if (!ok)
+		DestroyTexture(out);
 	return ok;
 }
 
@@ -228,28 +261,46 @@ Vk2DRenderer::GpuTexture* Vk2DRenderer::EnsureTexture(const Texture2D* texture)
 	GpuTexture gpu;
 	if (!UploadTexture(*texture, gpu))
 		return nullptr;
-	VkDescriptorSetAllocateInfo allocate = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-	allocate.descriptorPool = m_descriptor_pool;
-	allocate.descriptorSetCount = 1;
-	allocate.pSetLayouts = &m_texture_layout;
-	VkResult result = m_vk->vkAllocateDescriptorSets(m_device, &allocate, &gpu.descriptor);
-	if (result != VK_SUCCESS)
+	if (!AllocateTextureDescriptor(gpu))
 	{
-		Fail("vkAllocateDescriptorSets(texture)", result);
 		DestroyTexture(gpu);
 		return nullptr;
 	}
-	VkDescriptorImageInfo image = {};
-	image.sampler = m_sampler;
-	image.imageView = gpu.view;
-	image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	VkWriteDescriptorSet write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	write.dstSet = gpu.descriptor;
-	write.dstBinding = 0;
-	write.descriptorCount = 1;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	write.pImageInfo = &image;
-	m_vk->vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+	const auto [inserted, inserted_ok] = m_textures.emplace(texture, gpu);
+	(void)inserted_ok;
+	return &inserted->second;
+}
+
+Vk2DRenderer::GpuTexture* Vk2DRenderer::EnsureTextureInline(
+	const Texture2D* texture, VkCommandBuffer cmd, std::vector<Buffer>& pending_staging)
+{
+	if (!texture)
+		texture = m_neutral;
+	if (!texture)
+		return nullptr;
+	auto it = m_textures.find(texture);
+	if (it != m_textures.end())
+		return &it->second;
+	GpuTexture gpu;
+	if (!CreateImage(static_cast<uint32_t>(texture->width), static_cast<uint32_t>(texture->height),
+			TextureFormat(texture->format), gpu))
+		return nullptr;
+	Buffer staging;
+	const VkDeviceSize bytes = static_cast<VkDeviceSize>(texture->pixels.size());
+	if (!CreateBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging))
+	{
+		DestroyTexture(gpu);
+		return nullptr;
+	}
+	std::memcpy(staging.mapped, texture->pixels.data(), static_cast<size_t>(bytes));
+	if (!AllocateTextureDescriptor(gpu))
+	{
+		DestroyBuffer(staging);
+		DestroyTexture(gpu);
+		return nullptr;
+	}
+	RecordTextureUpload(cmd, gpu, staging);
+	pending_staging.push_back(staging);
 	const auto [inserted, inserted_ok] = m_textures.emplace(texture, gpu);
 	(void)inserted_ok;
 	return &inserted->second;
@@ -281,8 +332,15 @@ bool Vk2DRenderer::CreateRenderResources()
 	if (result != VK_SUCCESS)
 		return Fail("vkCreateRenderPass", result);
 
+	// Compatible render pass that skips the full-screen clear when an opaque backdrop covers every pixel.
+	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	result = m_vk->vkCreateRenderPass(m_device, &pass_info, nullptr, &m_render_pass_dont_care);
+	if (result != VK_SUCCESS)
+		return Fail("vkCreateRenderPass(dont-care)", result);
+
 	m_output_views.resize(m_output_images.size());
 	m_framebuffers.resize(m_output_images.size());
+	m_framebuffers_dont_care.resize(m_output_images.size());
 	for (size_t i = 0; i < m_output_images.size(); i++)
 	{
 		VkImageViewCreateInfo view = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -303,6 +361,10 @@ bool Vk2DRenderer::CreateRenderResources()
 		result = m_vk->vkCreateFramebuffer(m_device, &framebuffer, nullptr, &m_framebuffers[i]);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateFramebuffer", result);
+		framebuffer.renderPass = m_render_pass_dont_care;
+		result = m_vk->vkCreateFramebuffer(m_device, &framebuffer, nullptr, &m_framebuffers_dont_care[i]);
+		if (result != VK_SUCCESS)
+			return Fail("vkCreateFramebuffer(dont-care)", result);
 	}
 
 	VkCommandPoolCreateInfo pool = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -354,9 +416,9 @@ bool Vk2DRenderer::CreatePipeline()
 	if (result != VK_SUCCESS)
 		return Fail("vkCreatePipelineLayout", result);
 
-	VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 256};
+	VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512};
 	VkDescriptorPoolCreateInfo pool = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-	pool.maxSets = 256;
+	pool.maxSets = 512;
 	pool.poolSizeCount = 1;
 	pool.pPoolSizes = &pool_size;
 	result = m_vk->vkCreateDescriptorPool(m_device, &pool, nullptr, &m_descriptor_pool);
@@ -451,6 +513,12 @@ bool Vk2DRenderer::CreatePipeline()
 	pipeline.renderPass = m_render_pass;
 	pipeline.subpass = 0;
 	result = m_vk->vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &m_pipeline);
+	if (result == VK_SUCCESS)
+	{
+		// Opaque pipeline skips read-modify-write blending on full-screen backdrops over linear swapchain images.
+		blend_attachment.blendEnable = VK_FALSE;
+		result = m_vk->vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &m_opaque_pipeline);
+	}
 	m_vk->vkDestroyShaderModule(m_device, vertex_module, nullptr);
 	m_vk->vkDestroyShaderModule(m_device, fragment_module, nullptr);
 	if (result != VK_SUCCESS)
@@ -505,6 +573,9 @@ void Vk2DRenderer::Shutdown()
 	m_textures.clear();
 	for (Slot& slot : m_slots)
 	{
+		for (Buffer& staging : slot.pending_staging)
+			DestroyBuffer(staging);
+		slot.pending_staging.clear();
 		DestroyBuffer(slot.vertices);
 		if (slot.fence)
 			m_vk->vkDestroyFence(m_device, slot.fence, nullptr);
@@ -512,10 +583,13 @@ void Vk2DRenderer::Shutdown()
 			m_vk->vkFreeCommandBuffers(m_device, m_command_pool, 1, &slot.command);
 		slot = Slot();
 	}
+	for (VkFramebuffer framebuffer : m_framebuffers_dont_care)
+		m_vk->vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	for (VkFramebuffer framebuffer : m_framebuffers)
 		m_vk->vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	for (VkImageView view : m_output_views)
 		m_vk->vkDestroyImageView(m_device, view, nullptr);
+	m_framebuffers_dont_care.clear();
 	m_framebuffers.clear();
 	m_output_views.clear();
 	if (m_command_pool)
@@ -524,21 +598,28 @@ void Vk2DRenderer::Shutdown()
 		m_vk->vkDestroySampler(m_device, m_sampler, nullptr);
 	if (m_descriptor_pool)
 		m_vk->vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
+	if (m_opaque_pipeline)
+		m_vk->vkDestroyPipeline(m_device, m_opaque_pipeline, nullptr);
 	if (m_pipeline)
 		m_vk->vkDestroyPipeline(m_device, m_pipeline, nullptr);
 	if (m_pipeline_layout)
 		m_vk->vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
 	if (m_texture_layout)
 		m_vk->vkDestroyDescriptorSetLayout(m_device, m_texture_layout, nullptr);
+	if (m_render_pass_dont_care)
+		m_vk->vkDestroyRenderPass(m_device, m_render_pass_dont_care, nullptr);
 	if (m_render_pass)
 		m_vk->vkDestroyRenderPass(m_device, m_render_pass, nullptr);
 	m_command_pool = VK_NULL_HANDLE;
 	m_sampler = VK_NULL_HANDLE;
 	m_descriptor_pool = VK_NULL_HANDLE;
+	m_opaque_pipeline = VK_NULL_HANDLE;
 	m_pipeline = VK_NULL_HANDLE;
 	m_pipeline_layout = VK_NULL_HANDLE;
 	m_texture_layout = VK_NULL_HANDLE;
+	m_render_pass_dont_care = VK_NULL_HANDLE;
 	m_render_pass = VK_NULL_HANDLE;
+	m_batch_descriptors.clear();
 	m_output_images.clear();
 	m_device = VK_NULL_HANDLE;
 	m_physical = VK_NULL_HANDLE;
@@ -553,25 +634,20 @@ bool Vk2DRenderer::Render(const DrawList& draw, uint32_t output_index, VkSemapho
 		m_error = draw.Vertices().empty() ? "draw list is empty" : "renderer is not initialized";
 		return false;
 	}
-	for (const DrawBatch& batch : draw.Batches())
-	{
-		if (!EnsureTexture(batch.texture))
-			return false;
-	}
-	Slot& slot = m_slots[m_slot];
-	m_slot = (m_slot + 1) % kSlots;
-	VkResult result = m_vk->vkWaitForFences(m_device, 1, &slot.fence, VK_TRUE, UINT64_MAX);
-	if (result != VK_SUCCESS)
-		return Fail("vkWaitForFences", result);
-	result = m_vk->vkResetFences(m_device, 1, &slot.fence);
-	if (result != VK_SUCCESS)
-		return Fail("vkResetFences", result);
 	const size_t bytes = draw.Vertices().size() * sizeof(DrawVertex);
+	Slot& slot = m_slots[m_slot];
 	if (bytes > slot.vertices.size)
 	{
 		m_error = "draw list exceeds the per-frame vertex buffer";
 		return false;
 	}
+	m_slot = (m_slot + 1) % kSlots;
+	VkResult result = m_vk->vkWaitForFences(m_device, 1, &slot.fence, VK_TRUE, UINT64_MAX);
+	if (result != VK_SUCCESS)
+		return Fail("vkWaitForFences", result);
+	for (Buffer& staging : slot.pending_staging)
+		DestroyBuffer(staging);
+	slot.pending_staging.clear();
 	std::memcpy(slot.vertices.mapped, draw.Vertices().data(), bytes);
 	result = m_vk->vkResetCommandBuffer(slot.command, 0);
 	if (result != VK_SUCCESS)
@@ -581,38 +657,64 @@ bool Vk2DRenderer::Render(const DrawList& draw, uint32_t output_index, VkSemapho
 	result = m_vk->vkBeginCommandBuffer(slot.command, &begin);
 	if (result != VK_SUCCESS)
 		return Fail("vkBeginCommandBuffer", result);
+
+	// Record any new texture uploads directly before the render pass to avoid vkQueueWaitIdle stalls.
+	const auto& batches = draw.Batches();
+	m_batch_descriptors.resize(batches.size());
+	for (size_t i = 0; i < batches.size(); i++)
+	{
+		const GpuTexture* texture = EnsureTextureInline(batches[i].texture, slot.command, slot.pending_staging);
+		if (!texture)
+			return false;
+		m_batch_descriptors[i] = texture->descriptor;
+	}
+
+	const bool skip_clear = draw.HasOpaqueFullscreenBackdrop() && m_render_pass_dont_care != VK_NULL_HANDLE;
 	VkClearValue clear = {};
 	clear.color = {{0.027f, 0.043f, 0.071f, 1.0f}};
 	VkRenderPassBeginInfo pass = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-	pass.renderPass = m_render_pass;
-	pass.framebuffer = m_framebuffers[output_index];
+	pass.renderPass = skip_clear ? m_render_pass_dont_care : m_render_pass;
+	pass.framebuffer = skip_clear ? m_framebuffers_dont_care[output_index] : m_framebuffers[output_index];
 	pass.renderArea = {{0, 0}, {m_width, m_height}};
-	pass.clearValueCount = 1;
-	pass.pClearValues = &clear;
+	pass.clearValueCount = skip_clear ? 0u : 1u;
+	pass.pClearValues = skip_clear ? nullptr : &clear;
 	m_vk->vkCmdBeginRenderPass(slot.command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	VkViewport viewport = {0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height), 0.0f, 1.0f};
 	VkRect2D scissor = {{0, 0}, {m_width, m_height}};
 	m_vk->vkCmdSetViewport(slot.command, 0, 1, &viewport);
 	m_vk->vkCmdSetScissor(slot.command, 0, 1, &scissor);
-	m_vk->vkCmdBindPipeline(slot.command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 	PushBlock push = {{static_cast<float>(m_width), static_cast<float>(m_height), 1.0f / m_width, 1.0f / m_height}};
 	m_vk->vkCmdPushConstants(slot.command, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-	for (const DrawBatch& batch : draw.Batches())
+	const VkBuffer vbuf = slot.vertices.buffer;
+	const VkDeviceSize voffset = 0;
+	m_vk->vkCmdBindVertexBuffers(slot.command, 0, 1, &vbuf, &voffset);
+	VkPipeline bound_pipeline = VK_NULL_HANDLE;
+	VkDescriptorSet bound_descriptor = VK_NULL_HANDLE;
+	for (size_t i = 0; i < batches.size(); i++)
 	{
-		const GpuTexture* texture = EnsureTexture(batch.texture);
-		if (!texture)
-			return false;
-		const VkBuffer buffers[] = {slot.vertices.buffer};
-		const VkDeviceSize offsets[] = {batch.first * sizeof(DrawVertex)};
-		m_vk->vkCmdBindVertexBuffers(slot.command, 0, 1, buffers, offsets);
-		m_vk->vkCmdBindDescriptorSets(slot.command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1,
-			&texture->descriptor, 0, nullptr);
-		m_vk->vkCmdDraw(slot.command, static_cast<uint32_t>(batch.count), 1, 0, 0);
+		const DrawBatch& batch = batches[i];
+		const VkPipeline wanted_pipeline = (batch.opaque && m_opaque_pipeline) ? m_opaque_pipeline : m_pipeline;
+		if (wanted_pipeline != bound_pipeline)
+		{
+			m_vk->vkCmdBindPipeline(slot.command, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted_pipeline);
+			bound_pipeline = wanted_pipeline;
+		}
+		const VkDescriptorSet descriptor = m_batch_descriptors[i];
+		if (descriptor != bound_descriptor)
+		{
+			m_vk->vkCmdBindDescriptorSets(slot.command, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1,
+				&descriptor, 0, nullptr);
+			bound_descriptor = descriptor;
+		}
+		m_vk->vkCmdDraw(slot.command, static_cast<uint32_t>(batch.count), 1, static_cast<uint32_t>(batch.first), 0);
 	}
 	m_vk->vkCmdEndRenderPass(slot.command);
 	result = m_vk->vkEndCommandBuffer(slot.command);
 	if (result != VK_SUCCESS)
 		return Fail("vkEndCommandBuffer", result);
+	result = m_vk->vkResetFences(m_device, 1, &slot.fence);
+	if (result != VK_SUCCESS)
+		return Fail("vkResetFences", result);
 	const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 	if (wait)

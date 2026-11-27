@@ -5,12 +5,16 @@
 #include <memory>
 #include <thread>
 #include <cstdint>
+#include <pthread.h>
 #include <unistd.h>
 // Orbis audio shims: cubeb/SDL drivers don't exist here (libSceAudioOut later).
 #include "Host/AudioStream.h"
 #include "common/Error.h"
 #include "USB/usb-mic/audiodev.h"
 #include "USB/usb-mic/audiodev-cubeb.h"
+
+void OrbisHelperThreadAdd(pthread_t thread);
+void OrbisHelperThreadRemove(pthread_t thread);
 
 // (AudioDevice::CreateDevice/GetInputDeviceList live in usb-mic.cpp already.)
 
@@ -91,6 +95,7 @@ public:
         usleep(1000);
       if (sh.exited.load(std::memory_order_acquire))
       {
+        OrbisHelperThreadRemove(m_thread.native_handle());
         m_thread.join();
         if (sh.handle >= 0)
           sceAudioOutClose(sh.handle);
@@ -99,6 +104,7 @@ public:
       // Stuck (almost certainly inside sceAudioOutOutput). Object access is already proven
       // drained, so detach and deliberately abandon the port: the worker keeps the shared
       // state alive and exits on its own once sceAudioOutOutput returns.
+      OrbisHelperThreadRemove(m_thread.native_handle());
       m_thread.detach();
       std::printf("[audio] worker did not exit within 500ms; detached, leaving port %d open\n", sh.handle);
       std::fflush(stdout);
@@ -145,6 +151,7 @@ public:
     }
     BaseInitialize(&StereoSampleReaderImpl, stretch_enabled);
     m_thread = std::thread([this, shared = m_shared]() { Run(shared); });
+    OrbisHelperThreadAdd(m_thread.native_handle());
     return true;
   }
 

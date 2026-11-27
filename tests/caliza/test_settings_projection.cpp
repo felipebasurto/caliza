@@ -26,6 +26,7 @@ int main()
 	size_t count = 0;
 	std::set<std::string> keys;
 	bool found_renderer = false;
+	bool found_vu_clamp = false;
 	bool found_accessibility = false;
 	bool found_memory_composite = false;
 	for (const SettingCategory& category : global)
@@ -35,11 +36,13 @@ int main()
 		{
 			if (!keys.insert(item.id).second) return Fail("duplicate projected key " + item.id) ? 0 : 1;
 			if (item.id == "Caliza/Renderer" && item.kind == caliza::SettingKind::Choice && !item.choices.empty()) found_renderer = true;
+			if (item.id == "Caliza/VUClampMode" && item.kind == caliza::SettingKind::Choice && item.value == "-1" && item.choices.size() == 5 && !item.restart_required && item.game_scoped) found_vu_clamp = true;
 			if (item.id == "Caliza/UiTextScalePercent" && item.value == "100") found_accessibility = true;
 			if (item.id == "MemoryCards/Slot1_Filename") found_memory_composite = true;
 		}
 	}
 	if (!found_renderer) return Fail("renderer choice projection missing") ? 0 : 1;
+	if (!found_vu_clamp) return Fail("VU clamp mode projection missing") ? 0 : 1;
 	if (!found_accessibility) return Fail("accessibility projection missing") ? 0 : 1;
 	if (found_memory_composite) return Fail("memory-card composite leaked into normal settings") ? 0 : 1;
 	if (count != VisibleProjectedSettingCount(ScopeMask::Global)) return Fail("count helper mismatch") ? 0 : 1;

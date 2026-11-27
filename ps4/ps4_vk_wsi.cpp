@@ -950,6 +950,12 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t count, const 
 
 	// Keep the common path allocation-free: scan first, and only build filtered copies once a
 	// window-system semaphore or an empty submission actually has to be rewritten.
+	constexpr uint32_t kInlineMaxSemaphores = 8;
+	VkSubmitInfo inline_copy = {};
+	VkSemaphore inline_waits[kInlineMaxSemaphores];
+	VkPipelineStageFlags inline_stages[kInlineMaxSemaphores];
+	VkSemaphore inline_signals[kInlineMaxSemaphores];
+	bool use_inline = false;
 	std::vector<VkSubmitInfo> copies;
 	std::vector<std::vector<VkSemaphore>> waits, signals;
 	std::vector<std::vector<VkPipelineStageFlags>> stages;
@@ -970,32 +976,71 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t count, const 
 		if (!changed)
 			return s_real(queue, count, submits, fence);
 
-		copies.assign(submits, submits + count);
-		waits.resize(count);
-		signals.resize(count);
-		stages.resize(count);
-		for (uint32_t i = 0; i < count; i++)
+		if (count == 1 && submits[0].waitSemaphoreCount <= kInlineMaxSemaphores &&
+			submits[0].signalSemaphoreCount <= kInlineMaxSemaphores)
 		{
-			const VkSubmitInfo& in = submits[i];
-			for (uint32_t w = 0; w < in.waitSemaphoreCount; w++)
+			use_inline = true;
+			inline_copy = submits[0];
+			uint32_t wait_count = 0;
+			for (uint32_t w = 0; w < submits[0].waitSemaphoreCount; w++)
 			{
-				if (s_acquire_semaphores.erase(in.pWaitSemaphores[w]))
+				if (s_acquire_semaphores.erase(submits[0].pWaitSemaphores[w]))
 					continue;
-				waits[i].push_back(in.pWaitSemaphores[w]);
-				stages[i].push_back(in.pWaitDstStageMask[w]);
+				inline_waits[wait_count] = submits[0].pWaitSemaphores[w];
+				inline_stages[wait_count] = submits[0].pWaitDstStageMask[w];
+				wait_count++;
 			}
-			for (uint32_t s = 0; s < in.signalSemaphoreCount; s++)
+			uint32_t signal_count = 0;
+			for (uint32_t s = 0; s < submits[0].signalSemaphoreCount; s++)
 			{
-				if (s_present_semaphores.count(in.pSignalSemaphores[s]))
+				if (s_present_semaphores.count(submits[0].pSignalSemaphores[s]))
 					continue;
-				signals[i].push_back(in.pSignalSemaphores[s]);
+				inline_signals[signal_count++] = submits[0].pSignalSemaphores[s];
 			}
-			copies[i].waitSemaphoreCount = static_cast<uint32_t>(waits[i].size());
-			copies[i].pWaitSemaphores = waits[i].data();
-			copies[i].pWaitDstStageMask = stages[i].data();
-			copies[i].signalSemaphoreCount = static_cast<uint32_t>(signals[i].size());
-			copies[i].pSignalSemaphores = signals[i].data();
+			inline_copy.waitSemaphoreCount = wait_count;
+			inline_copy.pWaitSemaphores = wait_count ? inline_waits : nullptr;
+			inline_copy.pWaitDstStageMask = wait_count ? inline_stages : nullptr;
+			inline_copy.signalSemaphoreCount = signal_count;
+			inline_copy.pSignalSemaphores = signal_count ? inline_signals : nullptr;
 		}
+		else
+		{
+			copies.assign(submits, submits + count);
+			waits.resize(count);
+			signals.resize(count);
+			stages.resize(count);
+			for (uint32_t i = 0; i < count; i++)
+			{
+				const VkSubmitInfo& in = submits[i];
+				for (uint32_t w = 0; w < in.waitSemaphoreCount; w++)
+				{
+					if (s_acquire_semaphores.erase(in.pWaitSemaphores[w]))
+						continue;
+					waits[i].push_back(in.pWaitSemaphores[w]);
+					stages[i].push_back(in.pWaitDstStageMask[w]);
+				}
+				for (uint32_t s = 0; s < in.signalSemaphoreCount; s++)
+				{
+					if (s_present_semaphores.count(in.pSignalSemaphores[s]))
+						continue;
+					signals[i].push_back(in.pSignalSemaphores[s]);
+				}
+				copies[i].waitSemaphoreCount = static_cast<uint32_t>(waits[i].size());
+				copies[i].pWaitSemaphores = waits[i].data();
+				copies[i].pWaitDstStageMask = stages[i].data();
+				copies[i].signalSemaphoreCount = static_cast<uint32_t>(signals[i].size());
+				copies[i].pSignalSemaphores = signals[i].data();
+			}
+		}
+	}
+	if (use_inline)
+	{
+		if (inline_copy.commandBufferCount == 0)
+		{
+			inline_copy.commandBufferCount = 1;
+			inline_copy.pCommandBuffers = &empty_cb;
+		}
+		return s_real(queue, 1, &inline_copy, fence);
 	}
 	for (VkSubmitInfo& copy : copies)
 	{
@@ -1031,6 +1076,11 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2(VkQueue queue, uint32_t count, const
 		}
 	}
 
+	constexpr uint32_t kInlineMaxSemaphores = 8;
+	VkSubmitInfo2 inline_copy = {};
+	VkSemaphoreSubmitInfo inline_waits[kInlineMaxSemaphores];
+	VkSemaphoreSubmitInfo inline_signals[kInlineMaxSemaphores];
+	bool use_inline = false;
 	std::vector<VkSubmitInfo2> copies;
 	std::vector<std::vector<VkSemaphoreSubmitInfo>> waits, signals;
 	{
@@ -1050,29 +1100,65 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2(VkQueue queue, uint32_t count, const
 		if (!changed)
 			return s_real(queue, count, submits, fence);
 
-		copies.assign(submits, submits + count);
-		waits.resize(count);
-		signals.resize(count);
-		for (uint32_t i = 0; i < count; i++)
+		if (count == 1 && submits[0].waitSemaphoreInfoCount <= kInlineMaxSemaphores &&
+			submits[0].signalSemaphoreInfoCount <= kInlineMaxSemaphores)
 		{
-			const VkSubmitInfo2& in = submits[i];
-			for (uint32_t w = 0; w < in.waitSemaphoreInfoCount; w++)
+			use_inline = true;
+			inline_copy = submits[0];
+			uint32_t wait_count = 0;
+			for (uint32_t w = 0; w < submits[0].waitSemaphoreInfoCount; w++)
 			{
-				if (s_acquire_semaphores.erase(in.pWaitSemaphoreInfos[w].semaphore))
+				if (s_acquire_semaphores.erase(submits[0].pWaitSemaphoreInfos[w].semaphore))
 					continue;
-				waits[i].push_back(in.pWaitSemaphoreInfos[w]);
+				inline_waits[wait_count++] = submits[0].pWaitSemaphoreInfos[w];
 			}
-			for (uint32_t s = 0; s < in.signalSemaphoreInfoCount; s++)
+			uint32_t signal_count = 0;
+			for (uint32_t s = 0; s < submits[0].signalSemaphoreInfoCount; s++)
 			{
-				if (s_present_semaphores.count(in.pSignalSemaphoreInfos[s].semaphore))
+				if (s_present_semaphores.count(submits[0].pSignalSemaphoreInfos[s].semaphore))
 					continue;
-				signals[i].push_back(in.pSignalSemaphoreInfos[s]);
+				inline_signals[signal_count++] = submits[0].pSignalSemaphoreInfos[s];
 			}
-			copies[i].waitSemaphoreInfoCount = static_cast<uint32_t>(waits[i].size());
-			copies[i].pWaitSemaphoreInfos = waits[i].data();
-			copies[i].signalSemaphoreInfoCount = static_cast<uint32_t>(signals[i].size());
-			copies[i].pSignalSemaphoreInfos = signals[i].data();
+			inline_copy.waitSemaphoreInfoCount = wait_count;
+			inline_copy.pWaitSemaphoreInfos = wait_count ? inline_waits : nullptr;
+			inline_copy.signalSemaphoreInfoCount = signal_count;
+			inline_copy.pSignalSemaphoreInfos = signal_count ? inline_signals : nullptr;
 		}
+		else
+		{
+			copies.assign(submits, submits + count);
+			waits.resize(count);
+			signals.resize(count);
+			for (uint32_t i = 0; i < count; i++)
+			{
+				const VkSubmitInfo2& in = submits[i];
+				for (uint32_t w = 0; w < in.waitSemaphoreInfoCount; w++)
+				{
+					if (s_acquire_semaphores.erase(in.pWaitSemaphoreInfos[w].semaphore))
+						continue;
+					waits[i].push_back(in.pWaitSemaphoreInfos[w]);
+				}
+				for (uint32_t s = 0; s < in.signalSemaphoreInfoCount; s++)
+				{
+					if (s_present_semaphores.count(in.pSignalSemaphoreInfos[s].semaphore))
+						continue;
+					signals[i].push_back(in.pSignalSemaphoreInfos[s]);
+				}
+				copies[i].waitSemaphoreInfoCount = static_cast<uint32_t>(waits[i].size());
+				copies[i].pWaitSemaphoreInfos = waits[i].data();
+				copies[i].signalSemaphoreInfoCount = static_cast<uint32_t>(signals[i].size());
+				copies[i].pSignalSemaphoreInfos = signals[i].data();
+			}
+		}
+	}
+	if (use_inline)
+	{
+		if (inline_copy.commandBufferInfoCount == 0)
+		{
+			inline_copy.commandBufferInfoCount = 1;
+			inline_copy.pCommandBufferInfos = &empty_cb;
+		}
+		return s_real(queue, 1, &inline_copy, fence);
 	}
 	// Submissions without a command buffer get the empty one (see EmptyCommandBuffer).
 	for (VkSubmitInfo2& copy : copies)

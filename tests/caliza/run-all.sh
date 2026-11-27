@@ -12,6 +12,15 @@ common_flags=(-std=c++17 -Wall -Wextra -I.)
 echo '== ui model =='
 bash tests/caliza/test_ui_build.sh
 
+echo '== estratos scene =='
+cc=${CC:-clang}
+"$cc" -std=c99 -O2 -c ps5/frontend/third_party/qrcodegen/qrcodegen.c -o "$out/qrcodegen.o"
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -I3rdparty/stb \
+  tests/caliza/test_estratos_scene.cpp caliza/native/estratos_scene.cpp caliza/native/draw_list.cpp \
+  caliza/native/procedural_covers.cpp ps5/frontend/fe_text.cpp "$out/qrcodegen.o" \
+  -o "$out/test_estratos_scene"
+"$out/test_estratos_scene"
+
 echo '== pause menu model =='
 "$cxx" -std=c++17 -O1 -Wall -Wextra -Werror -Icaliza/core \
   caliza/core/pause_menu.cpp tests/caliza/test_pause_menu.cpp -o "$out/test_pause_menu"

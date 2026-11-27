@@ -207,14 +207,26 @@ public:
 	Snapshot GetSnapshot()
 	{
 		Snapshot out = m_storage->GetSnapshot();
-		bool refresh_due = false;
+		bool sync_refresh = false;
+		bool wake_worker = false;
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
+			const bool was_due = m_projection_due.load(std::memory_order_relaxed);
 			MaybeRefreshProjectionLocked();
-			refresh_due = m_projection_due;
+			if (m_projection_due.load(std::memory_order_relaxed))
+			{
+				// Keep synchronous refresh when projection_refresh_ms == 0 (used by tests); in production
+				// run periodic projection refreshes on the background worker so UI rendering never stalls on I/O.
+				if (m_options.projection_refresh_ms == 0 || !m_overlay.valid)
+					sync_refresh = true;
+				else if (!was_due)
+					wake_worker = true;
+			}
 		}
-		if (refresh_due)
+		if (sync_refresh)
 			RefreshProjection(false);
+		else if (wake_worker)
+			m_cv.notify_one();
 		ConsoleOverlay overlay;
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
@@ -238,7 +250,8 @@ public:
 			out.diagnostics.console_status = overlay.projection_problem;
 		else if (m_options.hooks.web_panel_url)
 		{
-			out.diagnostics.web_panel_url = m_options.hooks.web_panel_url();
+			out.diagnostics.web_panel_url =
+				(m_options.projection_refresh_ms == 0) ? m_options.hooks.web_panel_url() : overlay.web_panel_url;
 			out.diagnostics.web_panel_connected = !out.diagnostics.web_panel_url.empty();
 			out.diagnostics.console_status = out.diagnostics.web_panel_connected ? "companion panel available" : "companion panel unavailable";
 		}
@@ -280,6 +293,7 @@ private:
 		std::string continue_game_id;
 		std::string selected_game_id;
 		std::string projection_problem;
+		std::string web_panel_url;
 		std::vector<OperationStatus> operations;
 		TexturePacks texture_packs;
 		uint64_t revision = 1;
@@ -328,9 +342,11 @@ private:
 		while (!m_stop.load())
 		{
 			QueuedCommand work;
+			bool refresh_projection = false;
 			{
 				std::unique_lock<std::mutex> lock(m_mutex);
-				m_cv.wait_for(lock, std::chrono::milliseconds(20), [&] { return m_stop.load() || !m_queue.empty(); });
+				m_cv.wait_for(lock, std::chrono::milliseconds(20),
+					[&] { return m_stop.load() || !m_queue.empty() || m_projection_due.load(std::memory_order_relaxed); });
 				if (m_stop.load())
 					break;
 				if (!m_queue.empty())
@@ -338,10 +354,18 @@ private:
 					work = m_queue.front();
 					m_queue.pop_front();
 				}
+				else if (m_projection_due.load(std::memory_order_relaxed))
+				{
+					refresh_projection = true;
+				}
 			}
 			DrainInnerEvents(0);
 			if (work.id == 0)
+			{
+				if (refresh_projection)
+					RefreshProjection(false);
 				continue;
+			}
 			Emit(work.id, work.command.type, CommandStatus::Running, "running");
 			Execution execution = ExecuteCommand(work.id, work.command);
 			if (execution.async)
@@ -1425,6 +1449,8 @@ private:
 		BuildContinueState(&out);
 		if (m_options.hooks.service_operations)
 			out.operations = m_options.hooks.service_operations();
+		if (m_options.hooks.web_panel_url)
+			out.web_panel_url = m_options.hooks.web_panel_url();
 		out.projection_problem = m_folder_projection_error;
 		out.vm.state = VmState::Idle;
 		out.vm.message.clear();

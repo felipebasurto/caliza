@@ -20,6 +20,7 @@
 #include "x86/iR5900Analysis.h"
 
 #include <atomic>
+#include <cstring>
 #include "common/AlignedMalloc.h"
 #include "common/FastJmp.h"
 #include "common/HeapArray.h"
@@ -426,30 +427,6 @@ static const void* UnmappedRecLUTPage = nullptr;
 
 static void recEventTest()
 {
-	{
-		static unsigned evt_probe = 0;
-		if ((evt_probe & 4095) == 0)
-		{
-			// Orbis: RSP canary. Main-thread stack lives ~32GB; anything
-			// below 64GB here means the stack pointer went wild. Print once
-			// per crossing so the log brackets the pivot, then carry on.
-			unsigned long long sp = 0;
-			asm volatile("mov %%rsp, %0" : "=r"(sp));
-			static unsigned long long last_sp = 0;
-			if (sp < 0x1000000000ULL && last_sp >= 0x1000000000ULL)
-				printf("[dbg] RSP-WILD ee pc=%08x cy=%u rsp=%llx\n", cpuRegs.pc, (unsigned)cpuRegs.cycle, sp);
-			last_sp = sp;
-		}
-		if ((evt_probe & 65535) == 0)
-		{
-			// Orbis: execution heartbeat (event tests run constantly during
-			// execution, unlike compiles). Brackets the true crash site.
-			unsigned long long sp = 0;
-			asm volatile("mov %%rsp, %0" : "=r"(sp));
-			if (0) printf("[dbg] evthb ev=%u pc=%08x cy=%u rsp=%llx\n", evt_probe, cpuRegs.pc, (unsigned)cpuRegs.cycle, sp);
-		}
-		evt_probe++;
-	}
 	_cpuEventTest_Shared();
 
 	if (eeRecExitRequested)
@@ -2346,20 +2323,55 @@ static void memory_protect_recompiled_code(u32 startpc, u32 size)
 			xMOV(arg2regd, inpage_sz / 4);
 			//xMOV( eax, startpc );		// uncomment this to access startpc (as eax) in dyna_block_discard
 
-			u32 lpc = inpage_ptr;
-			u32 stg = inpage_sz;
-
-			xMOV64(rax, (s64)(uptr)PSM(lpc));
 			{
-				s32 disp = 0;
-				while (stg > 0)
-				{
-					xCMP(ptr32[rax + disp], *(u32*)PSM(lpc));
-					xJNE(DispatchBlockDiscard);
+				u32 lpc = inpage_ptr;
+				u32 stg = inpage_sz;
+				if (stg == 0)
+					break;
 
-					stg -= 4;
-					lpc += 4;
-					disp += 4;
+				xMOV64(rax, (s64)(uptr)PSM(lpc));
+				if (stg == 4)
+				{
+					u32 expected = 0;
+					std::memcpy(&expected, PSM(lpc), sizeof(expected));
+					xCMP(ptr32[rax], expected);
+					xJNE(DispatchBlockDiscard);
+				}
+				else
+				{
+					// Compare 8 bytes at a time via XOR-OR accumulation in caller-saved r10/r11
+					// (unused by DispatchBlockDiscard on both SysV and Win64 ABIs) with a single
+					// trailing branch, halving memory loads and eliminating per-word branch pressure.
+					s32 disp = 0;
+					u64 expected64 = 0;
+					std::memcpy(&expected64, PSM(lpc), sizeof(expected64));
+					xMOV64(r10, static_cast<s64>(expected64));
+					xXOR(r10, ptr64[rax + disp]);
+					stg -= 8;
+					lpc += 8;
+					disp += 8;
+
+					while (stg >= 8)
+					{
+						std::memcpy(&expected64, PSM(lpc), sizeof(expected64));
+						xMOV64(r11, static_cast<s64>(expected64));
+						xXOR(r11, ptr64[rax + disp]);
+						xOR(r10, r11);
+						stg -= 8;
+						lpc += 8;
+						disp += 8;
+					}
+
+					if (stg >= 4)
+					{
+						u32 expected32 = 0;
+						std::memcpy(&expected32, PSM(lpc), sizeof(expected32));
+						xMOV(r11d, ptr32[rax + disp]);
+						xXOR(r11d, static_cast<s32>(expected32));
+						xOR(r10, r11);
+					}
+
+					xJNZ(DispatchBlockDiscard);
 				}
 			}
 			break;
@@ -2483,26 +2495,12 @@ static bool recSkipTimeoutLoop(s32 reg, bool is_timeout_loop)
 
 static void recRecompile(const u32 startpc)
 {
-	if (0) printf("[dbg] rec: recRecompile pc=%08x\n", startpc); // Orbis: no fflush (hot path; ticker flushes 1/s)
+	if (ps5::debug::active())
 	{
-		void* rsp_now = nullptr;
-#if defined(__x86_64__)
-		asm volatile("mov %%rsp, %0" : "=r"(rsp_now));
-#endif
 		static unsigned rec_probe = 0;
-		static void* lowest_rsp = nullptr;
 		const unsigned n = rec_probe++;
-		if (!lowest_rsp || rsp_now < lowest_rsp)
-			lowest_rsp = rsp_now;
-		if (n < 8 || (n % 100) == 0)
-		{
-			printf("[dbg] rec: recompile[%u] pc=%08x rsp=%p lowest=%p\n", n, startpc, rsp_now, lowest_rsp);
-			fflush(stdout);
-		}
-		{
-			ps5::debug::set_line(4, "rec[%u] pc=%08x", n, startpc);
-			ps5::debug::set_line(5, "pc=%08x cy=%u", cpuRegs.pc, (unsigned)cpuRegs.cycle);
-		}
+		ps5::debug::set_line(4, "rec[%u] pc=%08x", n, startpc);
+		ps5::debug::set_line(5, "pc=%08x cy=%u", cpuRegs.pc, (unsigned)cpuRegs.cycle);
 	}
 	u32 i = 0;
 	u32 willbranch3 = 0;
@@ -3107,40 +3105,6 @@ StartRecomp:
 #endif
 	Perf::ee.RegisterPC((void*)s_pCurBlockEx->fnptr, s_pCurBlockEx->x86size, s_pCurBlockEx->startpc);
 
-	if (0) printf("[dbg] blk: pc=%08x fnptr=%p x86size=%u insns=%u\n", s_pCurBlockEx->startpc, (void*)s_pCurBlockEx->fnptr, s_pCurBlockEx->x86size, s_pCurBlockEx->size);
-	if (s_pCurBlockEx->startpc == 0x00001000 || s_pCurBlockEx->startpc == 0x00005c30 ||
-	    s_pCurBlockEx->startpc == 0x0000e530 || s_pCurBlockEx->startpc == 0x0000e4f8)
-	{
-		const u32* ew = (const u32*)PSM(s_pCurBlockEx->startpc);
-		for (u32 w = 0; w < s_pCurBlockEx->size; w++)
-			printf("[dbg] eew+%02x: %08x\n", w * 4, ew[w]);
-		const u8* xb = (const u8*)s_pCurBlockEx->fnptr;
-		u32 xn = s_pCurBlockEx->x86size;
-		for (u32 o = 0; o < xn; o += 16)
-		{
-			printf("[dbg] xb+%03x:", o);
-			for (u32 k = 0; k < 16 && o + k < xn; k++)
-				printf(" %02x", xb[o + k]);
-			printf("\n");
-		}
-	}
-	{
-		// Survey: what does each vmap LEA in the block ACTUALLY address?
-		const u8* b = (const u8*)s_pCurBlockEx->fnptr;
-		u32 n = s_pCurBlockEx->x86size;
-		int hits = 0;
-		for (u32 o = 0; o + 7 < n && hits < 8; o++)
-		{
-			if (b[o] == 0x48 && b[o+1] == 0x8d && b[o+2] == 0x14 && b[o+3] == 0x25)
-			{
-				s32 d = (s32)((u32)b[o+4] | ((u32)b[o+5] << 8) | ((u32)b[o+6] << 16) | ((u32)b[o+7] << 24));
-				uptr base = (uptr)(b + o + 7) + (sptr)d;
-				printf("[dbg] leaprobe: blkpc=%08x off=%03x lea_base=%p\n", s_pCurBlockEx->startpc, o, (void*)base);
-				hits++;
-			}
-		}
-		fflush(stdout);
-	}
 	recPtr = xGetPtr();
 
 	pxAssert((g_cpuHasConstReg & g_cpuFlushedConstReg) == g_cpuHasConstReg);

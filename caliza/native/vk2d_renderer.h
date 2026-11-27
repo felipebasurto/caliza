@@ -50,6 +50,7 @@ private:
 		VkCommandBuffer command = VK_NULL_HANDLE;
 		VkFence fence = VK_NULL_HANDLE;
 		Buffer vertices;
+		std::vector<Buffer> pending_staging;
 		bool submitted = false;
 	};
 
@@ -58,8 +59,11 @@ private:
 	bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, Buffer& out);
 	void DestroyBuffer(Buffer& buffer);
 	bool CreateImage(uint32_t width, uint32_t height, VkFormat format, GpuTexture& out);
+	void RecordTextureUpload(VkCommandBuffer cmd, const GpuTexture& texture, const Buffer& staging);
+	bool AllocateTextureDescriptor(GpuTexture& gpu);
 	bool UploadTexture(const Texture2D& source, GpuTexture& out);
 	GpuTexture* EnsureTexture(const Texture2D* texture);
+	GpuTexture* EnsureTextureInline(const Texture2D* texture, VkCommandBuffer cmd, std::vector<Buffer>& pending_staging);
 	void DestroyTexture(GpuTexture& texture);
 	bool CreateRenderResources();
 	bool CreatePipeline();
@@ -79,14 +83,18 @@ private:
 	std::vector<VkImage> m_output_images;
 	std::vector<VkImageView> m_output_views;
 	std::vector<VkFramebuffer> m_framebuffers;
+	std::vector<VkFramebuffer> m_framebuffers_dont_care;
 	VkRenderPass m_render_pass = VK_NULL_HANDLE;
+	VkRenderPass m_render_pass_dont_care = VK_NULL_HANDLE;
 	VkPipeline m_pipeline = VK_NULL_HANDLE;
+	VkPipeline m_opaque_pipeline = VK_NULL_HANDLE;
 	VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
 	VkDescriptorSetLayout m_texture_layout = VK_NULL_HANDLE;
 	VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
 	VkSampler m_sampler = VK_NULL_HANDLE;
 	VkCommandPool m_command_pool = VK_NULL_HANDLE;
 	std::unordered_map<const Texture2D*, GpuTexture> m_textures;
+	std::vector<VkDescriptorSet> m_batch_descriptors;
 	const Texture2D* m_neutral = nullptr;
 	static constexpr int kSlots = 2;
 	static constexpr VkDeviceSize kVertexBytes = 4u << 20;
