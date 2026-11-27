@@ -263,11 +263,30 @@ VolumeInfo ProbeVolume(const std::string& root, VolumeKind kind, int slot, const
 	}
 
 	// opendir is the decisive readability probe: it uses this process's credentials and does not rely on
-	// access(2), whose pre-jailbreak Orbis behavior has historically been misleading.
+	// access(2), whose pre-jailbreak Orbis behavior has historically been misleading. Orbis always leaves
+	// empty /mnt/usbN and /mnt/extN mountpoint directories behind when no media is in the slot, so a readable
+	// removable root also needs one visible entry before it can be treated as a present volume.
+	uint32_t visible_entries = 0;
 	DIR* dir = opendir(volume.root_path.c_str());
 	volume.readable = dir != nullptr;
 	if (dir)
+	{
+		while (const dirent* entry = readdir(dir))
+		{
+			if (entry->d_name[0] != '.')
+			{
+				visible_entries++;
+				break;
+			}
+		}
 		closedir(dir);
+	}
+	if ((kind == VolumeKind::USB || kind == VolumeKind::Extended) && volume.readable && visible_entries == 0)
+	{
+		volume.present = false;
+		volume.status = "empty mount point; no media mounted";
+		return volume;
+	}
 
 	struct statvfs vfs = {};
 	if (ProbeStatvfs(volume.root_path, &vfs))

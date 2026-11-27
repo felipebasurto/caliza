@@ -68,6 +68,7 @@ extern volatile unsigned long long g_orbis_map_addr;
 #include "orbis-shims/OrbisPadMap.h"     // vk-285-116: the controller remapping
 #ifdef ORBIS_PS4
 #include "ps4_wsi_stats.h"
+#include "../../ps4/ps4_sandbox_escape.h"
 #endif
 #include "OrbisNfs.h"                     // vk-285-135: games on NFS shares
 #include "caliza/core/data_root.h"
@@ -3381,6 +3382,12 @@ int main()
 #ifdef ORBIS_VULKAN
   orbis_log_flag_access("before the jailbreak");
   ORBIS_PS4_STEP("flags read");
+#ifdef ORBIS_PS4
+  const OrbisPs4UsbMountResult usb_mount = OrbisPs4MountUsb0Direct();
+  printf("[usb] direct /mnt/usb0 access: %s%s%s\n", usb_mount.mounted ? "ready" : "unavailable",
+    usb_mount.attempted ? " after sandbox mount attempt" : "", usb_mount.detail.empty() ? "" : (std::string(" (") + usb_mount.detail + ")").c_str());
+  ORBIS_PS4_STEP("direct USB mount done");
+#endif
   orbis_scan_usb("before the jailbreak"); // test build 1: whether the sandbox shows USB drives yet
   ORBIS_PS4_STEP("USB scan done");
   if (!orbis_flag("nofrontend") && !orbis_flag("nomenu") && !orbis_flag("nocoverdl"))

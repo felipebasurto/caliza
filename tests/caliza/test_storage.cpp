@@ -44,6 +44,7 @@ void TestDiscoveryAndBrowse()
 	const std::string data = temp.path + "/data";
 	const std::string usb0 = temp.path + "/usb0";
 	const std::string usb1 = temp.path + "/usb1";
+	const std::string usb2 = temp.path + "/usb2";
 	const std::string ext0 = temp.path + "/ext0";
 	std::string error;
 	CHECK_TRUE(storage::fs::MakeDirs(data + "/games", &error));
@@ -51,30 +52,36 @@ void TestDiscoveryAndBrowse()
 	CHECK_TRUE(storage::fs::MakeDirs(usb0 + "/games/empty", &error));
 	CHECK_TRUE(storage::fs::MakeDirs(usb0 + "/games/unreadable", &error));
 	CHECK_TRUE(storage::fs::MakeDirs(usb1, &error));
+	CHECK_TRUE(storage::fs::MakeDirs(usb2, &error));
 	CHECK_TRUE(storage::fs::MakeDirs(ext0 + "/system_ex", &error));
 	chmod((usb0 + "/games/unreadable").c_str(), 0000);
 	chmod(usb1.c_str(), 0000);
 
 	storage::StorageDiscoveryOptions options;
 	options.internal_root = data;
-	options.usb_roots = {usb0, usb1};
+	options.usb_roots = {usb0, usb1, usb2};
 	options.extended_roots = {ext0};
 	const std::vector<VolumeInfo> volumes = storage::DiscoverVolumes(options);
-	CHECK_EQ(volumes.size(), 4u);
-	if (volumes.size() == 4)
+	CHECK_EQ(volumes.size(), 5u);
+	if (volumes.size() == 5)
 	{
 		CHECK_TRUE(volumes[0].present);
 		CHECK_TRUE(volumes[0].readable);
 		CHECK_EQ(static_cast<int>(volumes[0].kind), static_cast<int>(VolumeKind::Internal));
 		CHECK_TRUE(volumes[1].present);
 		CHECK_TRUE(volumes[1].readable);
-		CHECK_TRUE(volumes[2].present);
 		if (geteuid() != 0)
+		{
+			CHECK_TRUE(volumes[2].present);
 			CHECK_FALSE(volumes[2].readable);
-		CHECK_EQ(static_cast<int>(volumes[3].kind), static_cast<int>(VolumeKind::Extended));
-		CHECK_TRUE(volumes[3].extended_managed);
-		CHECK_TRUE(volumes[3].id.empty());
-		CHECK_FALSE(volumes[3].fingerprint.empty());
+		}
+		CHECK_FALSE(volumes[3].present);
+		CHECK_TRUE(volumes[3].readable);
+		CHECK_EQ(volumes[3].status, "empty mount point; no media mounted");
+		CHECK_EQ(static_cast<int>(volumes[4].kind), static_cast<int>(VolumeKind::Extended));
+		CHECK_TRUE(volumes[4].extended_managed);
+		CHECK_TRUE(volumes[4].id.empty());
+		CHECK_FALSE(volumes[4].fingerprint.empty());
 	}
 	chmod(usb1.c_str(), 0700);
 

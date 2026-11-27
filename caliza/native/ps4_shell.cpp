@@ -575,6 +575,11 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 
 	caliza::ConsoleBackendOptions options;
 	options.storage.data_root = paths.top_dir;
+	// Orbis keeps empty /mnt/usbN mountpoint directories around even when no drive exists. Showing every
+	// possible slot makes the library browser look as if the console had eight drives; only slots with a
+	// readable, non-empty root are useful evidence here. /mnt/usb0 itself is still probed, and the direct
+	// sandbox mount performed during boot makes it non-empty when the Toshiba is visible to this process.
+	options.storage.discovery.include_absent_slots = false;
 	options.storage.image_inspector = std::make_shared<FrontendImageInspector>(paths);
 	options.global_settings_path = paths.gs_ini;
 	options.game_settings_dir = paths.settings_dir;

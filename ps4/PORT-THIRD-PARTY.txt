@@ -23,6 +23,10 @@ External build components:
 - rapidyaml and c4core: BSD-3-Clause, https://github.com/biojppm/rapidyaml
 - OpenOrbis piglet/sample PRX modules: OpenOrbis project toolchain artifacts,
   https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain
+- ps4-payload-sdk kernel-access technique: GPL-3.0-or-later,
+  https://github.com/ps4-payload-dev/sdk (reduced modified extraction in
+  ps4/ps4_sandbox_escape.cpp; the nullfs-in-sandbox arrangement follows the public
+  ps4-libjbc technique by sleirsgoevy)
 
 Optional builds:
 - PGS=1/paraLLEl-GS builds additionally include parallel-gs (LGPL-3.0-or-later),
