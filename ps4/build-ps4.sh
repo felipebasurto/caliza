@@ -160,7 +160,7 @@ EOF
     # comes out IV0000-ZERU00001_00-CALIZA0000000000 and the pkg IV0000-ZERU00001_00-CALIZA0000000000.pkg.
     pkg="$(SFO_STYLE=plain NO_RIGHT_SPRX=1 SFO_ATTRIBUTE="${SFO_ATTRIBUTE:-0x00810000}" \
         DOLPHIN_PS4_MODULES_DIR=/nonexistent "$HERE/make-pkg.sh" "$stage" ZERU00001 "Caliza" \
-        "${CALIZA_PS4_VERSION:-00.01}" CALIZA00 "$out" | tail -1)"
+        "${CALIZA_PS4_VERSION:-00.03}" CALIZA00 "$out" | tail -1)"
     python3 "$HERE/tools/validate_package_stage.py" "$stage" --pkg "$pkg" --expect-commit "$(git -C "$PCSX2" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     echo "[build-ps4] package: $pkg ($(du -h "$pkg" | cut -f1))"
     # Optionally a copy elsewhere (CALIZA_PS4_PKG_DIR, e.g. a Windows folder): the current package, and the one it replaces
