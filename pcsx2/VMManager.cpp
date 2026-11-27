@@ -2757,6 +2757,8 @@ void VMManager::LogCPUCapabilities()
 }
 
 
+extern bool OrbisFlag(const char* name);
+
 void VMManager::InitializeCPUProviders()
 {
 #ifdef _M_X86 // TODO(Stenzek): Remove me once EE/VU/IOP recs are added.
@@ -2776,7 +2778,15 @@ void VMManager::InitializeCPUProviders()
 	vu1Thread.Open();
 #endif
 
-	if (SysMemory::IsCodeMemoryExecutable())
+	const bool code_exec = SysMemory::IsCodeMemoryExecutable();
+	const bool vifrec_off = ::OrbisFlag("novifrec");
+	newVifDynaRec = code_exec && !vifrec_off;
+	printf("[vifrec] VIF unpack recompiler: %s (%s)\n",
+		newVifDynaRec ? "on" : "off",
+		!code_exec ? "non-executable code memory" : (vifrec_off ? "flags/novifrec" : "runtime code cache"));
+	fflush(stdout);
+
+	if (code_exec)
 		VifUnpackSSE_Init();
 	else
 		printf("[dbg] icp: VIF unpack JIT generation skipped (non-executable code memory)\n");
@@ -2855,7 +2865,7 @@ void VMManager::Internal::ClearCPUExecutionCaches()
 	CpuVU1->Reset();
 	printf("[dbg] clear: CpuVU1 done\n"); fflush(stdout);
 
-	if constexpr (newVifDynaRec)
+	if (newVifDynaRec)
 	{
 		dVifReset(0);
 		dVifReset(1);

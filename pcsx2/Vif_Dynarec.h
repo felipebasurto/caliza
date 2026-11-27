@@ -43,4 +43,6 @@ alignas(16) extern nVifStruct nVif[2];
 alignas(16) extern nVifCall nVifUpk[(2 * 2 * 16) * 4]; // ([USN][Masking][Unpack Type]) [curCycle]
 alignas(16) extern u32      nVifMask[3][4][4];         // [MaskNumber][CycleNumber][Vector]
 
-static constexpr bool newVifDynaRec = 0; // Orbis bring-up: avoid the native VIF code cache.
+// Runtime toggle initialized in VMManager::InitializeCPUProviders() when code memory is executable
+// (escape hatch: /data/caliza/flags/novifrec). Adapted from Forja SX2 (josephguerra562-ux/forja-sx2, GPLv3).
+extern bool newVifDynaRec;

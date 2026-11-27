@@ -424,11 +424,12 @@ _vifT __fi nVifBlock* dVifCompile(nVifBlock& block, bool isFill)
 {
 	nVifStruct& v = nVif[idx];
 
-	// Check size before the compilation
-	if (v.recWritePtr >= v.recEndPtr)
+	// Check size before the compilation (and lazily initialize if resetNewVif was not called yet)
+	if (!v.recWritePtr || v.recWritePtr >= v.recEndPtr)
 	{
-		DevCon.WriteLn("nVif Recompiler Cache Reset! [0x%016" PRIXPTR " > 0x%016" PRIXPTR "]",
-			v.recWritePtr, v.recEndPtr);
+		if (v.recWritePtr)
+			DevCon.WriteLn("nVif Recompiler Cache Reset! [0x%016" PRIXPTR " > 0x%016" PRIXPTR "]",
+				v.recWritePtr, v.recEndPtr);
 		dVifReset(idx);
 	}
 
