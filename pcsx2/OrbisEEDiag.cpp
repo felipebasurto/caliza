@@ -82,7 +82,9 @@ alignas(64) char g_orbis_ee_counters_fence[64] = {};
 OrbisDvifStats g_orbis_dvif_stats[2] = {};
 
 alignas(64) std::atomic<int> g_orbis_ee_plzcw_lzcnt{1};
+std::atomic<int> g_orbis_vtlb_nopushpop{1};
 alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
+std::atomic<u64> g_orbis_vtlb_nopushpop_emits{0};
 
 bool OrbisCpuHasLzcnt()
 {
@@ -215,6 +217,7 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_gs_pfw, OrbisHasFlag("nogspfw") ? 0 : 1, "GS stream prefetch"}, // vk-285-107: on unless flags/nogspfw
 		{g_orbis_waitloop_ext, OrbisHasFlag("waitloop_upstream") ? 0 : 1, "wider wait-loop rule"}, // vk-285-126
 		{g_orbis_ee_plzcw_lzcnt, (!OrbisCpuHasLzcnt() || OrbisHasFlag("noplzcw")) ? 0 : 1, "EE PLZCW LZCNT"},
+		{g_orbis_vtlb_nopushpop, OrbisHasFlag("rec_vtlb_pushpop") ? 0 : 1, "VTLB const no push/pop"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -276,14 +279,16 @@ void OrbisEEDiagSecond(bool print)
 
 	// Caliza adopted optimization/guard counters (printed when any counter advances).
 	{
-		static u64 s_caliza_prev[1] = {};
-		const u64 caliza_cur[1] = {
+		static u64 s_caliza_prev[2] = {};
+		const u64 caliza_cur[2] = {
 			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
+			g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed),
 		};
 		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
 		{
-			printf("[calizaperf] total: plzcw_lzcnt=%llu\n",
-				static_cast<unsigned long long>(caliza_cur[0]));
+			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu\n",
+				static_cast<unsigned long long>(caliza_cur[0]),
+				static_cast<unsigned long long>(caliza_cur[1]));
 			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
 		}
 	}

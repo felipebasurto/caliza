@@ -66,6 +66,8 @@ extern u64 g_orbis_waitloop_ext_blocks, g_orbis_waitloop_ext_runs;
 // Caliza adopted accuracy-preserving switches and counters (each with a /data/caliza/flags/ off-switch).
 extern std::atomic<int> g_orbis_ee_plzcw_lzcnt; // 1 unless flags/noplzcw (and CPU has ABM/LZCNT)
 extern std::atomic<u64> g_orbis_plzcw_lzcnt_emits;
+extern std::atomic<int> g_orbis_vtlb_nopushpop; // 1 unless flags/rec_vtlb_pushpop
+extern std::atomic<u64> g_orbis_vtlb_nopushpop_emits;
 
 bool OrbisCpuHasLzcnt();
 
