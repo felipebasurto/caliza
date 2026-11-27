@@ -2027,6 +2027,7 @@ static void OrbisGLOSD(bool generated = false)
 
 	char text[48] = {};
 	bool have_text = true;
+	bool plain_number = false; // Caliza/Overlay 1: the figure alone, with an outline and no box
 #ifdef ORBIS_VULKAN
 	const char* const fg_mark = g_orbis_fg_active.load(std::memory_order_relaxed) ? " FG" : "";
 #else
@@ -2056,15 +2057,16 @@ static void OrbisGLOSD(bool generated = false)
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_ee : PerformanceMetrics::GetCPUThreadUsage()) + 0.5),
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_gs : PerformanceMetrics::GetGSThreadUsage()) + 0.5f),
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_vu : PerformanceMetrics::GetVUThreadUsage()) + 0.5f));
-	else if (show_fps && *fg_mark)
-		snprintf(text, sizeof(text), "FPS %u (game %u)", s_out_fps, s_fps);
 	else if (show_fps && show_loads) // eerec-280; vk-285-72: the [load] line's loads
 		snprintf(text, sizeof(text), "%u FPS%s EE%u GS%u VU%u", s_fps, fg_mark,
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_ee : PerformanceMetrics::GetCPUThreadUsage()) + 0.5),
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_gs : PerformanceMetrics::GetGSThreadUsage()) + 0.5f),
 			static_cast<unsigned>((s_orbis_load_valid ? s_orbis_load_vu : PerformanceMetrics::GetVUThreadUsage()) + 0.5f));
 	else if (show_fps)
-		snprintf(text, sizeof(text), "FPS %u%s", s_fps, fg_mark);
+	{
+		snprintf(text, sizeof(text), "%u", *fg_mark ? s_out_fps : s_fps);
+		plain_number = true;
+	}
 	else
 		have_text = false;
 	if (!have_text && !graph)
@@ -2077,11 +2079,14 @@ static void OrbisGLOSD(bool generated = false)
 	char text2[48] = {};
 	if (tune_active)
 		snprintf(text2, sizeof(text2), "%.47s", g_orbis_tune_line2);
-	else if (have_text && show_fps && s_orbis_res[0] > 0)
+	else if (have_text && show_fps && show_loads && s_orbis_res[0] > 0)
 		snprintf(text2, sizeof(text2), "%dx%d > %dx%d", s_orbis_res[0], s_orbis_res[1], s_orbis_res[2], s_orbis_res[3]);
 
 	// vk-285-113: the box is the text (one line 50 px, two 80) and, when the graph is on, the graph under it.
+	// The plain figure (Caliza/Overlay 1) has no box: it is drawn alpha-blended, outlined in black for legibility.
 	constexpr int TW = 480, TEXT_H = 80, SCALE = 3, LINE2_Y = 45, GRAPH_H = 96, TH = TEXT_H + GRAPH_H;
+	constexpr int PLAIN_SCALE = 2, PLAIN_PAD = 8;
+	const bool plain = plain_number && !graph;
 	static GSTexture* s_tex = nullptr;
 	static GSDevice* s_dev = nullptr;
 	static char s_last[96] = {};
@@ -2095,7 +2100,7 @@ static void OrbisGLOSD(bool generated = false)
 	if (!s_tex)
 		return;
 	char key[96];
-	snprintf(key, sizeof(key), "%s|%s|%d", have_text ? text : "", text2, graph ? 1 : 0);
+	snprintf(key, sizeof(key), "%s|%s|%d%d", have_text ? text : "", text2, graph ? 1 : 0, plain ? 1 : 0);
 	if (strcmp(key, s_last) != 0 || (graph && s_hist_dirty))
 	{
 		// The overlay composition backing is needed only when the optional OSD is
@@ -2113,21 +2118,34 @@ static void OrbisGLOSD(bool generated = false)
 		}
 		if (!s_buf)
 			return;
-		const auto width = [](const char* str) {
+		const auto width = [](const char* str, int scale) {
 			int tw = 0;
 			for (const char* c = str; *c; c++)
 			{
 				const bool known = (*c >= '0' && *c <= '9') || (*c >= 'A' && *c <= 'Z') || (*c >= 'a' && *c <= 'z') ||
 								   *c == '>' || *c == ':' || *c == '.' || *c == '-' || *c == '/' || *c == '%';
-				tw += known ? 6 * SCALE : 2 * SCALE;
+				tw += known ? 6 * scale : 2 * scale;
 			}
 			return tw;
 		};
-		const int text_h = !have_text ? 0 : (text2[0] ? TEXT_H : 50);
-		s_box_w = graph ? TW : std::min(TW, std::max(width(text), width(text2)) + 30 - SCALE);
+		const int text_h = plain ? 7 * PLAIN_SCALE + 2 * PLAIN_PAD : !have_text ? 0 : (text2[0] ? TEXT_H : 50);
+		if (graph)
+			s_box_w = TW;
+		else if (plain)
+			s_box_w = std::min(TW, width(text, PLAIN_SCALE) + 2 * PLAIN_PAD);
+		else
+			s_box_w = std::min(TW, std::max(width(text, SCALE), width(text2, SCALE)) + 30 - SCALE);
 		s_box_h = text_h + (graph ? GRAPH_H : 0);
-		std::fill_n(s_buf, TW * TH, 0xFF202020u);
-		if (have_text)
+		std::fill_n(s_buf, TW * TH, plain ? 0u : 0xFF202020u);
+		if (plain)
+		{
+			for (int dy = -1; dy <= 1; dy++)
+				for (int dx = -1; dx <= 1; dx++)
+					if (dx != 0 || dy != 0)
+						orbis_text_rgba(s_buf, TW, TH, PLAIN_PAD + dx, PLAIN_PAD + dy, text, PLAIN_SCALE, 0xFF000000u);
+			orbis_text_rgba(s_buf, TW, TH, PLAIN_PAD, PLAIN_PAD, text, PLAIN_SCALE, 0xFF00FFFFu);
+		}
+		else if (have_text)
 		{
 			orbis_text_rgba(s_buf, TW, TH, 15, 12, text, SCALE, 0xFF00FFFFu);
 			if (text2[0])
@@ -2179,8 +2197,14 @@ static void OrbisGLOSD(bool generated = false)
 #else
 	const float y1 = wh - 40.0f, y0 = y1 - static_cast<float>(s_box_h); // GL lower-left origin: 40 px below the top edge
 #endif
-	g_gs_device->PresentRect(s_tex, GSVector4(0.0f, 0.0f, static_cast<float>(s_box_w) / TW, static_cast<float>(s_box_h) / TH),
-		nullptr, GSVector4(x0, y0, x1, y1), PresentShader::COPY, 0.0f, Nearest);
+#ifdef ORBIS_VULKAN
+	if (plain) // the figure's own pixels blend over the game: PresentRect's COPY overwrites the box's
+		OrbisVkPresentBlend(s_tex, GSVector4(0.0f, 0.0f, static_cast<float>(s_box_w) / TW, static_cast<float>(s_box_h) / TH),
+			GSVector4(x0, y0, x1, y1));
+	else
+#endif
+		g_gs_device->PresentRect(s_tex, GSVector4(0.0f, 0.0f, static_cast<float>(s_box_w) / TW, static_cast<float>(s_box_h) / TH),
+			nullptr, GSVector4(x0, y0, x1, y1), PresentShader::COPY, 0.0f, Nearest);
 	OrbisDrawPanels();
 }
 // ---- end eerec-278 ----

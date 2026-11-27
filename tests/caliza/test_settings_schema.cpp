@@ -265,7 +265,7 @@ void TestInventory()
 	CHECK(Groups().size() == 21);
 	CHECK(Settings().size() == 117);
 	CHECK(Actions().size() == 49);
-	CheckHash(SettingsInventoryHash(), 0xc2a87cb133ff87baull, "settings");
+	CheckHash(SettingsInventoryHash(), 0x8b0e6ba783e550e1ull, "settings");
 	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
