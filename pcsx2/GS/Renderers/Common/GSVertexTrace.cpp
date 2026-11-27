@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "GSVertexTrace.h"
+#include "GSVertexTraceStrip.h"
 #include "GS/GSUtil.h"
 #include "GS/GSState.h"
+#include "OrbisEEDiag.h"
 
 #include "common/Console.h"
+#include <vector>
 
 GSVertexTrace::GSVertexTrace(const GSState* state)
 	: m_state(state)
@@ -25,7 +28,33 @@ void GSVertexTrace::Update(const void* vertex, const u16* index, int v_count, in
 	const u32 fst = m_state->PRIM->FST;
 	const u32 color = !(m_state->PRIM->TME && m_state->m_context->TEX0.TFX == TFX_DECAL && m_state->m_context->TEX0.TCC);
 
-	m_fmm[color][fst][tme][iip][primclass](*this, vertex, index, i_count);
+	// Adapted from Forja SX2 (GPL-3.0+, apps 171-173, commits 4f8835f & 5e3e38c), hardened with exactness bailout:
+	// when IIP == 1 on non-fan triangle strips, deduplicate shared strip indices so FindMinMax visits each
+	// vertex once instead of up to 3x. Disabled via /data/caliza/flags/nogsvtonce.
+	if (iip && primclass == GS_TRIANGLE_CLASS && m_state->PRIM->PRIM != GS_TRIANGLEFAN &&
+		i_count >= 6 && g_orbis_gs_vt_strip_once.load(std::memory_order_relaxed) != 0)
+	{
+		thread_local std::vector<u16> s_strip_unique;
+		const int cap = (v_count > 0 && v_count < i_count) ? v_count : i_count;
+		if (static_cast<int>(s_strip_unique.size()) < cap)
+			s_strip_unique.resize(static_cast<size_t>(cap));
+		const int used = CalizaDeduplicateStripIndices(index, i_count, s_strip_unique.data(), cap);
+		if (used > 0)
+		{
+			g_orbis_gs_vt_strip_draws.fetch_add(1, std::memory_order_relaxed);
+			g_orbis_gs_vt_strip_saved.fetch_add(static_cast<u64>(i_count - used), std::memory_order_relaxed);
+			m_fmm[color][fst][tme][iip][primclass](*this, vertex, s_strip_unique.data(), used);
+		}
+		else
+		{
+			g_orbis_gs_vt_strip_bails.fetch_add(1, std::memory_order_relaxed);
+			m_fmm[color][fst][tme][iip][primclass](*this, vertex, index, i_count);
+		}
+	}
+	else
+	{
+		m_fmm[color][fst][tme][iip][primclass](*this, vertex, index, i_count);
+	}
 
 	// Potential float overflow detected. Better uses the slower division instead
 	// Note: If Q is too big, 1/Q will end up as 0. 1e30 is a random number
