@@ -113,18 +113,16 @@ extern char g_orbis_tune_line2[64];
 #define fflush OrbisDeferredFlush
 std::atomic<int> g_orbis_gsini_reload{0}; // GS thread saw gs.ini change -> the CPU thread applies it
 std::atomic<int> g_orbis_live_reapply{0}; // the CPU thread applied gs.ini -> apply live.ini again
-#ifdef ORBIS_PS4
-// Default to Jaguar mode 1 pinning (EE and VU1 on distinct cores of one 4-core L2 cluster,
-// GS on the other cluster, helpers/Vulkan on remaining cores); live.ini pin= overrides this.
-std::atomic<int> g_orbis_pin_request{1};
-#else
-std::atomic<int> g_orbis_pin_request{-1}; // live.ini pin= -> the CPU thread (OrbisApplyPinning)
-#endif
+std::atomic<int> g_orbis_pin_request{-1}; // default set in main-boot.cpp on PS4 (unless flags/nopin); live.ini pin= overrides
 static std::atomic<bool> s_orbis_pin_from_live{false};
+std::atomic<unsigned long long> g_orbis_title_cpu_mask{0}; // initial process CPU affinity before pinning
 extern "C" int sceKernelGetCurrentCpu(void);
 extern "C" int sceKernelGetCpumode(void);
 extern "C" int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
 extern "C" int scePthreadSetaffinity(pthread_t thread, unsigned long long mask);
+#ifdef ORBIS_PS4
+extern "C" int scePthreadSetprio(pthread_t thread, int prio);
+#endif
 // slots: 0 EE, 1 GS, 2 VU1, 3..7 SW workers 0..4
 static constexpr int ORBIS_CPU_SLOTS = 8;
 // vk-285-87: pin=3's layout from live.ini, a CPU each (-1: any CPU the others leave free) for the EE, GS
@@ -174,7 +172,7 @@ void OrbisCpuForget(int slot)
 // A registered thread gets the layout's `rest` CPUs now and whenever the layout changes; unregister before
 // the thread ends. 0: no layout applied yet (a thread keeps its own set).
 static std::mutex s_orbis_helper_mutex;
-static pthread_t s_orbis_helpers[8];
+static pthread_t s_orbis_helpers[16];
 static int s_orbis_helper_n = 0;
 static unsigned long long s_orbis_helper_mask = 0;
 static unsigned long long OrbisPthreadId(pthread_t thread)
@@ -491,6 +489,13 @@ static void OrbisApplyPinningPs4(int mode, unsigned long long orig)
 	int rc[ORBIS_CPU_SLOTS];
 	for (int i = 0; i < ORBIS_CPU_SLOTS; i++)
 		rc[i] = (s_orbis_thr[i] != pthread_t{}) ? scePthreadSetaffinity(s_orbis_thr[i], slot_mask[i]) : -1;
+	// Elevate primary emulation threads (EE, GS, VU1) slightly above default (700) when pinned
+	// so unregistered driver/background threads do not preempt them; remains well below the
+	// profiler sampler's 256. Needs proper testing on real PS4 hardware.
+	const int main_prio = (mode >= 1) ? 680 : 700;
+	int prc[3] = {-1, -1, -1};
+	for (int i = 0; i < 3; i++)
+		prc[i] = (s_orbis_thr[i] != pthread_t{}) ? scePthreadSetprio(s_orbis_thr[i], main_prio) : -1;
 	int rc_rec = -1, rc_queue = -1;
 #ifdef ORBIS_VULKAN
 	if (ps5vk_debug_threads)
@@ -506,12 +511,12 @@ static void OrbisApplyPinningPs4(int mode, unsigned long long orig)
 		}
 	}
 #endif
-	printf("[pin] mode=%d ee_cpu=%d gs_cpu=%d vu_cpu=%d rest=%#llx rc ee=%d gs=%d vu=%d rec=%d queue=%d\n", mode,
-		ee_cpu, gs_cpu, vu_cpu, rest, rc[0], rc[1], rc[2], rc_rec, rc_queue);
+	printf("[pin] mode=%d ee_cpu=%d gs_cpu=%d vu_cpu=%d rest=%#llx rc ee=%d gs=%d vu=%d rec=%d queue=%d prio=%d(%d/%d/%d)\n",
+		mode, ee_cpu, gs_cpu, vu_cpu, rest, rc[0], rc[1], rc[2], rc_rec, rc_queue, main_prio, prc[0], prc[1], prc[2]);
 	OrbisPs4LogSlots(slot_mask, rc, helper_mask);
 	OrbisPinHelpers(helper_mask);
 	fflush(stdout);
-	if (s_orbis_pin_from_live.load(std::memory_order_relaxed))
+	if (s_orbis_pin_from_live.exchange(false, std::memory_order_relaxed))
 	{
 		char label[24];
 		snprintf(label, sizeof(label), "PIN %d", mode);
@@ -538,6 +543,8 @@ void OrbisApplyPinning(int mode)
 			return;
 		}
 		s_orig = m;
+		unsigned long long expected = 0;
+		g_orbis_title_cpu_mask.compare_exchange_strong(expected, m, std::memory_order_release);
 	}
 #ifndef ORBIS_PS4
 	int pairs[8], np = 0;

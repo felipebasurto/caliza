@@ -2003,6 +2003,7 @@ int sceKernelGetProsperoSystemSwVersion(void* version);
 unsigned long long sceKernelGetCpuFrequency(void);
 int sceKernelGetMainSocId(unsigned int* id);
 int sceKernelGetCpumode(void);
+int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
 int sysctlbyname(const char* name, void* oldp, size_t* oldlenp, const void* newp, size_t newlen);
 }
 
@@ -2082,7 +2083,13 @@ static std::string orbis_console_survey()
   info += buf;
   const unsigned long long hz = sceKernelGetCpuFrequency();
   const int cpumode = sceKernelGetCpumode();
-  printf("[console] CPU: %llu Hz, cpumode %d\n", hz, cpumode);
+  unsigned long long title_mask = 0;
+  if (scePthreadGetaffinity(pthread_self(), &title_mask) == 0 && title_mask != 0)
+  {
+    extern std::atomic<unsigned long long> g_orbis_title_cpu_mask;
+    g_orbis_title_cpu_mask.store(title_mask, std::memory_order_release);
+  }
+  printf("[console] CPU: %llu Hz, cpumode %d, affinity %#llx\n", hz, cpumode, title_mask);
   orbis_clock_survey(); // vk-285-100
   if (hz != 0)
     snprintf(buf, sizeof(buf), " \xC2\xB7 CPU %.2f GHz, mode %d", static_cast<double>(hz) / 1e9, cpumode);
@@ -4340,10 +4347,23 @@ int main()
   // Must be Running before Execute: IsExecutionInterrupted() returns true for any
   // other state, which makes the first event test exit the interpreter immediately.
   VMManager::SetState(VMState::Running);
+#ifdef ORBIS_PS4
+  // Enable Jaguar two-cluster pinning by default on PS4 (EE=CPU0, VU1=CPU1 on cluster 0;
+  // GS=CPU4 on cluster 1; helper threads on remaining CPUs). Create /data/caliza/flags/nopin
+  // or set pin=0 in live.ini to disable for A/B comparison. Needs proper testing on console.
+  if (!OrbisFlag("nopin"))
+  {
+    extern std::atomic<int> g_orbis_pin_request;
+    g_orbis_pin_request.store(1, std::memory_order_release);
+  }
+#endif
   {
     pthread_t pad_thread;
     if (pthread_create(&pad_thread, nullptr, orbis_pad_thread, nullptr) == 0)
+    {
+      OrbisHelperThreadAdd(pad_thread);
       pthread_detach(pad_thread);
+    }
   }
   // vk-285-72: the PS5's USB keyboard and mouse, read for the PS2's (orbis-shims/ProsperoKbdMouse.cpp).
   if (!orbis_no_usb_kbm())

@@ -86,6 +86,7 @@ int scePthreadGetaffinity(pthread_t thread, unsigned long long* mask);
 int scePthreadSetaffinity(pthread_t thread, unsigned long long mask);
 int scePthreadGetprio(pthread_t thread, int* prio);
 int sceKernelGetCurrentCpu(void);
+int sceKernelGetCpumode(void);
 #ifdef PS5SX2_IME_IMPORT
 int sceImeDialogInit(void* param, void* extended);
 int sceImeDialogGetStatus(void);
@@ -356,7 +357,17 @@ std::string ThreadPlace()
 // 12, as measured for the RPCS3 port). Logged, with what the system answered. Needs testing on the console.
 void TexturePackThreadStart(const char* role)
 {
+#ifdef ORBIS_PS4
+	extern std::atomic<unsigned long long> g_orbis_title_cpu_mask;
+	unsigned long long kTitleCpus = g_orbis_title_cpu_mask.load(std::memory_order_acquire);
+	if (kTitleCpus == 0)
+	{
+		const int cpumode = sceKernelGetCpumode();
+		kTitleCpus = (cpumode == 1 || cpumode == 5) ? 0x7full : 0x3full;
+	}
+#else
 	constexpr unsigned long long kTitleCpus = 0x1fffull;
+#endif
 	unsigned long long mask = 0;
 	const std::string before = ThreadPlace();
 	std::string what;
