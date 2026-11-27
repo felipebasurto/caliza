@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 
 #include <cmath>
 
@@ -337,9 +338,35 @@ void NEG_S() {
 }
 
 void RSQRT_S() {
-	FPRreg temp;
 	clearFPUFlags(FPUflagD | FPUflagI);
 
+	// Backported from upstream PCSX2 (GPL-3.0+, commit 6d05c7e): fix flag/sign handling on negative/zero Ft.
+	if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+	{
+		g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+		if ( _FtValUl_ & 0x80000000 ) // Ft is negative
+			_ContVal_ |= FPUflagI | FPUflagSI;
+
+		if ( ( _FtValUl_ & 0x7F800000 ) == 0 ) // Ft is zero (Denormals are Zero)
+		{
+			if ( ( _FsValUl_ & 0x7F800000 ) == 0 )
+				_ContVal_ |= FPUflagI | FPUflagSI; // 0 / 0
+			else
+				_ContVal_ |= FPUflagD | FPUflagSD; // x / 0
+			_FdValUl_ = ( _FsValUl_ & 0x80000000 ) | posFmax;
+			return;
+		}
+		else
+		{
+			_FdValf_ = fpuDouble( _FsValUl_ ) / sqrt( fabs( fpuDouble( _FtValUl_ ) ) );
+		}
+
+		if (checkOverflow( _FdValUl_, 0)) return;
+		checkUnderflow( _FdValUl_, 0);
+		return;
+	}
+
+	FPRreg temp;
 	if ( ( _FtValUl_ & 0x7F800000 ) == 0 ) { // Ft is zero (Denormals are Zero)
 		_ContVal_ |= FPUflagD | FPUflagSD;
 		_FdValUl_ = ( _FtValUl_ & 0x80000000 ) | posFmax;
@@ -358,6 +385,20 @@ void RSQRT_S() {
 
 void SQRT_S() {
 	clearFPUFlags(FPUflagI | FPUflagD);
+
+	// Backported from upstream PCSX2 (GPL-3.0+, commit 6d05c7e): set invalid flag on -0.0 and return +0.
+	if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+	{
+		g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+		if ( _FtValUl_ & 0x80000000 ) // Ft is negative
+			_ContVal_ |= FPUflagI | FPUflagSI;
+
+		if ( ( _FtValUl_ & 0x7F800000 ) == 0 ) // If Ft = +/-0
+			_FdValUl_ = 0; // result is 0
+		else
+			_FdValf_ = sqrt( fabs( fpuDouble( _FtValUl_ ) ) );
+		return;
+	}
 
 	if ( ( _FtValUl_ & 0x7F800000 ) == 0 ) // If Ft = +/-0
 		_FdValUl_ = _FtValUl_ & 0x80000000;// result is 0

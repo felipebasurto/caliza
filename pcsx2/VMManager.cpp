@@ -2794,6 +2794,7 @@ void VMManager::InitializeCPUProviders()
 	const bool gsresetflush_off = ::OrbisFlag("nogsresetflush");
 	const bool swextbufguard_off = ::OrbisFlag("noswextbufguard");
 	const bool mipinv_off = ::OrbisFlag("nomipinv");
+	const bool upstream_cpu_off = ::OrbisFlag("noupstreamcpufixes");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
@@ -2808,6 +2809,7 @@ void VMManager::InitializeCPUProviders()
 	g_orbis_gs_reset_flush.store(gsresetflush_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_gs_sw_extbuf_guard.store(swextbufguard_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_gs_h2l_mip_inv.store(mipinv_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_upstream_cpu_fixes.store(upstream_cpu_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2861,6 +2863,10 @@ void VMManager::InitializeCPUProviders()
 		mipinv_off ? "off" : "on",
 		mipinv_off ? "flags/nomipinv" : "default",
 		static_cast<unsigned long long>(g_orbis_gs_h2l_mip_invs.load(std::memory_order_relaxed)));
+	printf("[perf] upstream_cpu_fixes: %s (%s) hits=%llu\n",
+		upstream_cpu_off ? "off" : "on",
+		upstream_cpu_off ? "flags/noupstreamcpufixes" : "default",
+		static_cast<unsigned long long>(g_orbis_upstream_cpu_fix_hits.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

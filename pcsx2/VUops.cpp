@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 #include "VUops.h"
 #include "GS.h"
 #include "Gif_Unit.h"
@@ -961,8 +962,17 @@ static __fi void _vuSQRT(VURegs* VU)
 
 	VU->statusflag &= ~0x30;
 
-	if (ft < 0.0)
+	// Backported from upstream PCSX2 (GPL-3.0+, commit 1dff55d): check sign bit so -0.0 sets invalid flag.
+	if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+	{
+		if (VU->VF[_Ft_].UL[_Ftf_] & 0x80000000)
+			VU->statusflag |= 0x10;
+		g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+	}
+	else if (ft < 0.0)
+	{
 		VU->statusflag |= 0x10;
+	}
 	VU->q.F = sqrt(fabs(ft));
 	VU->q.F = vuDouble(VU->q.UL);
 }
@@ -971,10 +981,36 @@ static __fi void _vuRSQRT(VURegs* VU)
 {
 	float ft = vuDouble(VU->VF[_Ft_].UL[_Ftf_]);
 	float fs = vuDouble(VU->VF[_Fs_].UL[_Fsf_]);
-	float temp;
 
 	VU->statusflag &= ~0x30;
 
+	// Backported from upstream PCSX2 (GPL-3.0+, commit 1dff55d).
+	if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+	{
+		if (VU->VF[_Ft_].UL[_Ftf_] & 0x80000000)
+			VU->statusflag |= 0x10;
+
+		if (ft == 0.0)
+		{
+			if (fs != 0)
+				VU->statusflag |= 0x20;
+			else
+				VU->statusflag |= 0x10;
+			VU->q.UL = (VU->VF[_Fs_].UL[_Fsf_] & 0x80000000) | 0x7F7FFFFF;
+		}
+		else
+		{
+			if (ft < 0.0)
+				VU->statusflag |= 0x10;
+
+			VU->q.F = fs / sqrt(fabs(ft));
+			VU->q.F = vuDouble(VU->q.UL);
+		}
+		g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+
+	float temp;
 	if (ft == 0.0)
 	{
 		VU->statusflag |= 0x20;

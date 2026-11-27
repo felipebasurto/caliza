@@ -127,7 +127,16 @@ mVUop(mVU_RSQRT)
 				xMOV(ptr32[&mVU.divFlag], divI); // Set invalid flag (0/0)
 				xForwardJump8 cjmp;
 			bjmp.SetTarget();
-				xMOV(ptr32[&mVU.divFlag], divD); // Zero divide flag (only when not 0/0)
+				// Backported from upstream PCSX2 (GPL-3.0+, commit 1dff55d): preserve invalid flag set on negative Ft.
+				if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+				{
+					xOR(ptr32[&mVU.divFlag], divD); // Zero divide flag (only when not 0/0)
+					g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+				}
+				else
+				{
+					xMOV(ptr32[&mVU.divFlag], divD); // Zero divide flag (only when not 0/0)
+				}
 			cjmp.SetTarget();
 
 			xAND.PS(Fs, ptr128[mVUglob.signbit]);

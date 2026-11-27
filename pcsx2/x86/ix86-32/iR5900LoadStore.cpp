@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 #include "R5900OpcodeTables.h"
 #include "x86/iR5900.h"
 
@@ -367,17 +368,37 @@ void recLWR()
 
 	xForwardJE8 nomask;
 	xSHL(temp, 3);
-	// mask off bytes loaded
-	xMOV(ecx, 24);
-	xSUB(ecx, temp);
-	xMOV(edx, 0xffffff00);
-	xSHL(edx, cl);
-	xAND(xRegister32(treg), edx);
+	// Backported from upstream PCSX2 (GPL-3.0+, commit 29ea20f): preserve upper 32 bits on unaligned LWR
+	// using 64-bit mask/OR. Disabled via /data/caliza/flags/noupstreamcpufixes.
+	if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+	{
+		// mask off bytes loaded
+		xMOV(ecx, 24);
+		xSUB(ecx, temp);
+		xMOV(rdx, ~0xff);
+		xSHL(rdx, cl);
+		xAND(xRegister64(treg), rdx);
 
-	// OR in bytes loaded
-	xMOV(ecx, temp);
-	xSHR(eax, cl);
-	xOR(xRegister32(treg), eax);
+		// OR in bytes loaded
+		xMOV(ecx, temp);
+		xSHR(eax, cl);
+		xOR(xRegister64(treg), rax);
+		g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+	}
+	else
+	{
+		// mask off bytes loaded
+		xMOV(ecx, 24);
+		xSUB(ecx, temp);
+		xMOV(edx, 0xffffff00);
+		xSHL(edx, cl);
+		xAND(xRegister32(treg), edx);
+
+		// OR in bytes loaded
+		xMOV(ecx, temp);
+		xSHR(eax, cl);
+		xOR(xRegister32(treg), eax);
+	}
 
 	xForwardJump8 end;
 	nomask.SetTarget();

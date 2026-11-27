@@ -84,6 +84,8 @@ extern std::atomic<int> g_orbis_gs_sw_extbuf_guard; // 1 unless flags/noswextbuf
 extern std::atomic<u64> g_orbis_gs_sw_extbuf_skips;
 extern std::atomic<int> g_orbis_gs_h2l_mip_inv; // 1 unless flags/nomipinv
 extern std::atomic<u64> g_orbis_gs_h2l_mip_invs;
+extern std::atomic<int> g_orbis_upstream_cpu_fixes; // 1 unless flags/noupstreamcpufixes
+extern std::atomic<u64> g_orbis_upstream_cpu_fix_hits;
 
 bool OrbisCpuHasLzcnt();
 
