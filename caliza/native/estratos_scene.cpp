@@ -8,6 +8,7 @@
 
 #include "estratos_scene.h"
 
+#include "../../ps5/frontend/fe_covers.h"
 #include "../../ps5/frontend/fe_text.h"
 #include "estratos_theme.h"
 #include "procedural_covers.h"
@@ -17,6 +18,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <sstream>
 
 namespace caliza
@@ -120,6 +122,43 @@ std::string Capitalized(std::string text)
 		text[0] = static_cast<char>(text[0] - 'a' + 'A');
 	return text;
 }
+
+// A cover_key that is a real on-disk file (the manual covers folder, a file beside the image, a drive's
+// covers/ folder, a cached download, or OPL's ART folder -- see fe::CoverFinder::Search) rather than the
+// "proc:<id>" placeholder key ui_model.cpp uses when no cover has been resolved yet.
+bool LooksLikeCoverFile(const std::string& key)
+{
+	return !key.empty() && key.rfind("proc:", 0) != 0;
+}
+
+bool ReadWholeFile(const std::string& path, std::vector<uint8_t>& out)
+{
+	FILE* f = std::fopen(path.c_str(), "rb");
+	if (!f)
+		return false;
+	uint8_t buf[65536];
+	size_t n;
+	while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
+		out.insert(out.end(), buf, buf + n);
+	std::fclose(f);
+	return !out.empty();
+}
+
+// Decodes the cover file at `path` (fe::CoverService::Decode: stb_image, the same decoder the download and
+// on-disk lookup paths use) into a texture Estratos can draw. False when the file is missing, unreadable or
+// not a cover image; the caller then falls back to the procedural poster.
+bool LoadCoverFile(const std::string& path, Texture2D& out)
+{
+	std::vector<uint8_t> bytes;
+	fe::CoverImage decoded;
+	if (!ReadWholeFile(path, bytes) || !fe::CoverService::Decode(bytes, 1024, decoded))
+		return false;
+	out.width = decoded.width;
+	out.height = decoded.height;
+	out.format = Texture2D::Format::RGBA8;
+	out.pixels = std::move(decoded.rgba);
+	return true;
+}
 } // namespace
 
 EstratosScene::EstratosScene() : m_fonts(new fe::Fonts()), m_glow(MakeGlow()), m_fog(MakeFog()) {}
@@ -155,7 +194,13 @@ const Texture2D* EstratosScene::CoverFor(const std::string& key, const std::stri
 	auto it = m_covers.find(cache_key);
 	if (it != m_covers.end())
 		return &it->second;
-	const auto [inserted, _] = m_covers.emplace(cache_key, MakeProceduralCover(key, title));
+	Texture2D texture;
+	// A resolved cover_path (the user's own cover, one found beside the image or on the drive, or a
+	// download already in the cache) wins over the fictional poster; a decode failure (a truncated or
+	// corrupt file) falls back to it rather than showing nothing.
+	if (!LooksLikeCoverFile(key) || !LoadCoverFile(key, texture))
+		texture = MakeProceduralCover(key, title);
+	const auto [inserted, _] = m_covers.emplace(cache_key, std::move(texture));
 	(void)_;
 	return &inserted->second;
 }

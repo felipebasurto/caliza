@@ -11,7 +11,7 @@ CC=${CC:-clang}
 "$CXX" -std=c++20 -O1 -g -Wall -Wextra -Werror \
   -Wno-missing-field-initializers -Wno-unused-function \
   -I"$root" -I"$root/caliza/core" -I"$root/caliza/native" -I"$root/caliza/host" \
-  -I"$root/ps5/frontend" -I"$root/3rdparty/vulkan/include" \
+  -I"$root/ps5/frontend" -I"$root/3rdparty/vulkan/include" -pthread \
   "$root/caliza/host/caliza_host.cpp" \
   "$root/caliza/host/host_demo.cpp" \
   "$root/caliza/core/ui_model.cpp" \
@@ -23,6 +23,8 @@ CC=${CC:-clang}
   "$root/caliza/native/vk2d_renderer.cpp" \
   "$root/ps5/frontend/fe_text.cpp" \
   "$root/ps5/frontend/fe_vk.cpp" \
+  "$root/ps5/frontend/fe_covers.cpp" \
+  "$root/ps5/frontend/fe_i18n.cpp" \
   "$out/qrcodegen.o" \
   -lz -o "$out/caliza_host"
 printf 'built %s/caliza_host\n' "$out"
