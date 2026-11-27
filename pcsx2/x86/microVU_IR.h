@@ -503,6 +503,34 @@ public:
 		}
 	}
 
+	// Adapted from Forja SX2 (GPL-3.0+, app 158, commit a7715d5): cache VU1 memory base pointer (above 4 GiB
+	// on PS4) in a free GPR for the remainder of the block as a never-dirty pseudo-VI register so LQ/SQ/ILW/ISW
+	// avoid repeated 10-byte movabs loads. Evictions and flushes drop it with zero writeback cost.
+	static constexpr int CALIZA_MEM_BASE = 40;
+	xAddressReg getOrLoadMemBase(void* mem, bool& reused)
+	{
+		counter++;
+		for (int i = 0; i < gprTotal; i++)
+		{
+			if (gprMap[i].VIreg == CALIZA_MEM_BASE)
+			{
+				gprMap[i].count = counter;
+				reused = true;
+				return xAddressReg(i);
+			}
+		}
+		const int x = findFreeGPR(-1);
+		writeBackReg(xRegister32(x), true);
+		xMOV64(xAddressReg(x), (sptr)mem);
+		gprMap[x].VIreg = CALIZA_MEM_BASE;
+		gprMap[x].count = counter;
+		gprMap[x].isNeeded = false;
+		gprMap[x].dirty = false;
+		gprMap[x].isZeroExtended = false;
+		reused = false;
+		return xAddressReg(x);
+	}
+
 	void flushCallerSavedRegisters(bool clearNeeded = false)
 	{
 		for (int i = 0; i < xmmTotal; i++)

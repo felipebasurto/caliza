@@ -2786,12 +2786,14 @@ void VMManager::InitializeCPUProviders()
 	const bool plzcw_has_abm = OrbisCpuHasLzcnt();
 	const bool plzcw_off = ::OrbisFlag("noplzcw");
 	const bool vtlb_pushpop_on = ::OrbisFlag("rec_vtlb_pushpop");
+	const bool vumemreg_off = ::OrbisFlag("novumemreg");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_vif_fast.store(vifslow_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_ee_plzcw_lzcnt.store((plzcw_has_abm && !plzcw_off) ? 1 : 0, std::memory_order_relaxed);
 	g_orbis_vtlb_nopushpop.store(vtlb_pushpop_on ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_vu1_mem_reg.store(vumemreg_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2810,6 +2812,11 @@ void VMManager::InitializeCPUProviders()
 		vtlb_pushpop_on ? "off" : "on",
 		vtlb_pushpop_on ? "flags/rec_vtlb_pushpop" : "default",
 		static_cast<unsigned long long>(g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed)));
+	printf("[perf] vu1_mem_base_reg: %s (%s) loads=%llu reuses=%llu\n",
+		vumemreg_off ? "off" : "on",
+		vumemreg_off ? "flags/novumemreg" : "default",
+		static_cast<unsigned long long>(g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_orbis_vu1_mem_reg_reuses.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

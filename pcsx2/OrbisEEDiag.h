@@ -68,6 +68,8 @@ extern std::atomic<int> g_orbis_ee_plzcw_lzcnt; // 1 unless flags/noplzcw (and C
 extern std::atomic<u64> g_orbis_plzcw_lzcnt_emits;
 extern std::atomic<int> g_orbis_vtlb_nopushpop; // 1 unless flags/rec_vtlb_pushpop
 extern std::atomic<u64> g_orbis_vtlb_nopushpop_emits;
+extern std::atomic<int> g_orbis_vu1_mem_reg; // 1 unless flags/novumemreg
+extern std::atomic<u64> g_orbis_vu1_mem_reg_loads, g_orbis_vu1_mem_reg_reuses;
 
 bool OrbisCpuHasLzcnt();
 

@@ -83,8 +83,10 @@ OrbisDvifStats g_orbis_dvif_stats[2] = {};
 
 alignas(64) std::atomic<int> g_orbis_ee_plzcw_lzcnt{1};
 std::atomic<int> g_orbis_vtlb_nopushpop{1};
+std::atomic<int> g_orbis_vu1_mem_reg{1};
 alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
 std::atomic<u64> g_orbis_vtlb_nopushpop_emits{0};
+std::atomic<u64> g_orbis_vu1_mem_reg_loads{0}, g_orbis_vu1_mem_reg_reuses{0};
 
 bool OrbisCpuHasLzcnt()
 {
@@ -218,6 +220,7 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_waitloop_ext, OrbisHasFlag("waitloop_upstream") ? 0 : 1, "wider wait-loop rule"}, // vk-285-126
 		{g_orbis_ee_plzcw_lzcnt, (!OrbisCpuHasLzcnt() || OrbisHasFlag("noplzcw")) ? 0 : 1, "EE PLZCW LZCNT"},
 		{g_orbis_vtlb_nopushpop, OrbisHasFlag("rec_vtlb_pushpop") ? 0 : 1, "VTLB const no push/pop"},
+		{g_orbis_vu1_mem_reg, OrbisHasFlag("novumemreg") ? 0 : 1, "VU1 mem base reg"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -279,16 +282,20 @@ void OrbisEEDiagSecond(bool print)
 
 	// Caliza adopted optimization/guard counters (printed when any counter advances).
 	{
-		static u64 s_caliza_prev[2] = {};
-		const u64 caliza_cur[2] = {
+		static u64 s_caliza_prev[4] = {};
+		const u64 caliza_cur[4] = {
 			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
 			g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed),
+			g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed),
+			g_orbis_vu1_mem_reg_reuses.load(std::memory_order_relaxed),
 		};
 		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
 		{
-			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu\n",
+			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu vu1_mem=%llu/%llu\n",
 				static_cast<unsigned long long>(caliza_cur[0]),
-				static_cast<unsigned long long>(caliza_cur[1]));
+				static_cast<unsigned long long>(caliza_cur[1]),
+				static_cast<unsigned long long>(caliza_cur[3]),
+				static_cast<unsigned long long>(caliza_cur[2] + caliza_cur[3]));
 			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
 		}
 	}
