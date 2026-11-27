@@ -11,6 +11,15 @@
 // VifCode Transfer Interpreter (Vif0/Vif1)
 //------------------------------------------------------------------
 
+// True for valid non-IRQ UNPACK opcodes (0x60..0x7f excluding reserved/null slots 0x63/0x67/0x6b/0x73/0x77/0x7b).
+static __fi bool OrbisIsValidVif1UnpackCmd(u32 cmd)
+{
+	if (cmd < 0x60u || cmd >= 0x80u)
+		return false;
+	const u32 upk = cmd & 0x0fu;
+	return (upk & 3u) != 3u || upk == 15u;
+}
+
 // Interprets packet
 _vifT void vifTransferLoop(u32* &data) {
 	vifStruct& vifX = GetVifX;
@@ -19,10 +28,113 @@ _vifT void vifTransferLoop(u32* &data) {
 
 	int ret = 0;
 
+	const bool vif_fast = g_orbis_vif_fast.load(std::memory_order_relaxed) != 0;
+	const bool diag = idx && OrbisEEDiag::on.load(std::memory_order_relaxed) != 0;
+	const bool upk_whole = idx && THREAD_VU1 && vif_fast;
+	const bool inner = idx && vif_fast && !diag && !(IsDevBuild && TraceLogging.EE.VIFcode.IsActive());
+
 	vifXRegs.stat.VPS |= VPS_TRANSFERRING;
 	vifXRegs.stat.ER1  = false;
 	//VIF_LOG("Starting VIF%d loop, pSize = %x, stalled = %x", idx, pSize, vifX.vifstalled.enabled );
 	while (pSize > 0 && !vifX.vifstalled.enabled) {
+
+		// Adapted from Forja SX2 (josephguerra562-ux/forja-sx2, GPLv3): keep the packet pointer and
+		// remaining word count in registers across consecutive non-IRQ fast VIF1 codes (NOP, STCYCL,
+		// OFFSET, BASE, ITOP, STMOD, and whole-packet MTVU UNPACKs) instead of spilling/reloading
+		// vif1.vifpacketsize and taking two vifCmdHandler indirect calls per UNPACK.
+		if constexpr (idx == 1)
+		{
+			if (inner && !vifX.cmd && !vifX.pass && !vifX.irq)
+			{
+				u32* d = data;
+				u32 left = pSize;
+				u32 taken = 0;
+				u32 whole_upks = 0;
+				while (left > 0 && !vifX.vifstalled.enabled)
+				{
+					const u32 code = d[0];
+					if (static_cast<s32>(code) < 0)
+						break; // IRQ bit set: leave unread for outer loop
+					const u32 cmd = code >> 24;
+					if (cmd == 0)
+					{
+						vifXRegs.code = code;
+						if (vifX.queued_program)
+							vifExecQueue(idx);
+						if (left > 1 && ((d[1] >> 24) & 0x7f) == 0x6 && (d[1] & 0x1))
+						{
+							vifX.vifstalled.enabled = VifStallEnable(vifXch);
+							vifX.vifstalled.value = VIF_TIMING_BREAK;
+						}
+						d += 1;
+						left -= 1;
+						taken++;
+						continue;
+					}
+					if (cmd <= 0x05)
+					{
+						vifXRegs.code = code;
+						switch (cmd)
+						{
+							case 0x05: // STMOD
+								vifXRegs.mode = code & 0x3;
+								break;
+							case 0x01: // STCYCL
+								*reinterpret_cast<u32*>(&vifXRegs.cycle) = code & 0xffffu;
+								break;
+							case 0x03: // BASE
+								vif1Regs.base = code & 0x3ff;
+								break;
+							case 0x02: // OFFSET
+								vif1Regs.stat.DBF = false;
+								vif1Regs.ofst = code & 0x3ff;
+								vif1Regs.tops = vif1Regs.base;
+								break;
+							case 0x04: // ITOP
+								vifXRegs.itops = code & 0x3ff;
+								break;
+							default:
+								break;
+						}
+						d += 1;
+						left -= 1;
+						taken++;
+						continue;
+					}
+					if (upk_whole && OrbisIsValidVif1UnpackCmd(cmd) && nVif[idx].bSize == 0)
+					{
+						vifXRegs.code = code;
+						vifX.cmd = cmd;
+						pSize = left; // vifUnpackSetup reads vifX.vifpacketsize for start_aligned
+						vifUnpackSetup<idx>(d);
+						d += 1;
+						left -= 1;
+						const u32 words = vifX.tag.size;
+						if (words <= left && !vifX.vifstalled.enabled)
+						{
+							vu1Thread.VifUnpack(vifX, vifXRegs, reinterpret_cast<const u8*>(d), (words << 2) + 4);
+							vifX.pass = 0;
+							vifX.tag.size = 0;
+							vifX.cmd = 0;
+							vifXRegs.num = 0;
+							d += words;
+							left -= words;
+							taken++;
+							whole_upks++;
+							continue;
+						}
+						break; // split UNPACK or stalled: outer loop handles pass 2
+					}
+					break; // any other command: leave unread for outer loop
+				}
+				data = d;
+				pSize = left;
+				g_orbis_vif1_fast_codes += taken;
+				g_orbis_vif1_whole_unpacks += whole_upks;
+				if (pSize == 0 || vifX.vifstalled.enabled)
+					break;
+			}
+		}
 
 		if(!vifX.cmd) { // Get new VifCode
 
@@ -69,7 +181,7 @@ _vifT void vifTransferLoop(u32* &data) {
 		// view, per second: STMOD 1.54M, STCYCL 0.43M, BASE and OFFSET 0.18M each (of 11.6M VIF1 codes,
 		// vk-285-101's [vifcodes]). IRQ-bit forms (cmd | 0x80) still take the table. flags/vifslow turns
 		// these off, live. Needs proper testing.
-		if (vifX.pass == 0 && vifX.cmd <= 0x05 && g_orbis_vif_fast.load(std::memory_order_relaxed))
+		if (vifX.pass == 0 && vifX.cmd <= 0x05 && vif_fast)
 		{
 			bool done = true;
 			switch (vifX.cmd)
@@ -110,6 +222,26 @@ _vifT void vifTransferLoop(u32* &data) {
 				pSize -= 1;
 				continue;
 			}
+		}
+
+		if (upk_whole && vifX.pass == 0 && OrbisIsValidVif1UnpackCmd(vifX.cmd) && nVif[idx].bSize == 0)
+		{
+			vifUnpackSetup<idx>(data);
+			data += 1;
+			pSize -= 1;
+			const u32 words = vifX.tag.size;
+			if (words <= pSize && !vifX.vifstalled.enabled)
+			{
+				vu1Thread.VifUnpack(vifX, vifXRegs, reinterpret_cast<const u8*>(data), (words << 2) + 4);
+				vifX.pass = 0;
+				vifX.tag.size = 0;
+				vifX.cmd = 0;
+				vifXRegs.num = 0;
+				data += words;
+				pSize -= words;
+				g_orbis_vif1_whole_unpacks++;
+			}
+			continue;
 		}
 
 		ret = vifCmdHandler[idx][vifX.cmd & 0x7f](vifX.pass, data);
