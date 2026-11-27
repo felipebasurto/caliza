@@ -16,7 +16,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <thread>
+#include <sys/select.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -31,6 +33,7 @@
 
 #include "ICMP_Session.h"
 #include "DEV9/PacketReader/NetLib.h"
+#include "OrbisEEDiag.h"
 
 using namespace PacketReader;
 using namespace PacketReader::IP;
@@ -624,6 +627,10 @@ namespace Sessions
 				endpoint.sin_addr = std::bit_cast<in_addr>(parDestIP);
 
 				int ret = -1;
+				// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit 96cd30b): cap EAGAIN/EWOULDBLOCK retries
+				// at 20 ms with select() instead of spinning on the emulation thread. Disabled via flags/noiohangguard.
+				const bool icmp_guard = g_orbis_io_hang_guards.load(std::memory_order_relaxed) != 0;
+				const auto icmp_start = std::chrono::steady_clock::now();
 				while (ret == -1)
 				{
 					ret = sendto(icmpSocket, buffer.get(), icmp.GetLength(), 0, reinterpret_cast<const sockaddr*>(&endpoint), sizeof(endpoint));
@@ -631,7 +638,32 @@ namespace Sessions
 					{
 						const int err = errno;
 						if (err == EAGAIN || err == EWOULDBLOCK)
-							std::this_thread::yield();
+						{
+							if (icmp_guard)
+							{
+								if (std::chrono::steady_clock::now() - icmp_start >= std::chrono::milliseconds(20))
+								{
+									g_orbis_io_hang_guard_trips.fetch_add(1, std::memory_order_relaxed);
+									return true;
+								}
+								if (icmpSocket >= 0 && icmpSocket < FD_SETSIZE)
+								{
+									fd_set writeSet;
+									FD_ZERO(&writeSet);
+									FD_SET(icmpSocket, &writeSet);
+									timeval wait{0, 2000};
+									select(icmpSocket + 1, nullptr, &writeSet, nullptr, &wait);
+								}
+								else
+								{
+									std::this_thread::yield();
+								}
+							}
+							else
+							{
+								std::this_thread::yield();
+							}
+						}
 						else
 						{
 							Console.Error("DEV9: ICMP: Send error %d", errno);

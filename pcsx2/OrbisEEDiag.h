@@ -86,6 +86,8 @@ extern std::atomic<int> g_orbis_gs_h2l_mip_inv; // 1 unless flags/nomipinv
 extern std::atomic<u64> g_orbis_gs_h2l_mip_invs;
 extern std::atomic<int> g_orbis_upstream_cpu_fixes; // 1 unless flags/noupstreamcpufixes
 extern std::atomic<u64> g_orbis_upstream_cpu_fix_hits;
+extern std::atomic<int> g_orbis_io_hang_guards; // 1 unless flags/noiohangguard
+extern std::atomic<u64> g_orbis_io_hang_guard_trips;
 
 bool OrbisCpuHasLzcnt();
 

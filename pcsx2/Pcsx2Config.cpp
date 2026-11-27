@@ -1389,7 +1389,7 @@ void Pcsx2Config::DEV9Options::LoadSave(SettingsWrapper& wrap)
 			LoadIPHelper(Mask, maskStr);
 			LoadIPHelper(Gateway, gatewayStr);
 			LoadIPHelper(DNS1, dns1Str);
-			LoadIPHelper(DNS1, dns1Str);
+			LoadIPHelper(DNS2, dns2Str); // Backported from Swordpdf/PS5SX2 (GPL-3.0+, commit a46547c)
 		}
 
 		SettingsWrapEntry(AutoMask);

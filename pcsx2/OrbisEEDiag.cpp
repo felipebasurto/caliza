@@ -92,6 +92,7 @@ std::atomic<int> g_orbis_gs_reset_flush{1};
 std::atomic<int> g_orbis_gs_sw_extbuf_guard{1};
 std::atomic<int> g_orbis_gs_h2l_mip_inv{1};
 std::atomic<int> g_orbis_upstream_cpu_fixes{1};
+std::atomic<int> g_orbis_io_hang_guards{1};
 alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
 std::atomic<u64> g_orbis_vtlb_nopushpop_emits{0};
 std::atomic<u64> g_orbis_vu1_mem_reg_loads{0}, g_orbis_vu1_mem_reg_reuses{0};
@@ -103,6 +104,7 @@ std::atomic<u64> g_orbis_gs_reset_flushes{0};
 std::atomic<u64> g_orbis_gs_sw_extbuf_skips{0};
 std::atomic<u64> g_orbis_gs_h2l_mip_invs{0};
 std::atomic<u64> g_orbis_upstream_cpu_fix_hits{0};
+std::atomic<u64> g_orbis_io_hang_guard_trips{0};
 
 bool OrbisCpuHasLzcnt()
 {
@@ -245,6 +247,7 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_gs_sw_extbuf_guard, OrbisHasFlag("noswextbufguard") ? 0 : 1, "GS SW EXTBUF guard"},
 		{g_orbis_gs_h2l_mip_inv, OrbisHasFlag("nomipinv") ? 0 : 1, "GS H2L mip inv"},
 		{g_orbis_upstream_cpu_fixes, OrbisHasFlag("noupstreamcpufixes") ? 0 : 1, "upstream CPU/VU/FPU fixes"},
+		{g_orbis_io_hang_guards, OrbisHasFlag("noiohangguard") ? 0 : 1, "USB OHCI / ICMP hang guards"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -306,8 +309,8 @@ void OrbisEEDiagSecond(bool print)
 
 	// Caliza adopted optimization/guard counters (printed when any counter advances).
 	{
-		static u64 s_caliza_prev[14] = {};
-		const u64 caliza_cur[14] = {
+		static u64 s_caliza_prev[15] = {};
+		const u64 caliza_cur[15] = {
 			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
 			g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed),
 			g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed),
@@ -322,12 +325,13 @@ void OrbisEEDiagSecond(bool print)
 			g_orbis_gs_sw_extbuf_skips.load(std::memory_order_relaxed),
 			g_orbis_gs_h2l_mip_invs.load(std::memory_order_relaxed),
 			g_orbis_upstream_cpu_fix_hits.load(std::memory_order_relaxed),
+			g_orbis_io_hang_guard_trips.load(std::memory_order_relaxed),
 		};
 		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
 		{
 			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu vu1_mem=%llu/%llu vu1_3op=%llu "
 				   "clut64_skip=%llu vt_strip=%llu(saved=%llu,bails=%llu) tid_inval=%llu "
-				   "gs_rflush=%llu sw_extbuf=%llu h2l_mip=%llu cpu_fixes=%llu\n",
+				   "gs_rflush=%llu sw_extbuf=%llu h2l_mip=%llu cpu_fixes=%llu io_guards=%llu\n",
 				static_cast<unsigned long long>(caliza_cur[0]),
 				static_cast<unsigned long long>(caliza_cur[1]),
 				static_cast<unsigned long long>(caliza_cur[3]),
@@ -341,7 +345,8 @@ void OrbisEEDiagSecond(bool print)
 				static_cast<unsigned long long>(caliza_cur[10]),
 				static_cast<unsigned long long>(caliza_cur[11]),
 				static_cast<unsigned long long>(caliza_cur[12]),
-				static_cast<unsigned long long>(caliza_cur[13]));
+				static_cast<unsigned long long>(caliza_cur[13]),
+				static_cast<unsigned long long>(caliza_cur[14]));
 			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
 		}
 	}

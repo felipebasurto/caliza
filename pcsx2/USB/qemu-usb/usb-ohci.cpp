@@ -5,6 +5,7 @@
 #include "USB/qemu-usb/queue.h"
 #include "USB/qemu-usb/USBinternal.h"
 #include "IopMem.h"
+#include "OrbisEEDiag.h"
 
 #include "common/Console.h"
 
@@ -78,7 +79,18 @@ static void ohci_die(OHCIState* ohci)
 {
 	//OHCIPCIState *dev = container_of(ohci, OHCIPCIState, state);
 
-	Console.Warning("ohci_die: DMA error\n");
+	// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit 96cd30b): rate-limit repeated ohci_die logs
+	// so a restarting controller cannot exhaust /data log space.
+	if (g_orbis_io_hang_guards.load(std::memory_order_relaxed) != 0)
+	{
+		static unsigned s_dies = 0;
+		if (++s_dies <= 4 || (s_dies & (s_dies - 1)) == 0)
+			Console.Warning("ohci_die: DMA error (%u so far)", s_dies);
+	}
+	else
+	{
+		Console.Warning("ohci_die: DMA error\n");
+	}
 
 	ohci_set_interrupt(ohci, OHCI_INTR_UE);
 	ohci_bus_stop(ohci);
@@ -1025,8 +1037,19 @@ static int ohci_service_ed_list(OHCIState* ohci, u32 head, int completion)
 			continue;
 		}
 
+		// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit 96cd30b): bound TDs serviced per endpoint pass
+		// so a self-linked or corrupt TD ring after an IOP reboot cannot freeze the emulation thread.
+		// Disabled via /data/caliza/flags/noiohangguard.
+		u32 td_cnt = 0;
+		const bool td_guard = g_orbis_io_hang_guards.load(std::memory_order_relaxed) != 0;
 		while ((ed.head & OHCI_DPTR_MASK) != ed.tail)
 		{
+			if (td_guard && ++td_cnt > 4096)
+			{
+				g_orbis_io_hang_guard_trips.fetch_add(1, std::memory_order_relaxed);
+				ohci_die(ohci);
+				return 0;
+			}
 			/*trace_usb_ohci_ed_pkt(cur, (ed.head & OHCI_ED_H) != 0,
                     (ed.head & OHCI_ED_C) != 0, ed.head & OHCI_DPTR_MASK,
                     ed.tail & OHCI_DPTR_MASK, ed.next & OHCI_DPTR_MASK);
