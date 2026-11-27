@@ -10,6 +10,7 @@
 */
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 
 #include <cmath>
 
@@ -175,6 +176,17 @@ void CTC2() {
 		case REG_MAC_FLAG: // read-only
 		case REG_TPC:      // read-only
 		case REG_VPU_STAT: // read-only
+			break;
+		case REG_STATUS_FLAG: // Backported from upstream PCSX2 (GPL-3.0+, commit 3f682f6): only sticky flags written
+			if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+			{
+				VU0.VI[REG_STATUS_FLAG].UL = (VU0.VI[REG_STATUS_FLAG].UL & 0x3F) | (cpuRegs.GPR.r[_Rt_].UL[0] & 0xFC0);
+				g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+			}
+			else
+			{
+				VU0.VI[_Fs_].UL = cpuRegs.GPR.r[_Rt_].UL[0];
+			}
 			break;
 		case REG_R:
 			VU0.VI[REG_R].UL = ((cpuRegs.GPR.r[_Rt_].UL[0] & 0x7FFFFF) | 0x3F800000);

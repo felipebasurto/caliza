@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 #include "vtlb.h"
 #include "x86/iCore.h"
 #include "x86/iR5900.h"
@@ -440,6 +441,116 @@ int vtlb_DynGenReadNonQuad(u32 bits, bool sign, bool xmm, int addr_reg, vtlb_Rea
 	return x86_dest_reg;
 }
 
+// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit cd3da52, emu-core-8): constant-address loads and stores
+// of host memory (above 4 GiB on Orbis, requiring movabs) without dead push/pop of unallocated scratch
+// registers rax/rcx (_isAllocatableX86reg never hands out rax/rcx/rdx, and callers treat them as volatile
+// across handler calls). Restored to push/pop via /data/caliza/flags/rec_vtlb_pushpop.
+static bool OrbisConstBaseOK(int reg)
+{
+	return (reg & 7) != 4 && (reg & 7) != 5;
+}
+
+static void OrbisConstLoadGPR(u32 bits, bool sign, int dest, uptr host)
+{
+	const bool pushpop = g_orbis_vtlb_nopushpop.load(std::memory_order_relaxed) == 0;
+	const bool sib_safe = OrbisConstBaseOK(dest);
+	const xAddressReg addr = (!pushpop && sib_safe) ? xAddressReg(dest) : ((dest == rax.GetId()) ? rcx : rax);
+	if (pushpop)
+		xPUSH(addr);
+	else
+		g_orbis_vtlb_nopushpop_emits.fetch_add(1, std::memory_order_relaxed);
+	xMOV64(addr, (sptr)host);
+	switch (bits)
+	{
+		case 8:
+			sign ? xMOVSX(xRegister64(dest), ptr8[addr]) : xMOVZX(xRegister32(dest), ptr8[addr]);
+			break;
+
+		case 16:
+			sign ? xMOVSX(xRegister64(dest), ptr16[addr]) : xMOVZX(xRegister32(dest), ptr16[addr]);
+			break;
+
+		case 32:
+			sign ? xMOVSX(xRegister64(dest), ptr32[addr]) : xMOV(xRegister32(dest), ptr32[addr]);
+			break;
+
+		case 64:
+			xMOV(xRegister64(dest), ptr64[addr]);
+			break;
+	}
+	if (pushpop)
+		xPOP(addr);
+}
+
+static void OrbisConstLoadXMM(u32 bits, int dest, uptr host, bool movd)
+{
+	const bool pushpop = g_orbis_vtlb_nopushpop.load(std::memory_order_relaxed) == 0;
+	if (pushpop)
+		xPUSH(rax);
+	else
+		g_orbis_vtlb_nopushpop_emits.fetch_add(1, std::memory_order_relaxed);
+	xMOV64(rax, (sptr)host);
+	if (bits == 128)
+		xMOVAPS(xRegisterSSE(dest), ptr128[rax]);
+	else if (movd)
+		xMOVDZX(xRegisterSSE(dest), ptr32[rax]);
+	else
+		xMOVSSZX(xRegisterSSE(dest), ptr32[rax]);
+	if (pushpop)
+		xPOP(rax);
+}
+
+static void OrbisConstStore(u32 bits, bool xmm, int value_reg, uptr host)
+{
+	const bool pushpop = g_orbis_vtlb_nopushpop.load(std::memory_order_relaxed) == 0;
+	const xAddressReg scratch = (!xmm && value_reg == rax.GetId()) ? rcx : rax;
+	if (pushpop)
+		xPUSH(scratch);
+	else
+		g_orbis_vtlb_nopushpop_emits.fetch_add(1, std::memory_order_relaxed);
+	xMOV64(scratch, (sptr)host);
+	if (!xmm)
+	{
+		switch (bits)
+		{
+			case 8:
+				xMOV(ptr8[scratch], xRegister8(xRegister32(value_reg)));
+				break;
+
+			case 16:
+				xMOV(ptr16[scratch], xRegister16(value_reg));
+				break;
+
+			case 32:
+				xMOV(ptr32[scratch], xRegister32(value_reg));
+				break;
+
+			case 64:
+				xMOV(ptr64[scratch], xRegister64(value_reg));
+				break;
+
+				jNO_DEFAULT
+		}
+	}
+	else
+	{
+		switch (bits)
+		{
+			case 32:
+				xMOVSS(ptr32[scratch], xRegisterSSE(value_reg));
+				break;
+
+			case 128:
+				xMOVAPS(ptr128[scratch], xRegisterSSE(value_reg));
+				break;
+
+				jNO_DEFAULT
+		}
+	}
+	if (pushpop)
+		xPOP(scratch);
+}
+
 // ------------------------------------------------------------------------
 // Recompiled input registers:
 //   ecx - source address to read from
@@ -467,39 +578,12 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, bool sign, bool xmm, u32 addr_const, 
 		if (!xmm)
 		{
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(eax), eax.GetId());
-			const bool dest_is_sib_safe = ((x86_dest_reg & 7) != 4) && ((x86_dest_reg & 7) != 5);
-			const xAddressReg addr_base = dest_is_sib_safe ? xAddressReg(x86_dest_reg) : rax;
-			if (!dest_is_sib_safe)
-				xPUSH(addr_base);
-			xMOV64(addr_base, (sptr)ppf);
-			switch (bits)
-			{
-			case 8:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr8[addr_base]) : xMOVZX(xRegister32(x86_dest_reg), ptr8[addr_base]);
-				break;
-
-			case 16:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr16[addr_base]) : xMOVZX(xRegister32(x86_dest_reg), ptr16[addr_base]);
-				break;
-
-			case 32:
-				sign ? xMOVSX(xRegister64(x86_dest_reg), ptr32[addr_base]) : xMOV(xRegister32(x86_dest_reg), ptr32[addr_base]);
-				break;
-
-			case 64:
-				xMOV(xRegister64(x86_dest_reg), ptr64[addr_base]);
-				break;
-			}
-			if (!dest_is_sib_safe)
-				xPOP(addr_base);
+			OrbisConstLoadGPR(bits, sign, x86_dest_reg, ppf);
 		}
 		else
 		{
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
-			xPUSH(rax);
-			xMOV64(rax, (sptr)ppf);
-			xMOVSSZX(xRegisterSSE(x86_dest_reg), ptr32[rax]);
-			xPOP(rax);
+			OrbisConstLoadXMM(32, x86_dest_reg, ppf, false);
 		}
 	}
 	else
@@ -525,26 +609,9 @@ int vtlb_DynGenReadNonQuad_Const(u32 bits, bool sign, bool xmm, u32 addr_const, 
 			// dest register itself may be r12/r13/rsp/rbp which misencode.
 			x86_dest_reg = dest_reg_alloc ? dest_reg_alloc() : (_freeX86reg(eax), eax.GetId());
 			if (!xmm)
-			{
-				const bool dest_is_sib_safe = ((x86_dest_reg & 7) != 4) && ((x86_dest_reg & 7) != 5);
-				const xAddressReg addr_base = dest_is_sib_safe ? xAddressReg(x86_dest_reg) : rax;
-				if (!dest_is_sib_safe)
-					xPUSH(addr_base);
-				xMOV64(addr_base, (sptr)&psHu32(INTC_STAT));
-				if (sign)
-					xMOVSX(xRegister64(x86_dest_reg), ptr32[addr_base]);
-				else
-					xMOV(xRegister32(x86_dest_reg), ptr32[addr_base]);
-				if (!dest_is_sib_safe)
-					xPOP(addr_base);
-			}
+				OrbisConstLoadGPR(32, sign, x86_dest_reg, (uptr)&psHu32(INTC_STAT));
 			else
-			{
-				xPUSH(rax);
-				xMOV64(rax, (sptr)&psHu32(INTC_STAT));
-				xMOVDZX(xRegisterSSE(x86_dest_reg), ptr32[rax]);
-				xPOP(rax);
-			}
+				OrbisConstLoadXMM(32, x86_dest_reg, (uptr)&psHu32(INTC_STAT), true);
 		}
 		else
 		{
@@ -641,12 +708,7 @@ int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallbac
 		const uptr ppf = vmv.assumePtr(addr_const);
 		reg = dest_reg_alloc ? dest_reg_alloc() : (_freeXMMreg(0), 0);
 		if (reg >= 0)
-		{
-			xPUSH(rax);
-			xMOV64(rax, (sptr)ppf);
-			xMOVAPS(xRegisterSSE(reg), ptr128[rax]);
-			xPOP(rax);
-		}
+			OrbisConstLoadXMM(128, reg, ppf, false);
 	}
 	else
 	{
@@ -851,50 +913,7 @@ void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg)
 	{
 		vtlb_RecordConstEmit();
 		// Orbis: host pointer above 4GB; absolute disp32 would truncate.
-		// Scratch must never be the value register itself.
-		const uptr ppf = vmv.assumePtr(addr_const);
-		const xAddressReg scratch = (!xmm && value_reg == rax.GetId()) ? rcx : rax;
-		xPUSH(scratch);
-		xMOV64(scratch, (sptr)ppf);
-		if (!xmm)
-		{
-			switch (bits)
-			{
-				case 8:
-					xMOV(ptr8[scratch], xRegister8(xRegister32(value_reg)));
-					break;
-
-				case 16:
-					xMOV(ptr16[scratch], xRegister16(value_reg));
-					break;
-
-				case 32:
-					xMOV(ptr32[scratch], xRegister32(value_reg));
-					break;
-
-				case 64:
-					xMOV(ptr64[scratch], xRegister64(value_reg));
-					break;
-
-					jNO_DEFAULT
-			}
-		}
-		else
-		{
-			switch (bits)
-			{
-				case 32:
-					xMOVSS(ptr32[scratch], xRegisterSSE(value_reg));
-					break;
-
-				case 128:
-					xMOVAPS(ptr128[scratch], xRegisterSSE(value_reg));
-					break;
-
-					jNO_DEFAULT
-			}
-		}
-		xPOP(scratch);
+		OrbisConstStore(bits, xmm, value_reg, vmv.assumePtr(addr_const));
 	}
 	else
 	{

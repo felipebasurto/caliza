@@ -11,6 +11,14 @@ In-repository components:
 - qrcodegen: MIT License, https://www.nayuki.io/page/qr-code-generator-library
 - Vulkan-Headers: Apache License 2.0, https://github.com/KhronosGroup/Vulkan-Headers
 - stb image: public domain/MIT, https://github.com/nothings/stb
+- Upstream and peer GPL-3.0-or-later PCSX2 adaptations credited in source:
+  - forja-sx2 (GPL-3.0-or-later), https://github.com/josephguerra562-ux/forja-sx2
+    (EE PLZCW LZCNT, microVU1 cached memory base register and 3-operand AVX FMAC,
+    GSClut 64-bit expansion skip, and Gouraud triangle-strip vertex-trace dedup)
+  - Swordpdf/PS5SX2 (GPL-3.0-or-later), https://github.com/Swordpdf/PS5SX2
+    (recVTLB constant-address push/pop elision, EE GetThreadId cache reset
+    invalidation, GS HW/SW reset & mip invalidation fixes, and OHCI/ICMP/DNS2
+    I/O stability guards)
 
 External build components:
 - Crema/CEMUPS4 PS4 runtime: Mozilla Public License 2.0,

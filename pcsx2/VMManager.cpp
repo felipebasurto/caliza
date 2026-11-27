@@ -2783,10 +2783,35 @@ void VMManager::InitializeCPUProviders()
 	const bool vifrec_off = ::OrbisFlag("novifrec");
 	const bool eretfast_off = ::OrbisFlag("noeretfast");
 	const bool vifslow_off = ::OrbisFlag("vifslow");
+	const bool plzcw_has_abm = OrbisCpuHasLzcnt();
+	const bool plzcw_off = ::OrbisFlag("noplzcw");
+	const bool vtlb_pushpop_on = ::OrbisFlag("rec_vtlb_pushpop");
+	const bool vumemreg_off = ::OrbisFlag("novumemreg");
+	const bool vu3op_off = ::OrbisFlag("novu3op");
+	const bool clutskip_off = ::OrbisFlag("noclutskip");
+	const bool gsvtonce_off = ::OrbisFlag("nogsvtonce");
+	const bool tidreset_off = ::OrbisFlag("notidreset");
+	const bool gsresetflush_off = ::OrbisFlag("nogsresetflush");
+	const bool swextbufguard_off = ::OrbisFlag("noswextbufguard");
+	const bool mipinv_off = ::OrbisFlag("nomipinv");
+	const bool upstream_cpu_off = ::OrbisFlag("noupstreamcpufixes");
+	const bool iohangguard_off = ::OrbisFlag("noiohangguard");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_vif_fast.store(vifslow_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_ee_plzcw_lzcnt.store((plzcw_has_abm && !plzcw_off) ? 1 : 0, std::memory_order_relaxed);
+	g_orbis_vtlb_nopushpop.store(vtlb_pushpop_on ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_vu1_mem_reg.store(vumemreg_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_vu1_three_op.store(vu3op_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_skip_clut64.store(clutskip_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_vt_strip_once.store(gsvtonce_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_tid_reset_invalidate.store(tidreset_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_reset_flush.store(gsresetflush_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_sw_extbuf_guard.store(swextbufguard_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_gs_h2l_mip_inv.store(mipinv_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_upstream_cpu_fixes.store(upstream_cpu_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_io_hang_guards.store(iohangguard_off ? 0 : 1, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2797,6 +2822,57 @@ void VMManager::InitializeCPUProviders()
 	printf("[perf] vif1_fast_and_mpg_skip: %s (%s)\n",
 		vifslow_off ? "off" : "on",
 		vifslow_off ? "flags/vifslow" : "default");
+	printf("[perf] ee_plzcw_lzcnt: %s (%s) emits=%llu\n",
+		(plzcw_has_abm && !plzcw_off) ? "on" : "off",
+		!plzcw_has_abm ? "no CPU ABM/LZCNT" : (plzcw_off ? "flags/noplzcw" : "default"),
+		static_cast<unsigned long long>(g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed)));
+	printf("[perf] vtlb_const_nopushpop: %s (%s) emits=%llu\n",
+		vtlb_pushpop_on ? "off" : "on",
+		vtlb_pushpop_on ? "flags/rec_vtlb_pushpop" : "default",
+		static_cast<unsigned long long>(g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed)));
+	printf("[perf] vu1_mem_base_reg: %s (%s) loads=%llu reuses=%llu\n",
+		vumemreg_off ? "off" : "on",
+		vumemreg_off ? "flags/novumemreg" : "default",
+		static_cast<unsigned long long>(g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_orbis_vu1_mem_reg_reuses.load(std::memory_order_relaxed)));
+	printf("[perf] vu1_avx_three_op: %s (%s) saved_copies=%llu\n",
+		vu3op_off ? "off" : "on",
+		vu3op_off ? "flags/novu3op" : "default",
+		static_cast<unsigned long long>(g_orbis_vu1_three_op_copies.load(std::memory_order_relaxed)));
+	printf("[perf] gs_skip_clut64: %s (%s) skips=%llu\n",
+		clutskip_off ? "off" : "on",
+		clutskip_off ? "flags/noclutskip" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_clut64_skips.load(std::memory_order_relaxed)));
+	printf("[perf] gs_vt_strip_once: %s (%s) draws=%llu saved=%llu bails=%llu\n",
+		gsvtonce_off ? "off" : "on",
+		gsvtonce_off ? "flags/nogsvtonce" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_vt_strip_draws.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_orbis_gs_vt_strip_saved.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_orbis_gs_vt_strip_bails.load(std::memory_order_relaxed)));
+	printf("[perf] ee_tid_reset_invalidate: %s (%s) invalidations=%llu\n",
+		tidreset_off ? "off" : "on",
+		tidreset_off ? "flags/notidreset" : "default",
+		static_cast<unsigned long long>(g_orbis_tid_invalidations.load(std::memory_order_relaxed)));
+	printf("[perf] gs_reset_flush: %s (%s) flushes=%llu\n",
+		gsresetflush_off ? "off" : "on",
+		gsresetflush_off ? "flags/nogsresetflush" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_reset_flushes.load(std::memory_order_relaxed)));
+	printf("[perf] gs_sw_extbuf_guard: %s (%s) skips=%llu\n",
+		swextbufguard_off ? "off" : "on",
+		swextbufguard_off ? "flags/noswextbufguard" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_sw_extbuf_skips.load(std::memory_order_relaxed)));
+	printf("[perf] gs_h2l_mip_inv: %s (%s) invalidations=%llu\n",
+		mipinv_off ? "off" : "on",
+		mipinv_off ? "flags/nomipinv" : "default",
+		static_cast<unsigned long long>(g_orbis_gs_h2l_mip_invs.load(std::memory_order_relaxed)));
+	printf("[perf] upstream_cpu_fixes: %s (%s) hits=%llu\n",
+		upstream_cpu_off ? "off" : "on",
+		upstream_cpu_off ? "flags/noupstreamcpufixes" : "default",
+		static_cast<unsigned long long>(g_orbis_upstream_cpu_fix_hits.load(std::memory_order_relaxed)));
+	printf("[perf] io_hang_guards: %s (%s) trips=%llu\n",
+		iohangguard_off ? "off" : "on",
+		iohangguard_off ? "flags/noiohangguard" : "default",
+		static_cast<unsigned long long>(g_orbis_io_hang_guard_trips.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

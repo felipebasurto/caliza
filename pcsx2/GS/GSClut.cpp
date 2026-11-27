@@ -8,6 +8,7 @@
 #include "GS/GSUtil.h"
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GS/Renderers/Common/GSRenderer.h"
+#include "OrbisEEDiag.h"
 #include "common/AlignedMalloc.h"
 #include "common/Console.h"
 
@@ -392,7 +393,12 @@ void GSClut::Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA)
 					else
 						ReadCLUT_T32_I4(clut, m_buff32);
 
-					ExpandCLUT64_T32_I8(m_buff32, (u64*)m_buff64); // sw renderer does not need m_buff64 anymore
+					// Adapted from Forja SX2 (GPL-3.0+, app 182, commit 709947e): neither HW nor SW renderer
+					// reads m_buff64, so skip the dead 2 KiB expansion unless /data/caliza/flags/noclutskip is set.
+					if (g_orbis_gs_skip_clut64.load(std::memory_order_relaxed) != 0)
+						g_orbis_gs_clut64_skips.fetch_add(1, std::memory_order_relaxed);
+					else
+						ExpandCLUT64_T32_I8(m_buff32, (u64*)m_buff64);
 					break;
 			}
 		}
@@ -411,7 +417,11 @@ void GSClut::Read32(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA)
 					clut += TEX0.CSA << 4;
 					// TODO: merge these functions
 					Expand16(clut, m_buff32, 16, TEXA);
-					ExpandCLUT64_T32_I8(m_buff32, (u64*)m_buff64); // sw renderer does not need m_buff64 anymore
+					// Adapted from Forja SX2 (GPL-3.0+, app 182, commit 709947e); disabled via flags/noclutskip.
+					if (g_orbis_gs_skip_clut64.load(std::memory_order_relaxed) != 0)
+						g_orbis_gs_clut64_skips.fetch_add(1, std::memory_order_relaxed);
+					else
+						ExpandCLUT64_T32_I8(m_buff32, (u64*)m_buff64);
 					break;
 			}
 		}

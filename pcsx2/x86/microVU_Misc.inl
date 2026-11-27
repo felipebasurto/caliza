@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
+#include "OrbisEEDiag.h"
 #include <bitset>
 #include <optional>
 
@@ -368,6 +369,22 @@ __fi std::optional<xAddressVoid> mVUoptimizeConstantAddr(mV, u32 srcreg, s32 off
 
 		return ptr[mVU.regs().Mem + ((addr & 0xFFu) << 4) + offsetSS_];
 	}
+}
+
+// Adapted from Forja SX2 (GPL-3.0+, app 158, commit a7715d5): VU1 data memory lives above 4 GiB on PS4,
+// so xComplexAddress would emit a 10-byte movabs on every LQ/SQ/ILW/ISW. Cache mVU.regs().Mem once per
+// block in a free GPR and address [index + base + disp] (base in index slot so rbp encodes safely).
+// Disabled via /data/caliza/flags/novumemreg.
+static xAddressVoid mVUmemAddr(mV, void* mem_ptr, const xAddressReg& index)
+{
+	const sptr text = (sptr)xGetTextPtr();
+	const bool far_away = (sptr)mem_ptr != (s32)(sptr)mem_ptr && !(text && ((sptr)mem_ptr - text) == (s32)((sptr)mem_ptr - text));
+	if (!isVU1 || index.IsEmpty() || !far_away || g_orbis_vu1_mem_reg.load(std::memory_order_relaxed) == 0)
+		return xComplexAddress(gprT2q, mem_ptr, index);
+	bool reused = false;
+	const xAddressReg base = mVU.regAlloc->getOrLoadMemBase(mVU.regs().Mem, reused);
+	(reused ? g_orbis_vu1_mem_reg_reuses : g_orbis_vu1_mem_reg_loads).fetch_add(1, std::memory_order_relaxed);
+	return xAddressVoid(index, base, 1, (sptr)mem_ptr - (sptr)mVU.regs().Mem);
 }
 
 // PS5 port (vk-285-109): the current instruction's I word, read by the code the I-bit hack compiles

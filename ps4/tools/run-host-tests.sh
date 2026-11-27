@@ -23,6 +23,7 @@ run_cpp test_spu2_pcm_cache ps4/tests/test_spu2_pcm_cache.cpp
 run_cpp test_cdvd_subq ps4/tests/test_cdvd_subq.cpp -I"$ROOT"
 run_cpp test_ps4_cpu_diag ps4/tests/test_ps4_cpu_diag.cpp
 run_cpp test_ps4_perf_non_speedhack ps4/tests/test_ps4_perf_non_speedhack.cpp
+run_cpp test_ps4_emu_adoptions ps4/tests/test_ps4_emu_adoptions.cpp -O2 -I"$ROOT"
 run_cpp test_statewrapper_bounds ps4/tests/test_statewrapper_bounds.cpp -std=c++20 -Wno-unused-parameter -I"$ROOT" -I"$ROOT/3rdparty/fmt/include" "$ROOT/pcsx2/StateWrapper.cpp"
 run_py package_stage_validator ps4/tools/test_validate_package_stage.py
 run_py savestate_validator ps4/tools/test_validate_savestate.py

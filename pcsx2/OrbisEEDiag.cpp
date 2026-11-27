@@ -81,6 +81,48 @@ u64 g_orbis_waitloop_ext_blocks = 0, g_orbis_waitloop_ext_runs = 0; // vk-285-12
 alignas(64) char g_orbis_ee_counters_fence[64] = {};
 OrbisDvifStats g_orbis_dvif_stats[2] = {};
 
+alignas(64) std::atomic<int> g_orbis_ee_plzcw_lzcnt{1};
+std::atomic<int> g_orbis_vtlb_nopushpop{1};
+std::atomic<int> g_orbis_vu1_mem_reg{1};
+std::atomic<int> g_orbis_vu1_three_op{1};
+std::atomic<int> g_orbis_gs_skip_clut64{1};
+std::atomic<int> g_orbis_gs_vt_strip_once{1};
+std::atomic<int> g_orbis_tid_reset_invalidate{1};
+std::atomic<int> g_orbis_gs_reset_flush{1};
+std::atomic<int> g_orbis_gs_sw_extbuf_guard{1};
+std::atomic<int> g_orbis_gs_h2l_mip_inv{1};
+std::atomic<int> g_orbis_upstream_cpu_fixes{1};
+std::atomic<int> g_orbis_io_hang_guards{1};
+alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
+std::atomic<u64> g_orbis_vtlb_nopushpop_emits{0};
+std::atomic<u64> g_orbis_vu1_mem_reg_loads{0}, g_orbis_vu1_mem_reg_reuses{0};
+std::atomic<u64> g_orbis_vu1_three_op_copies{0};
+std::atomic<u64> g_orbis_gs_clut64_skips{0};
+std::atomic<u64> g_orbis_gs_vt_strip_draws{0}, g_orbis_gs_vt_strip_saved{0}, g_orbis_gs_vt_strip_bails{0};
+std::atomic<u64> g_orbis_tid_invalidations{0};
+std::atomic<u64> g_orbis_gs_reset_flushes{0};
+std::atomic<u64> g_orbis_gs_sw_extbuf_skips{0};
+std::atomic<u64> g_orbis_gs_h2l_mip_invs{0};
+std::atomic<u64> g_orbis_upstream_cpu_fix_hits{0};
+std::atomic<u64> g_orbis_io_hang_guard_trips{0};
+
+bool OrbisCpuHasLzcnt()
+{
+#if defined(__x86_64__) || defined(_M_X64)
+	static const bool s_has_lzcnt = []() {
+		u32 eax = 0, ebx = 0, ecx = 0, edx = 0;
+		asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000000u));
+		if (eax < 0x80000001u)
+			return false;
+		asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000001u));
+		return (ecx & (1u << 5)) != 0; // ABM / LZCNT
+	}();
+	return s_has_lzcnt;
+#else
+	return false;
+#endif
+}
+
 // The EE core's cycles per TSC tick, x1e6, measured on the EE thread every 300 vsyncs (0: not yet).
 static std::atomic<u64> s_orbis_ee_ratio_u{0};
 
@@ -194,6 +236,18 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_nt_store, OrbisHasFlag("ntstore") ? 1 : 0, "GS streaming stores"},
 		{g_orbis_gs_pfw, OrbisHasFlag("nogspfw") ? 0 : 1, "GS stream prefetch"}, // vk-285-107: on unless flags/nogspfw
 		{g_orbis_waitloop_ext, OrbisHasFlag("waitloop_upstream") ? 0 : 1, "wider wait-loop rule"}, // vk-285-126
+		{g_orbis_ee_plzcw_lzcnt, (!OrbisCpuHasLzcnt() || OrbisHasFlag("noplzcw")) ? 0 : 1, "EE PLZCW LZCNT"},
+		{g_orbis_vtlb_nopushpop, OrbisHasFlag("rec_vtlb_pushpop") ? 0 : 1, "VTLB const no push/pop"},
+		{g_orbis_vu1_mem_reg, OrbisHasFlag("novumemreg") ? 0 : 1, "VU1 mem base reg"},
+		{g_orbis_vu1_three_op, OrbisHasFlag("novu3op") ? 0 : 1, "VU1 AVX 3-op FMAC"},
+		{g_orbis_gs_skip_clut64, OrbisHasFlag("noclutskip") ? 0 : 1, "GS skip CLUT64"},
+		{g_orbis_gs_vt_strip_once, OrbisHasFlag("nogsvtonce") ? 0 : 1, "GS VT strip dedup"},
+		{g_orbis_tid_reset_invalidate, OrbisHasFlag("notidreset") ? 0 : 1, "TID cache reset inv"},
+		{g_orbis_gs_reset_flush, OrbisHasFlag("nogsresetflush") ? 0 : 1, "GS HW reset flush"},
+		{g_orbis_gs_sw_extbuf_guard, OrbisHasFlag("noswextbufguard") ? 0 : 1, "GS SW EXTBUF guard"},
+		{g_orbis_gs_h2l_mip_inv, OrbisHasFlag("nomipinv") ? 0 : 1, "GS H2L mip inv"},
+		{g_orbis_upstream_cpu_fixes, OrbisHasFlag("noupstreamcpufixes") ? 0 : 1, "upstream CPU/VU/FPU fixes"},
+		{g_orbis_io_hang_guards, OrbisHasFlag("noiohangguard") ? 0 : 1, "USB OHCI / ICMP hang guards"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -251,6 +305,50 @@ void OrbisEEDiagSecond(bool print)
 				static_cast<unsigned long long>(cur[17] - s_prev[17]), static_cast<unsigned long long>(cur[18] - s_prev[18]),
 				static_cast<unsigned long long>(cur[10] - s_prev[10]), static_cast<unsigned long long>(cur[11]));
 		std::memcpy(s_prev, cur, sizeof(cur));
+	}
+
+	// Caliza adopted optimization/guard counters (printed when any counter advances).
+	{
+		static u64 s_caliza_prev[15] = {};
+		const u64 caliza_cur[15] = {
+			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
+			g_orbis_vtlb_nopushpop_emits.load(std::memory_order_relaxed),
+			g_orbis_vu1_mem_reg_loads.load(std::memory_order_relaxed),
+			g_orbis_vu1_mem_reg_reuses.load(std::memory_order_relaxed),
+			g_orbis_vu1_three_op_copies.load(std::memory_order_relaxed),
+			g_orbis_gs_clut64_skips.load(std::memory_order_relaxed),
+			g_orbis_gs_vt_strip_draws.load(std::memory_order_relaxed),
+			g_orbis_gs_vt_strip_saved.load(std::memory_order_relaxed),
+			g_orbis_gs_vt_strip_bails.load(std::memory_order_relaxed),
+			g_orbis_tid_invalidations.load(std::memory_order_relaxed),
+			g_orbis_gs_reset_flushes.load(std::memory_order_relaxed),
+			g_orbis_gs_sw_extbuf_skips.load(std::memory_order_relaxed),
+			g_orbis_gs_h2l_mip_invs.load(std::memory_order_relaxed),
+			g_orbis_upstream_cpu_fix_hits.load(std::memory_order_relaxed),
+			g_orbis_io_hang_guard_trips.load(std::memory_order_relaxed),
+		};
+		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
+		{
+			printf("[calizaperf] total: plzcw_lzcnt=%llu vtlb_nopushpop=%llu vu1_mem=%llu/%llu vu1_3op=%llu "
+				   "clut64_skip=%llu vt_strip=%llu(saved=%llu,bails=%llu) tid_inval=%llu "
+				   "gs_rflush=%llu sw_extbuf=%llu h2l_mip=%llu cpu_fixes=%llu io_guards=%llu\n",
+				static_cast<unsigned long long>(caliza_cur[0]),
+				static_cast<unsigned long long>(caliza_cur[1]),
+				static_cast<unsigned long long>(caliza_cur[3]),
+				static_cast<unsigned long long>(caliza_cur[2] + caliza_cur[3]),
+				static_cast<unsigned long long>(caliza_cur[4]),
+				static_cast<unsigned long long>(caliza_cur[5]),
+				static_cast<unsigned long long>(caliza_cur[6]),
+				static_cast<unsigned long long>(caliza_cur[7]),
+				static_cast<unsigned long long>(caliza_cur[8]),
+				static_cast<unsigned long long>(caliza_cur[9]),
+				static_cast<unsigned long long>(caliza_cur[10]),
+				static_cast<unsigned long long>(caliza_cur[11]),
+				static_cast<unsigned long long>(caliza_cur[12]),
+				static_cast<unsigned long long>(caliza_cur[13]),
+				static_cast<unsigned long long>(caliza_cur[14]));
+			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
+		}
 	}
 
 	// [cpuclk] every 5 s: the TSC's rate against steady_clock over the 5 s, and the EE's and this (GS)

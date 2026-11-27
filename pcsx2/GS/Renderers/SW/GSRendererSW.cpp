@@ -5,6 +5,7 @@
 #include "GS/GSGL.h"
 #include "GS/GSPng.h"
 #include "GS/GSUtil.h"
+#include "OrbisEEDiag.h"
 
 #include "common/StringUtil.h"
 
@@ -285,7 +286,20 @@ GSTexture* GSRendererSW::GetFeedbackOutput(float& scale)
 	for (int i = 0; i < 2; i++)
 	{
 		if (m_regs->EXTBUF.EXBP == m_regs->DISP[i].DISPFB.Block())
-			return GetOutput(i, scale, dummy);
+		{
+			// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit effaf73): on Vulkan the SW output texture is a
+			// plain texture, not a render target, so DoMerge's feedback write would abort in
+			// GSTextureVK::GetLinkedFramebuffer. Disabled via /data/caliza/flags/noswextbufguard.
+			GSTexture* const out = GetOutput(i, scale, dummy);
+			if (g_orbis_gs_sw_extbuf_guard.load(std::memory_order_relaxed) != 0 &&
+				out && g_gs_device->GetRenderAPI() == RenderAPI::Vulkan && !out->IsRenderTarget())
+			{
+				if (g_orbis_gs_sw_extbuf_skips.fetch_add(1, std::memory_order_relaxed) == 0)
+					printf("[gs] SW: feedback write (EXTBUF) skipped because Vulkan output is not a render target\n");
+				return nullptr;
+			}
+			return out;
+		}
 	}
 
 	return nullptr;

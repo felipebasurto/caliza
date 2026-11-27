@@ -63,6 +63,34 @@ extern OrbisDvifStats g_orbis_dvif_stats[2];
 extern std::atomic<int> g_orbis_waitloop_ext;
 extern u64 g_orbis_waitloop_ext_blocks, g_orbis_waitloop_ext_runs;
 
+// Caliza adopted accuracy-preserving switches and counters (each with a /data/caliza/flags/ off-switch).
+extern std::atomic<int> g_orbis_ee_plzcw_lzcnt; // 1 unless flags/noplzcw (and CPU has ABM/LZCNT)
+extern std::atomic<u64> g_orbis_plzcw_lzcnt_emits;
+extern std::atomic<int> g_orbis_vtlb_nopushpop; // 1 unless flags/rec_vtlb_pushpop
+extern std::atomic<u64> g_orbis_vtlb_nopushpop_emits;
+extern std::atomic<int> g_orbis_vu1_mem_reg; // 1 unless flags/novumemreg
+extern std::atomic<u64> g_orbis_vu1_mem_reg_loads, g_orbis_vu1_mem_reg_reuses;
+extern std::atomic<int> g_orbis_vu1_three_op; // 1 unless flags/novu3op
+extern std::atomic<u64> g_orbis_vu1_three_op_copies;
+extern std::atomic<int> g_orbis_gs_skip_clut64; // 1 unless flags/noclutskip
+extern std::atomic<u64> g_orbis_gs_clut64_skips;
+extern std::atomic<int> g_orbis_gs_vt_strip_once; // 1 unless flags/nogsvtonce
+extern std::atomic<u64> g_orbis_gs_vt_strip_draws, g_orbis_gs_vt_strip_saved, g_orbis_gs_vt_strip_bails;
+extern std::atomic<int> g_orbis_tid_reset_invalidate; // 1 unless flags/notidreset
+extern std::atomic<u64> g_orbis_tid_invalidations;
+extern std::atomic<int> g_orbis_gs_reset_flush; // 1 unless flags/nogsresetflush
+extern std::atomic<u64> g_orbis_gs_reset_flushes;
+extern std::atomic<int> g_orbis_gs_sw_extbuf_guard; // 1 unless flags/noswextbufguard
+extern std::atomic<u64> g_orbis_gs_sw_extbuf_skips;
+extern std::atomic<int> g_orbis_gs_h2l_mip_inv; // 1 unless flags/nomipinv
+extern std::atomic<u64> g_orbis_gs_h2l_mip_invs;
+extern std::atomic<int> g_orbis_upstream_cpu_fixes; // 1 unless flags/noupstreamcpufixes
+extern std::atomic<u64> g_orbis_upstream_cpu_fix_hits;
+extern std::atomic<int> g_orbis_io_hang_guards; // 1 unless flags/noiohangguard
+extern std::atomic<u64> g_orbis_io_hang_guard_trips;
+
+bool OrbisCpuHasLzcnt();
+
 #define ORBIS_EEDIAG(expr) \
 	do \
 	{ \

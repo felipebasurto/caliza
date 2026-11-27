@@ -529,11 +529,25 @@ static void recCTC2()
 				_eeMoveGPRtoR(xRegister32(flagreg), _Rt_);
 
 				iFlushCall(FLUSH_FREE_VU0);
-				TEST_FBRST_RESET(flagreg, vu0ResetRegs, 0);
-				TEST_FBRST_RESET(flagreg, vu1ResetRegs, 1);
+				// Backported from upstream PCSX2 (GPL-3.0+, commit d20a95c): write REG_FBRST before
+				// VU reset callbacks so reset clears flags cleanly. Disabled via /data/caliza/flags/noupstreamcpufixes.
+				if (g_orbis_upstream_cpu_fixes.load(std::memory_order_relaxed) != 0)
+				{
+					xMOV(eax, xRegister32(flagreg));
+					xAND(eax, 0x0C0C);
+					xMOV(ptr32[&vu0Regs.VI[REG_FBRST].UL], eax);
+					TEST_FBRST_RESET(flagreg, vu0ResetRegs, 0);
+					TEST_FBRST_RESET(flagreg, vu1ResetRegs, 1);
+					g_orbis_upstream_cpu_fix_hits.fetch_add(1, std::memory_order_relaxed);
+				}
+				else
+				{
+					TEST_FBRST_RESET(flagreg, vu0ResetRegs, 0);
+					TEST_FBRST_RESET(flagreg, vu1ResetRegs, 1);
 
-				xAND(xRegister32(flagreg), 0x0C0C);
-				xMOV(ptr32[&vu0Regs.VI[REG_FBRST].UL], xRegister32(flagreg));
+					xAND(xRegister32(flagreg), 0x0C0C);
+					xMOV(ptr32[&vu0Regs.VI[REG_FBRST].UL], xRegister32(flagreg));
+				}
 				_freeX86reg(flagreg);
 			}
 			break;

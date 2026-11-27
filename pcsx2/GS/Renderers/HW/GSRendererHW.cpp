@@ -15,6 +15,7 @@
 // ticker thread writes out: the [gsout] line's printf+fflush every 200 frames left the GS thread asleep ~33 ms in a
 // write now and then (vk-285-106's [vsslow], the "output" phase).
 #include "OrbisDeferredLog.h"
+#include "OrbisEEDiag.h"
 #define printf OrbisDeferredPrintf
 #define fflush OrbisDeferredFlush
 
@@ -85,11 +86,33 @@ float GSRendererHW::GetUpscaleMultiplier()
 
 void GSRendererHW::Reset(bool hardware_reset)
 {
+	// Adapted from Swordpdf/PS5SX2 (GPL-3.0+, commit 6745ee8): flush queued primitives before RemoveAll
+	// destroys targets, then clear any in-progress channel-shuffle target pointers so GSState::Reset
+	// cannot dereference a freed Target. Disabled via /data/caliza/flags/nogsresetflush.
+	const bool reset_flush = g_orbis_gs_reset_flush.load(std::memory_order_relaxed) != 0;
+	if (reset_flush)
+	{
+		Flush(GSFlushReason::RESET);
+		g_orbis_gs_reset_flushes.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	// Read back on CSR Reset, conditional downloading on render swap etc handled elsewhere.
 	if (!hardware_reset)
 		g_texture_cache->ReadbackAll();
 
 	g_texture_cache->RemoveAll(true, true, true);
+
+	if (reset_flush)
+	{
+		m_last_rt = nullptr;
+		m_channel_shuffle = false;
+		m_channel_shuffle_width = 0;
+		m_channel_shuffle_finish = false;
+		m_full_screen_shuffle = false;
+		m_last_channel_shuffle_fbp = 0xffff;
+		m_last_channel_shuffle_tbp = 0xffff;
+		m_last_channel_shuffle_end_block = 0xffff;
+	}
 
 	GSRenderer::Reset(hardware_reset);
 }
