@@ -30,6 +30,48 @@ GameEntry Game(const char* id, const char* title, const char* region, uint64_t b
 	return game;
 }
 
+// A handful of fictional per-patch/per-cheat rows for the preview's one game with downloaded files, in the same
+// Toggle shape BuildPatchAndCheatRows (console_backend.cpp) builds from a real game's patches/cheats folders. The
+// global-scope projection MakeDemoSnapshot starts from never includes these (both are ScopeMask::Game), so this
+// adds the whole category, not just its items; it is idempotent, so selecting a different game clears them again.
+void ApplyDemoPatchRows(const std::string& game_id, std::vector<SettingCategory>& settings)
+{
+	settings.erase(std::remove_if(settings.begin(), settings.end(),
+						[](const SettingCategory& category) { return category.id == "patches" || category.id == "cheats"; }),
+		settings.end());
+	if (game_id != "aurora")
+		return;
+	SettingItem fps;
+	fps.id = "demo-patch:60-fps";
+	fps.label = "60 FPS";
+	fps.value = "true";
+	fps.description = "Removes the frame cap";
+	fps.kind = SettingKind::Toggle;
+	fps.modified = true;
+	SettingItem widescreen;
+	widescreen.id = "demo-patch:widescreen";
+	widescreen.label = "Widescreen (Gabominated)";
+	widescreen.value = "false";
+	widescreen.description = "aurora_demo_gabominated.pnach";
+	widescreen.kind = SettingKind::Toggle;
+	SettingCategory patches;
+	patches.id = "patches";
+	patches.label = "Patches";
+	patches.items = {fps, widescreen};
+	SettingItem infinite_hp;
+	infinite_hp.id = "demo-cheat:infinite-hp";
+	infinite_hp.label = "Infinite HP";
+	infinite_hp.value = "false";
+	infinite_hp.description = "aurora_demo.pnach";
+	infinite_hp.kind = SettingKind::Toggle;
+	SettingCategory cheats;
+	cheats.id = "cheats";
+	cheats.label = "Cheats";
+	cheats.items = {infinite_hp};
+	settings.push_back(std::move(patches));
+	settings.push_back(std::move(cheats));
+}
+
 } // namespace
 
 Snapshot MakeDemoSnapshot()
@@ -155,6 +197,7 @@ CommandId DemoBackend::Post(const Command& command)
 				{"faithful", title + " · Faithful", "Jules Sato", "", "See the original release for terms", 312ull << 20},
 			};
 		}
+		ApplyDemoPatchRows(command.id, m_snapshot.settings);
 	}
 	else if (command.type == CommandType::DownloadTexturePack || command.type == CommandType::ImportTexturePack)
 	{
