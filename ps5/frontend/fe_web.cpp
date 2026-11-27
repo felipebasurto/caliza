@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fe_web.h"
+#include "fe_modern_controls.h"
 #include "fe_settings.h"
 #include "fe_i18n.h"
 
@@ -924,9 +925,13 @@ void WebServer::ApiCover(const Request& req, Response& res)
 
 // {"id", "title", "serial", "file", "exists", "values": {key: value}, "global": {key: value},
 //  "patches": [{"name", "file", "description", "enabled"}],
+//  "modern_controls": [{"name", "file", "description", "enabled", "kind": "patch"|"cheat"}],
 //  "recommended": {"found", "values": {key: value}, "patches": [name]}, "is_recommended"}.
 // id "@global" is gs.ini itself. "recommended" is the game's presets.ini section (vk-285-51); a game
-// without one is recommended to follow gs.ini, so its "values" are empty.
+// without one is recommended to follow gs.ini, so its "values" are empty. A group fe::IsModernControlsGroup
+// recognizes (docs/research/modern-controls.md) is listed in "modern_controls" instead of "patches"/"cheats",
+// the same reclassification the native settings page applies (console_backend.cpp BuildPatchAndCheatRows); an
+// orphaned enabled group (file gone) stays in "patches"/"cheats" either way, since no file means no match.
 void WebServer::ApiSettings(const Request& req, Response& res)
 {
 	std::lock_guard<std::recursive_mutex> mutation_lock(fe::settings::MutationMutex());
@@ -961,64 +966,55 @@ void WebServer::ApiSettings(const Request& req, Response& res)
 	out += std::string(",\"recommended\":{\"found\":") + (has_preset ? "true" : "false") + ",\"values\":" + KvJson(rec) +
 	       ",\"patches\":" + ListJson(rec.enabled) + "}";
 	out += std::string(",\"is_recommended\":") + ((has_preset || g) && SameState(own, rec) ? "true" : "false");
-	out += ",\"patches\":[";
-	if (g)
-	{
+	// Builds one of "patches"/"cheats": every group in dir, minus the ones fe::IsModernControlsGroup claims for
+	// modern_entries (tagged with kind_tag there instead), plus any enabled-but-fileless orphan by name (a
+	// missing file has nothing for the heuristic to re-match, so an orphan always stays in its original list).
+	std::vector<std::string> modern_entries;
+	auto AppendGroups = [&](const std::string& dir, const std::vector<std::string>& enabled_list, const char* orphan_hint,
+	                        const char* kind_tag) {
+		std::string json = "[";
 		bool first = true;
-		const std::vector<PatchGroup> groups = PatchGroups(m_cfg.patches_dir, g->serial);
-		for (const PatchGroup& p : groups)
-		{
-			const bool on = std::find(enabled.begin(), enabled.end(), p.name) != enabled.end();
-			out += std::string(first ? "" : ",") + "{\"name\":" + Json(p.name) + ",\"file\":" + Json(p.file) +
-			       ",\"description\":" + Json(p.description) + ",\"enabled\":" + (on ? "true" : "false") + "}";
-			first = false;
-		}
-		// An enabled group whose patch file is gone still shows, so it can be turned off.
-		for (const std::string& e : enabled)
-		{
-			bool listed = false;
-			for (const PatchGroup& p : groups)
-				listed = listed || p.name == e;
-			if (!listed)
-			{
-				out += std::string(first ? "" : ",") + "{\"name\":" + Json(e) + ",\"file\":\"\",\"description\":" +
-				       Json("no patch file has this group") + ",\"enabled\":true}";
-				first = false;
-			}
-		}
-	}
-	out += "]";
-	// 2026-10-08 (AI-assisted): the game's cheat groups, the same way (only where the app has a cheats folder, so a page from
-	// before answers as it did).
-	if (!m_cfg.cheats_dir.empty())
-	{
-		out += ",\"cheats\":[";
 		if (g)
 		{
-			bool first = true;
-			const std::vector<PatchGroup> groups = PatchGroups(m_cfg.cheats_dir, g->serial);
-			for (const PatchGroup& c : groups)
+			const std::vector<PatchGroup> groups = PatchGroups(dir, g->serial);
+			for (const PatchGroup& p : groups)
 			{
-				const bool on = std::find(cheats_on.begin(), cheats_on.end(), c.name) != cheats_on.end();
-				out += std::string(first ? "" : ",") + "{\"name\":" + Json(c.name) + ",\"file\":" + Json(c.file) +
-				       ",\"description\":" + Json(c.description) + ",\"enabled\":" + (on ? "true" : "false") + "}";
+				const bool on = std::find(enabled_list.begin(), enabled_list.end(), p.name) != enabled_list.end();
+				std::string entry = "{\"name\":" + Json(p.name) + ",\"file\":" + Json(p.file) +
+				                     ",\"description\":" + Json(p.description) + ",\"enabled\":" + (on ? "true" : "false");
+				if (fe::IsModernControlsGroup(p.name))
+				{
+					modern_entries.push_back(entry + ",\"kind\":" + Json(kind_tag) + "}");
+					continue;
+				}
+				json += std::string(first ? "" : ",") + entry + "}";
 				first = false;
 			}
-			for (const std::string& e : cheats_on)
+			// An enabled group whose file is gone still shows, so it can be turned off.
+			for (const std::string& e : enabled_list)
 			{
 				bool listed = false;
-				for (const PatchGroup& c : groups)
-					listed = listed || c.name == e;
+				for (const PatchGroup& p : groups)
+					listed = listed || p.name == e;
 				if (!listed)
 				{
-					out += std::string(first ? "" : ",") + "{\"name\":" + Json(e) + ",\"file\":\"\",\"description\":" +
-					       Json("no cheat file has this group") + ",\"enabled\":true}";
+					json += std::string(first ? "" : ",") + "{\"name\":" + Json(e) + ",\"file\":\"\",\"description\":" +
+					        Json(orphan_hint) + ",\"enabled\":true}";
 					first = false;
 				}
 			}
 		}
-		out += "]";
-	}
+		return json + "]";
+	};
+	out += ",\"patches\":" + AppendGroups(m_cfg.patches_dir, enabled, "no patch file has this group", "patch");
+	// 2026-10-08 (AI-assisted): the game's cheat groups, the same way (only where the app has a cheats folder, so a page from
+	// before answers as it did).
+	if (!m_cfg.cheats_dir.empty())
+		out += ",\"cheats\":" + AppendGroups(m_cfg.cheats_dir, cheats_on, "no cheat file has this group", "cheat");
+	out += ",\"modern_controls\":[";
+	for (size_t i = 0; i < modern_entries.size(); i++)
+		out += (i ? "," : "") + modern_entries[i];
+	out += "]";
 	// 2026-10-08 (AI-assisted): the game's own hardware-renderer fixes (the game database's), as the settings that set them by
 	// hand (fe_settings.cpp ManualFixSettings): the page's Hardware fixes rows show them while manual fixes are off and write
 	// them when manual fixes go on. Only for a game the database has such fixes for (a page from before answers as it did).

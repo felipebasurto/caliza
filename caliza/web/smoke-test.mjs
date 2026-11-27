@@ -52,11 +52,12 @@ if (!failures.length) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
   try {
-    const [page, state, games, settings, memcards, discs, probe] = await Promise.all([
+    const [page, state, games, settings, gameSettings, memcards, discs, probe] = await Promise.all([
       fetch(`http://127.0.0.1:${port}/`).then((r) => r.text()),
       fetch(`http://127.0.0.1:${port}/api/state`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/games`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/settings?id=%40global`).then((r) => r.json()),
+      fetch(`http://127.0.0.1:${port}/api/settings?id=fixture-dustline.iso`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/memcards`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/discs`).then((r) => r.json()),
       fetch(`http://127.0.0.1:${port}/api/probe`).then((r) => r.json()),
@@ -68,6 +69,14 @@ if (!failures.length) {
     check(Array.isArray(memcards.cards) && Array.isArray(memcards.sizes), "harness memory-card fixture malformed");
     check(Array.isArray(discs.set) && Array.isArray(discs.games), "harness disc fixture malformed");
     check(typeof probe.frames === "number", "harness probe fixture malformed");
+    // Modern controls: off by default, listed separately from patches/cheats, same toggle wire as a patch.
+    check(Array.isArray(gameSettings.modern_controls) && gameSettings.modern_controls.length === 1,
+      "harness modern-controls fixture malformed");
+    check(gameSettings.modern_controls[0].enabled === false, "harness modern-controls fixture should start off");
+    const toggled = await fetch(`http://127.0.0.1:${port}/api/settings?id=fixture-dustline.iso`, {
+      method: "POST", body: "patch+ Modern analog controls\n",
+    }).then((r) => r.json());
+    check(toggled.modern_controls[0].enabled === true, "toggling a modern-controls patch did not persist");
   } catch (error) {
     failures.push("harness request failed: " + error.message);
   } finally {

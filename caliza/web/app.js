@@ -510,6 +510,16 @@ function renderPatchList(data) {
     }
     html += '</section>';
   }
+  // Only present for a game with a patch or cheat group named like a dual-stick remap (fe::IsModernControlsGroup);
+  // a game with none gets no section at all, off by default like every other patch/cheat.
+  if (Array.isArray(data.modern_controls) && data.modern_controls.length) {
+    html += '<section class="setting-section"><header><h2>Modern controls</h2><p>Remaps this game\u2019s old-style controls to modern dual-stick controls.</p></header>';
+    for (const mc of data.modern_controls) {
+      const action = mc.kind === "cheat" ? "toggle-cheat" : "toggle-patch";
+      html += '<div class="setting-row"><div class="setting-copy"><div class="setting-label">' + esc(mc.name) + '</div>' + (mc.description ? '<div class="setting-hint">' + esc(mc.description) + '</div>' : "") + (mc.file ? '<div class="setting-source">' + esc(mc.file) + '</div>' : "") + '</div><div class="setting-control"><button class="toggle-switch" type="button" aria-pressed="' + (mc.enabled ? "true" : "false") + '" aria-label="' + esc(mc.name) + '" data-action="' + action + '" data-name="' + esc(mc.name) + '" data-value="' + (mc.enabled ? "false" : "true") + '" data-focus-id="modern-' + esc(mc.name) + '"></button></div></div>';
+    }
+    html += '</section>';
+  }
   return html;
 }
 function renderDiscBindingSettings(data, scope) {
@@ -813,15 +823,19 @@ function setSetting(scope, key, value, options = {}) {
   queueSave(scope);
 }
 function setPatch(data, scope, kind, name, on) {
-  const list = kind === "patch" ? data.patches : data.cheats;
-  const entry = (list || []).find((x) => x.name === name);
+  // A modern-controls entry still lives under its own "patch"/"cheat" kind (data.modern_controls[].kind), just
+  // listed separately from data.patches/data.cheats; look there too so its toggle finds the same entry.
+  const modern = (data.modern_controls || []).filter((x) => x.kind === kind);
+  const list = (kind === "patch" ? data.patches : data.cheats) || [];
+  const entry = list.find((x) => x.name === name) || modern.find((x) => x.name === name);
   if (entry) entry.enabled = on;
   pendingFor(scope).set(kind + ":" + name, on);
   if (kind === "cheat") {
+    const anyCheatOn = (data.cheats || []).concat((data.modern_controls || []).filter((x) => x.kind === "cheat")).some((x) => x.enabled);
     if (on) {
       data.values["EmuCore/EnableCheats"] = "true";
       pendingFor(scope).set("EmuCore/EnableCheats", "true");
-    } else if (!(data.cheats || []).some((x) => x.enabled)) {
+    } else if (!anyCheatOn) {
       delete data.values["EmuCore/EnableCheats"];
       pendingFor(scope).set("EmuCore/EnableCheats", null);
     }
