@@ -141,7 +141,7 @@ def main() -> int:
 
         mtvu = root / "mtvu.log"
         mtvu.write_text("[dbg] memmap: data=0x600000000 (direct) code=0x900000000 (direct)\n"
-                        "[mtvu] per s: kicks=10 coalesced=0 ringstalls=2 laps ee/vu=1/1 wakeups=3 spin/sleep=1/0 | backlog hwm 1792 KB\n")
+                        "[mtvu] per s: kicks=10 coalesced=0 ringstalls=2 laps ee/vu=1/1 wakeups=3 spin/sleep=1/0 | backlog hwm 1792 KB (cap 2048 KB) vuring=12ms waitvu=4ms vu_exec=940ms vu_wait_spin/sleep=10/0ms ee_spin/yield=16/4\n")
         ok &= expect("MTVU cap pressure warns without failing", mtvu, (), 0,
                      "fixed 2048 KiB PS4 cap may be pressuring this scene")
 
