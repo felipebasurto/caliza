@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Caliza is a couch-friendly PlayStation 2 emulator for homebrew-capable PlayStation 4 consoles. It uses the PCSX2 emulation core and an inherited Orbis platform layer, while the product interface, companion panel, storage flows and branding are original Caliza work.
+Caliza is a native PlayStation 2 emulator for homebrew-capable PlayStation 4 consoles, ported from PCSX2. It uses the PCSX2 emulation core and an inherited Orbis platform layer, while the product interface, companion panel, storage flows and branding are original Caliza work.
 
 The active product targets PS4 only. Desktop Qt, updater, GS-runner and legacy PS5 installer/prototype trees have been removed because they are not part of this product. Do not recreate inherited interface code unless it is needed as temporary behavioral reference outside the shipped target.
 
