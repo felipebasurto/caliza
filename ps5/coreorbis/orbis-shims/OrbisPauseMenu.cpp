@@ -1,8 +1,8 @@
 // Caliza in-game pause menu: platform glue (see OrbisPauseMenu.h). The menu's behaviour is the
 // host-tested model in caliza/core/pause_menu.cpp; this file is the thread plumbing plus the
 // panel's CPU rasterisation, in the Estratos palette, with the same Roboto/PromptFont data the
-// frontend embeds. needs proper testing on the console: the Create button's delivery, save/load
-// while paused, and the blend pipeline over the paused re-presents.
+// frontend embeds. Needs proper testing on the console: combo detection, save/load while paused,
+// disc swap while paused, and the blend pipeline over the paused re-presents.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "OrbisPauseMenu.h"
@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -29,9 +30,10 @@
 #include <string>
 #include <vector>
 
-// main-boot.cpp: the existing back-to-menu flow (stops the VM; main() flushes cards/NVRAM and
-// re-executes into the frontend).
+// main-boot.cpp: the existing back-to-menu and disc-set flows (all called on the CPU thread).
 void OrbisBackToMenuCpu();
+void OrbisDiscStatus(int* out_index, int* out_count, std::string* out_label);
+bool OrbisChangeDiscIndexCpu(int target_index_1based, std::string* out_label, std::string* out_error);
 
 namespace
 {
@@ -44,6 +46,7 @@ caliza::VmStatus s_vm;
 caliza::PauseMenuView s_view;
 std::atomic<bool> s_view_visible{false};
 std::atomic<uint64_t> s_view_revision{0};
+std::atomic<bool> s_force_slot_refresh{false};
 
 struct QueuedCommand
 {
@@ -72,6 +75,17 @@ public:
 
 RuntimeSink s_sink;
 caliza::PauseMenu s_menu(&s_sink);
+
+// Pad-thread-owned trigger and capture state.
+orbis_padmap::ComboWatch s_pause_watch;
+bool s_open_release_wait = false;
+bool s_close_capture = false;
+std::string s_opened_combo;
+
+double ElapsedMs(std::chrono::steady_clock::time_point start)
+{
+	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
 
 void PushEvent(caliza::CommandId id, caliza::CommandType type, caliza::CommandStatus status, std::string message)
 {
@@ -106,6 +120,8 @@ void ExecuteCommand(const QueuedCommand& qc)
 		{
 			if (!VMManager::HasValidVM())
 			{
+				std::printf("[pause] pause error: no active vm\n");
+				std::fflush(stdout);
 				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed, "No game is running");
 				return;
 			}
@@ -119,6 +135,8 @@ void ExecuteCommand(const QueuedCommand& qc)
 		{
 			if (!VMManager::HasValidVM())
 			{
+				std::printf("[pause] resume error: no active vm\n");
+				std::fflush(stdout);
 				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed, "No game is running");
 				return;
 			}
@@ -130,51 +148,100 @@ void ExecuteCommand(const QueuedCommand& qc)
 		}
 		case caliza::CommandType::SaveState:
 		{
-			// The hotkey path's own call (StubHost.cpp): same slot policy, same synchronous write.
+			// The hotkey path's own call (StubHost.cpp): same synchronous streaming write & atomic backup.
+			const int slot = qc.command.number;
+			const auto t0 = std::chrono::steady_clock::now();
 			bool failed = false;
 			std::string error;
-			VMManager::SaveStateToSlot(qc.command.number, false, [&](const std::string& err) {
+			VMManager::SaveStateToSlot(slot, false, [&](const std::string& err) {
 				failed = true;
 				error = err;
 			});
-			std::printf("[pause] save slot %d: %s\n", qc.command.number, failed ? error.c_str() : "saved");
+			const double ms = ElapsedMs(t0);
+			if (failed)
+			{
+				std::printf("[pause] save slot %d: error (%.1f ms): %s\n", slot, ms,
+					error.empty() ? "unknown error" : error.c_str());
+			}
+			else
+			{
+				s_force_slot_refresh.store(true, std::memory_order_release);
+				std::printf("[pause] save slot %d: ok (%.1f ms)\n", slot, ms);
+			}
 			std::fflush(stdout);
 			PushEvent(qc.id, qc.command.type, failed ? caliza::CommandStatus::Failed : caliza::CommandStatus::Succeeded,
-				failed ? (error.empty() ? "Save failed" : error) : "State saved");
+				failed ? (error.empty() ? "Save failed" : error) : ("Saved slot " + std::to_string(slot)));
 			return;
 		}
 		case caliza::CommandType::LoadState:
 		{
+			const int slot = qc.command.number;
+			const auto t0 = std::chrono::steady_clock::now();
 			Error err;
-			if (VMManager::LoadStateFromSlot(qc.command.number, false, &err))
+			if (VMManager::LoadStateFromSlot(slot, false, &err))
 			{
-				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded, "State loaded");
+				const double ms = ElapsedMs(t0);
+				std::printf("[pause] load slot %d: ok (%.1f ms)\n", slot, ms);
+				std::fflush(stdout);
+				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded,
+					"Loaded slot " + std::to_string(slot));
 				return;
 			}
 			// A power loss between the writer's two renames can leave only .backup, which is the
 			// surviving consistent state (as the hotkey path handles it).
 			Error backup_err;
-			if (VMManager::LoadStateFromSlot(qc.command.number, true, &backup_err))
+			if (VMManager::LoadStateFromSlot(slot, true, &backup_err))
 			{
-				std::printf("[pause] slot %d unusable (%s); loaded its backup\n", qc.command.number,
+				const double ms = ElapsedMs(t0);
+				std::printf("[pause] load slot %d: ok via backup (%.1f ms; primary: %s)\n", slot, ms,
 					err.GetDescription().c_str());
 				std::fflush(stdout);
-				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded, "State loaded");
+				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded,
+					"Loaded slot " + std::to_string(slot) + " (backup)");
 				return;
 			}
-			std::printf("[pause] load failed: %s (backup: %s)\n", err.GetDescription().c_str(),
-				backup_err.GetDescription().c_str());
+			const double ms = ElapsedMs(t0);
+			std::printf("[pause] load slot %d: error (%.1f ms): %s (backup: %s)\n", slot, ms,
+				err.GetDescription().c_str(), backup_err.GetDescription().c_str());
 			std::fflush(stdout);
-			PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed, "Load failed");
+			PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed,
+				"Load slot " + std::to_string(slot) + " failed");
+			return;
+		}
+		case caliza::CommandType::ChangeDisc:
+		{
+			const int target = qc.command.number;
+			const auto t0 = std::chrono::steady_clock::now();
+			std::string label, err;
+			const bool ok = OrbisChangeDiscIndexCpu(target, &label, &err);
+			const double ms = ElapsedMs(t0);
+			if (ok)
+			{
+				std::printf("[pause] disc swap target %d (%s): ok (%.1f ms)\n", target, label.c_str(), ms);
+				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded,
+					label.empty() ? "Disc changed" : ("Switched to " + label));
+			}
+			else
+			{
+				std::printf("[pause] disc swap target %d: error (%.1f ms): %s\n", target, ms,
+					err.empty() ? "failed" : err.c_str());
+				PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed,
+					err.empty() ? "Disc change failed" : err);
+			}
+			std::fflush(stdout);
 			return;
 		}
 		case caliza::CommandType::ReturnToLibrary:
 		{
+			std::printf("[pause] returning to library\n");
+			std::fflush(stdout);
 			PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Succeeded, "Returning");
 			OrbisBackToMenuCpu();
 			return;
 		}
 		default:
+			std::printf("[pause] command %d error: unsupported\n", static_cast<int>(qc.command.type));
+			std::fflush(stdout);
 			PushEvent(qc.id, qc.command.type, caliza::CommandStatus::Failed, "Unsupported");
 			return;
 	}
@@ -226,24 +293,39 @@ void OrbisPauseMenuPumpCpu()
 		s_title = valid ? VMManager::GetTitle(true) : std::string();
 		if (s_title.empty())
 			s_title = serial;
+		s_force_slot_refresh.store(true, std::memory_order_release);
 	}
 	vm.title = s_title;
 
-	// The slot's presence is a file check: refresh it throttled, and at once when the overlay is
-	// open so a state saved in this session appears without delay.
+	// Slot occupancy is a small file check across slots 1..10: refresh it throttled while playing,
+	// and at once when the overlay is open or after a SaveState completes.
 	static int s_load_refresh_countdown = 0;
-	static bool s_can_load = false;
+	static uint32_t s_occupied_slots = 0;
+	const bool force_refresh = s_force_slot_refresh.exchange(false, std::memory_order_acq_rel);
 	if (!valid)
-		s_can_load = false;
-	else if (--s_load_refresh_countdown <= 0 || s_view_visible.load(std::memory_order_acquire))
 	{
-		// The backup of slot 1 is loadable too (the load path falls back to it), so it counts.
-		const std::string backup = VMManager::GetSaveStateFileName(serial.c_str(), crc, 1, true);
-		s_can_load = VMManager::HasSaveStateInSlot(serial.c_str(), crc, 1) ||
-			(!backup.empty() && FileSystem::FileExists(backup.c_str()));
+		s_occupied_slots = 0;
+	}
+	else if (force_refresh || --s_load_refresh_countdown <= 0 || s_view_visible.load(std::memory_order_acquire))
+	{
+		uint32_t mask = 0;
+		for (int slot = caliza::PauseMenu::kMinSlot; slot <= caliza::PauseMenu::kMaxSlot; slot++)
+		{
+			const std::string backup = VMManager::GetSaveStateFileName(serial.c_str(), crc, slot, true);
+			if (VMManager::HasSaveStateInSlot(serial.c_str(), crc, slot) ||
+				(!backup.empty() && FileSystem::FileExists(backup.c_str())))
+			{
+				mask |= (1u << static_cast<unsigned>(slot));
+			}
+		}
+		s_occupied_slots = mask;
 		s_load_refresh_countdown = 60;
 	}
-	vm.can_load = valid && s_can_load;
+	vm.occupied_slots = valid ? s_occupied_slots : 0u;
+	vm.can_load = valid && (s_occupied_slots != 0u);
+
+	if (valid)
+		OrbisDiscStatus(&vm.disc_index, &vm.disc_count, &vm.disc_label);
 
 	{
 		std::lock_guard<std::mutex> lock(s_state_mtx);
@@ -257,18 +339,28 @@ void OrbisPauseMenuPumpCpu()
 namespace
 {
 // ScePad bits as the rest of the port reads them (orbis-shims/OrbisPadMap.h).
-constexpr uint32_t kBitCreate = 0x00000001u;
-constexpr uint32_t kBitCircle = 0x00002000u;
-constexpr uint32_t kBitCross = 0x00004000u;
 constexpr uint32_t kBitUp = 0x00000010u;
 constexpr uint32_t kBitRight = 0x00000020u;
 constexpr uint32_t kBitDown = 0x00000040u;
 constexpr uint32_t kBitLeft = 0x00000080u;
+constexpr uint32_t kBitL2 = 0x00000100u;
+constexpr uint32_t kBitR2 = 0x00000200u;
+constexpr uint32_t kBitL1 = 0x00000400u;
+constexpr uint32_t kBitR1 = 0x00000800u;
+constexpr uint32_t kBitTriangle = 0x00001000u;
+constexpr uint32_t kBitCircle = 0x00002000u;
+constexpr uint32_t kBitCross = 0x00004000u;
+constexpr uint32_t kBitSquare = 0x00008000u;
 constexpr uint8_t kStickLo = 80;
 constexpr uint8_t kStickHi = 176;
+
+bool AllPadInputsUp(const OrbisPausePadState& pad)
+{
+	return pad.buttons == 0 && pad.l2 == 0 && pad.r2 == 0 && pad.touch == 0;
+}
 } // namespace
 
-bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, double dt)
+bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt)
 {
 	caliza::VmStatus vm;
 	{
@@ -286,6 +378,14 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, double dt)
 		}
 	}
 
+	orbis_padmap::ComboState cs;
+	cs.buttons = pad.buttons;
+	cs.l2 = pad.l2;
+	cs.r2 = pad.r2;
+	cs.touch = pad.touch;
+	uint32_t combo_block = 0;
+	const bool pause_fired = s_pause_watch.Update(cfg.pause, cfg.hold_ms, cs, now_ms, combo_block);
+
 	caliza::Input in;
 	in.up = (pad.buttons & kBitUp) != 0 || pad.ly < kStickLo;
 	in.down = (pad.buttons & kBitDown) != 0 || pad.ly > kStickHi;
@@ -293,19 +393,36 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, double dt)
 	in.right = (pad.buttons & kBitRight) != 0 || pad.lx > kStickHi;
 	in.cross = (pad.buttons & kBitCross) != 0;
 	in.circle = (pad.buttons & kBitCircle) != 0;
-	in.options = (pad.buttons & kBitCreate) != 0;
+	in.square = (pad.buttons & kBitSquare) != 0;
+	in.triangle = (pad.buttons & kBitTriangle) != 0;
+	in.l1 = (pad.buttons & kBitL1) != 0;
+	in.r1 = (pad.buttons & kBitR1) != 0;
+	in.l2 = (pad.buttons & kBitL2) != 0 || pad.l2 >= 200u;
+	in.r2 = (pad.buttons & kBitR2) != 0 || pad.r2 >= 200u;
 
-	static bool s_prev_create = false;
-	const bool create = (pad.buttons & kBitCreate) != 0;
-	const bool create_edge = create && !s_prev_create;
-	s_prev_create = create;
-
-	if (!s_menu.IsOpen() && create_edge &&
+	if (!s_menu.IsOpen() && !s_close_capture && pause_fired &&
 		(vm.state == caliza::VmState::Running || vm.state == caliza::VmState::Paused))
 	{
-		std::printf("[pause] Create button: opening the pause menu\n");
+		s_opened_combo = orbis_padmap::DescribeCombo(cfg.pause, cfg.hold_ms);
+		std::printf("[pause] opened (combo: %s, title: %s)\n", s_opened_combo.c_str(),
+			vm.title.empty() ? "unknown" : vm.title.c_str());
 		std::fflush(stdout);
 		s_menu.Open(vm.title);
+		s_open_release_wait = true;
+	}
+
+	if (s_open_release_wait)
+	{
+		if (AllPadInputsUp(pad))
+			s_open_release_wait = false;
+		else
+			in.options = true; // keep PauseMenu in m_wait_release until every opening button is released
+	}
+	else if (s_menu.IsOpen())
+	{
+		if (orbis_padmap::ComboActive(cfg.pause, cs))
+			in = caliza::Input{}; // holding the pause combo to close must not also navigate or cycle slots
+		in.options = pause_fired;
 	}
 
 	const bool was_open = s_menu.IsOpen();
@@ -328,23 +445,47 @@ bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, double dt)
 		s_view_visible.store(view.open, std::memory_order_release);
 	}
 
-	// Input capture: while the menu is open everything is the menu's. After it closes, the buttons
-	// still held (the cross/circle/Create press that closed it) must not reach the game either;
-	// capture ends when every button is up, so the game only ever sees a clean release.
-	static bool s_close_capture = false;
+	// Input capture: while the menu is open everything is the menu's. After it closes, any button,
+	// trigger or touch still held (the press that closed it) must not reach the game either;
+	// capture ends only when every input is released.
 	if (!open && was_open)
+	{
+		const std::string& reason = s_menu.LastCloseReason();
+		const std::string combo = s_opened_combo.empty()
+			? orbis_padmap::DescribeCombo(cfg.pause, cfg.hold_ms)
+			: s_opened_combo;
+		std::printf("[pause] closed (reason: %s, combo: %s)\n",
+			reason.empty() ? "close" : reason.c_str(), combo.c_str());
+		std::fflush(stdout);
+		s_open_release_wait = false;
 		s_close_capture = true;
-	if (s_close_capture && pad.buttons == 0)
+	}
+	if (s_close_capture && AllPadInputsUp(pad))
 		s_close_capture = false;
 	return open || s_close_capture;
 }
 
 void OrbisPauseMenuReset()
 {
-	s_menu.Close(false);
-	std::lock_guard<std::mutex> lock(s_state_mtx);
-	s_view = caliza::PauseMenuView();
+	s_menu.Reset();
+	s_pause_watch = orbis_padmap::ComboWatch();
+	s_open_release_wait = false;
+	s_close_capture = false;
+	s_opened_combo.clear();
+	{
+		std::lock_guard<std::mutex> lock(s_cmd_mtx);
+		s_commands.clear();
+	}
+	{
+		std::lock_guard<std::mutex> lock(s_evt_mtx);
+		s_events.clear();
+	}
+	{
+		std::lock_guard<std::mutex> lock(s_state_mtx);
+		s_view = caliza::PauseMenuView();
+	}
 	s_view_visible.store(false, std::memory_order_release);
+	s_force_slot_refresh.store(true, std::memory_order_release);
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -368,17 +509,17 @@ void OrbisVkPresentBlend(GSTexture* tex, const GSVector4& sRect, const GSVector4
 namespace
 {
 // The Estratos palette (caliza/native/estratos_theme.h), as 0xAABBGGRR straight-alpha pixels.
-constexpr uint32_t kVoid = 0xF40E0403u;     // 03040E, a few points under opaque so the frame reads
-constexpr uint32_t kVoidTop = 0xF4260807u;  // 070826
-constexpr uint32_t kText = 0xFFFFF5F2u;     // F2F5FF
-constexpr uint32_t kTextDim = 0xFFDAACA3u;  // A3ACDA
-constexpr uint32_t kTextFaint = 0xFFAA766Du;// 6D76AA
-constexpr uint32_t kIce = 0xFFFFE7A5u;    // A5E7FF
-constexpr uint32_t kFocus = 0xFFFF956Fu;    // 6F95FF
-constexpr uint32_t kAmber = 0xFF92D0FFu;    // FFD092
-constexpr uint32_t kDanger = 0xFF9E8FFFu;   // FF8F9E
-constexpr uint32_t kGlass = 0xFFFFB0A9u;    // A9B0FF
-constexpr uint32_t kLine = 0x4DFF9B8Cu;     // 8C9BFF at ~0.30
+constexpr uint32_t kVoid = 0xF40E0403u;      // 03040E, a few points under opaque so the frame reads
+constexpr uint32_t kVoidTop = 0xF4260807u;   // 070826
+constexpr uint32_t kText = 0xFFFFF5F2u;      // F2F5FF
+constexpr uint32_t kTextDim = 0xFFDAACA3u;   // A3ACDA
+constexpr uint32_t kTextFaint = 0xFFAA766Du; // 6D76AA
+constexpr uint32_t kIce = 0xFFFFE7A5u;       // A5E7FF
+constexpr uint32_t kFocus = 0xFFFF956Fu;     // 6F95FF
+constexpr uint32_t kAmber = 0xFF92D0FFu;     // FFD092
+constexpr uint32_t kDanger = 0xFF9E8FFFu;    // FF8F9E
+constexpr uint32_t kGlass = 0xFFFFB0A9u;     // A9B0FF
+constexpr uint32_t kLine = 0x4DFF9B8Cu;      // 8C9BFF at ~0.30
 
 uint32_t WithAlpha(uint32_t color, float alpha)
 {
@@ -407,10 +548,10 @@ void EnsureFonts()
 	if (s_tried)
 		return;
 	s_tried = true;
-	s_text_font.ok = stbtt_InitFont(&s_text_font.info, fe_font_text,
-						 stbtt_GetFontOffsetForIndex(fe_font_text, 0)) != 0;
-	s_icon_font.ok = stbtt_InitFont(&s_icon_font.info, fe_font_icons,
-						 stbtt_GetFontOffsetForIndex(fe_font_icons, 0)) != 0;
+	const int text_off = stbtt_GetFontOffsetForIndex(fe_font_text, 0);
+	const int icon_off = stbtt_GetFontOffsetForIndex(fe_font_icons, 0);
+	s_text_font.ok = text_off >= 0 && stbtt_InitFont(&s_text_font.info, fe_font_text, text_off) != 0;
+	s_icon_font.ok = icon_off >= 0 && stbtt_InitFont(&s_icon_font.info, fe_font_icons, icon_off) != 0;
 	if (!s_text_font.ok)
 		std::printf("[pause] text font unreadable: the menu will not draw\n");
 }
@@ -688,8 +829,11 @@ void ComposePanel(Bitmap& bmp, const caliza::PauseMenuView& view, int height)
 		const float text_x = row_x + L.S(32.0f);
 		DrawText(bmp, s_text_font, row.label.c_str(), text_x, ry + L.S(42.0f), L.S(30.0f), label_color);
 		if (!row.detail.empty())
-			DrawText(bmp, s_text_font, row.detail.c_str(), text_x, ry + L.S(72.0f), L.S(19.0f),
+		{
+			const std::string fitted = FitText(s_text_font, row.detail, L.S(19.0f), row_w - L.S(64.0f));
+			DrawText(bmp, s_text_font, fitted.c_str(), text_x, ry + L.S(72.0f), L.S(19.0f),
 				row.disabled ? kTextFaint : kTextDim);
+		}
 		y += row_h;
 	}
 
@@ -702,7 +846,9 @@ void ComposePanel(Bitmap& bmp, const caliza::PauseMenuView& view, int height)
 	px_cursor += DrawText(bmp, s_icon_font, kIconCross, px_cursor, prompts_base, L.S(24.0f), kTextDim);
 	px_cursor += DrawText(bmp, s_text_font, " Select", px_cursor + L.S(6.0f), prompts_base, L.S(21.0f), kTextDim) + L.S(34.0f);
 	px_cursor += DrawText(bmp, s_icon_font, kIconCircle, px_cursor, prompts_base, L.S(24.0f), kTextDim);
-	DrawText(bmp, s_text_font, " Back", px_cursor + L.S(6.0f), prompts_base, L.S(21.0f), kTextDim);
+	px_cursor += DrawText(bmp, s_text_font, " Back", px_cursor + L.S(6.0f), prompts_base, L.S(21.0f), kTextDim) + L.S(34.0f);
+	if (!view.picker_hint.empty())
+		DrawText(bmp, s_text_font, view.picker_hint.c_str(), px_cursor, prompts_base, L.S(21.0f), kIce);
 
 	// The destructive confirmation: an opaque plate over the panel, cancel focused first.
 	if (view.dialog_open)

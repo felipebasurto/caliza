@@ -1067,19 +1067,31 @@ static void *orbis_pad_thread(void *)
     const bool pad1_on = rc == 0 && (port1_connected || kbm_input_active);
     if (pad1_on)
     {
-      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): the DualSense's Create button opens the
-      // overlay. While it is open (or the buttons that closed it are still held) nothing reaches the
-      // game or the combos: one neutral frame first, so no held button sticks. Needs proper testing
-      // on the console: whether the system lets Create (ScePad bit 0x1) reach the app at all.
+      // Caliza pause menu (orbis-shims/OrbisPauseMenu.cpp): opened by cfg.pause (default L3+R3 + L1,
+      // remappable in Controls; never uses Share/Create so GoldHEN's cheat menu does not clash).
+      // While it is open (or the buttons that closed it are still held) nothing reaches the game
+      // or the other combos: neutral input is sent until all buttons/triggers/touch are released.
+      const orbis_padmap::Config &cfg = orbis_padmap_current();
+      const auto now_tick = std::chrono::steady_clock::now();
+      const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now_tick.time_since_epoch()).count();
+      const unsigned raw_touches = d.rest[40];
+      uint16_t raw_tx = 0xffffu;
+      memcpy(&raw_tx, &d.rest[48], sizeof(raw_tx));
+      const int raw_touch_zone = (raw_touches == 0 || raw_tx >= 4096u) ? 0 : (raw_tx < 640u) ? 1 : (raw_tx >= 1280u) ? 2 : 0;
+      bool pause_captured = false;
       {
-        static auto s_prev_pad_tick = std::chrono::steady_clock::now();
-        const auto now_tick = std::chrono::steady_clock::now();
+        static auto s_prev_pad_tick = now_tick;
         const double pad_dt = std::min(0.05, std::chrono::duration<double>(now_tick - s_prev_pad_tick).count());
         s_prev_pad_tick = now_tick;
         OrbisPausePadState pps;
         pps.buttons = d.buttons;
+        pps.l2 = d.l2;
+        pps.r2 = d.r2;
         pps.lx = d.lx; pps.ly = d.ly; pps.rx = d.rx; pps.ry = d.ry;
-        if (OrbisPauseMenuPadTick(pps, pad_dt))
+        pps.touch = raw_touch_zone;
+        pause_captured = OrbisPauseMenuPadTick(pps, cfg, now_ms, pad_dt);
+        if (pause_captured)
         {
           d.buttons = 0;
           d.l2 = d.r2 = 0;
@@ -1094,18 +1106,12 @@ static void *orbis_pad_thread(void *)
       // controller's real buttons (and the keyboard's), before the remapping.
       bool state_fired = false;
       {
-        const orbis_padmap::Config &cfg = orbis_padmap_current();
         static orbis_padmap::ComboWatch s_save, s_load, s_fast, s_disc;
         orbis_padmap::ComboState cs;
         cs.buttons = d.buttons;
         cs.l2 = d.l2;
         cs.r2 = d.r2;
-        const unsigned touches = d.rest[40];
-        uint16_t tx = 0xffffu;
-        memcpy(&tx, &d.rest[48], sizeof(tx));
-        cs.touch = (touches == 0 || tx >= 4096u) ? 0 : (tx < 640u) ? 1 : (tx >= 1280u) ? 2 : 0;
-        const long long now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch()).count();
+        cs.touch = pause_captured ? 0 : raw_touch_zone;
         uint32_t block = 0;
         const bool save = s_save.Update(cfg.save, cfg.hold_ms, cs, now_ms, block);
         const bool load = s_load.Update(cfg.load, cfg.hold_ms, cs, now_ms, block) && !save;
@@ -1141,14 +1147,20 @@ static void *orbis_pad_thread(void *)
         if (block & 0x200u)
           d.r2 = 0;
       }
-      // eerec-282: L3+R3 held ~0.4 s and let go without the D-pad (or a save or load) cycles the present filter
+      // eerec-282: L3+R3 held ~0.4 s and let go without the D-pad (or a save/load/pause) cycles the present filter
       // (eerec-278 fired while held). (vk-285-73's notification test on D-pad Right/Left is gone in vk-285-74.)
       {
         static unsigned combo = 0;
         static bool used = false;
         static uint32_t prev_dpad = 0;
         const uint32_t dpad = d.buttons & 0xF0u; // Up 0x10, Right 0x20, Down 0x40, Left 0x80
-        if ((d.buttons & 0x6u) == 0x6u)
+        if (pause_captured)
+        {
+          combo = 0;
+          used = false;
+          prev_dpad = 0;
+        }
+        else if ((d.buttons & 0x6u) == 0x6u)
         {
           combo++;
           if (((dpad & ~prev_dpad) & 0xF0u) || state_fired)
@@ -1738,11 +1750,18 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
   // MouseButtons 0 R1 and L1, 1 R2 and L2.
   OrbisKbdMouseConfigure(si.GetIntValue("Caliza", "KeyboardMouse", 0), si.GetIntValue("Caliza", "MouseAim", 1),
     si.GetIntValue("Caliza", "MouseSpeed", 2), si.GetIntValue("Caliza", "MouseButtons", 0));
-  // vk-285-116 (AI-assisted): the remapping and (vk-285-117) the save and load combos (the Controls tab).
+  // vk-285-116 (AI-assisted): the remapping and (vk-285-117) the pause, save, load and disc combos (the Controls tab).
   {
+    bool pause_migrated = false;
     const orbis_padmap::Config map = orbis_padmap::FromSettings([&](const char* key, std::string& value) {
       return si.GetStringValue("Caliza", key, &value);
-    });
+    }, &pause_migrated);
+    if (pause_migrated)
+    {
+      printf("[boot] controls: migrated legacy Share/Create pause binding to %s (avoids GoldHEN cheat menu)\n",
+        orbis_padmap::DescribeCombo(map.pause, map.hold_ms).c_str());
+      fflush(stdout);
+    }
     bool changed = false;
     {
       std::lock_guard<std::mutex> lock(g_orbis_padmap_mutex);
@@ -1755,7 +1774,7 @@ static void orbis_ps5opts_from(const SettingsInterface& si)
     if (changed)
     {
       g_orbis_padmap_version.fetch_add(1, std::memory_order_release);
-      printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, SaveButton*, LoadButton*, StateHold)\n",
+      printf("[boot] controls: %s (Caliza/Button*, SwapSticks, InvertLeft, InvertRight, LeftStickDpad, DeadzoneLeft, DeadzoneRight, PauseButton*, SaveButton*, LoadButton*, DiscButton*, StateHold)\n",
         orbis_padmap::Describe(map).c_str());
       fflush(stdout);
     }
@@ -2253,6 +2272,7 @@ static void orbis_back_to_menu()
   // resumed game. Drop them so a stale save/load/disc/fast-forward cannot fire unexpectedly
   // on the next pump after the failed re-exec. needs proper testing.
   g_orbis_state_request.store(0, std::memory_order_release);
+  OrbisPauseMenuReset();
   VMManager::SetState(VMState::Running);
 }
 
@@ -2757,6 +2777,89 @@ std::vector<std::string> orbis_disc_set()
 {
   std::lock_guard<std::mutex> lock(s_disc_mutex);
   return s_disc_set;
+}
+
+void OrbisDiscStatus(int* out_index, int* out_count, std::string* out_label)
+{
+  std::lock_guard<std::mutex> lock(s_disc_mutex);
+  const int count = static_cast<int>(s_disc_set.size());
+  int index = 0;
+  if (count > 0 && !s_disc_current.empty())
+  {
+    const auto at = std::find(s_disc_set.begin(), s_disc_set.end(), s_disc_current);
+    if (at != s_disc_set.end())
+      index = static_cast<int>(at - s_disc_set.begin()) + 1;
+  }
+  if (out_index)
+    *out_index = index;
+  if (out_count)
+    *out_count = count;
+  if (out_label)
+  {
+    const size_t slash = s_disc_current.rfind('/');
+    *out_label = (slash == std::string::npos) ? s_disc_current : s_disc_current.substr(slash + 1);
+  }
+}
+
+bool OrbisChangeDiscIndexCpu(int target_index_1based, std::string* out_label, std::string* out_error)
+{
+  std::string to;
+  int number = 0, count = 0;
+  {
+    std::lock_guard<std::mutex> lock(s_disc_mutex);
+    count = static_cast<int>(s_disc_set.size());
+    if (count < 2)
+    {
+      if (out_error)
+        *out_error = "Single-disc game";
+      return false;
+    }
+    if (target_index_1based >= 1 && target_index_1based <= count)
+    {
+      to = s_disc_set[static_cast<size_t>(target_index_1based - 1)];
+      number = target_index_1based;
+    }
+    else
+    {
+      const auto at = std::find(s_disc_set.begin(), s_disc_set.end(), s_disc_current);
+      const int i = at == s_disc_set.end() ? -1 : static_cast<int>(at - s_disc_set.begin());
+      const int next = (i + 1) % count;
+      to = s_disc_set[static_cast<size_t>(next)];
+      number = next + 1;
+    }
+  }
+  if (to.empty())
+  {
+    if (out_error)
+      *out_error = "No disc image selected";
+    return false;
+  }
+  const bool ok = VMManager::ChangeDisc(CDVD_SourceType::Iso, to);
+  if (ok)
+  {
+    std::lock_guard<std::mutex> lock(s_disc_mutex);
+    s_disc_current = to;
+  }
+  char osd_label[48];
+  if (!ok)
+    std::snprintf(osd_label, sizeof(osd_label), "DISC CHANGE FAILED");
+  else
+    std::snprintf(osd_label, sizeof(osd_label), "DISC %d OF %d", number, count);
+  OrbisOSDLabel(osd_label);
+  const size_t slash = to.rfind('/');
+  const char* base = (slash == std::string::npos) ? to.c_str() : to.c_str() + slash + 1;
+  printf("[disc] pause menu: %s (%s)\n", to.c_str(), ok ? osd_label : "failed");
+  orbis_eventf("change disc: %s%s", base, ok ? "" : " (failed)");
+  fflush(stdout);
+  if (ok)
+  {
+    if (out_label)
+      *out_label = "Disc " + std::to_string(number) + " of " + std::to_string(count);
+    return true;
+  }
+  if (out_error)
+    *out_error = "Disc change failed";
+  return false;
 }
 
 bool orbis_request_disc(const std::string& path)

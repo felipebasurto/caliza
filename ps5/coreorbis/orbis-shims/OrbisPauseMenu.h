@@ -4,8 +4,8 @@
 //
 // Threads:
 //   - OrbisPauseMenuPadTick runs on the pad thread (main-boot.cpp orbis_pad_thread): it owns the
-//     menu model, translates the controller into caliza::Input and answers whether the game's
-//     input must be neutralised this iteration.
+//     menu model, evaluates the configured pause combo, translates the controller into
+//     caliza::Input and answers whether the game's input must be neutralised this iteration.
 //   - OrbisPauseMenuPumpCpu runs on the CPU/main thread, both from StubHost's vsync pump while
 //     the VM executes and from main()'s paused loop: every VMManager call stays on the thread
 //     that owns the VM.
@@ -16,18 +16,21 @@
 
 #pragma once
 
+#include "OrbisPadMap.h"
+
 #include <cstdint>
 
 struct OrbisPausePadState
 {
-	uint32_t buttons = 0; // ScePad bits; 0x1 is the DualSense's Create button (the old Share)
+	uint32_t buttons = 0; // ScePad bits (never uses Share/Create bit 0x1 to avoid GoldHEN clash)
+	uint8_t l2 = 0, r2 = 0;
 	uint8_t lx = 128, ly = 128, rx = 128, ry = 128;
+	int touch = 0; // 0 none/middle, 1 touchpad left third, 2 touchpad right third
 };
 
 // Pad thread. True when this iteration's input must not reach the game (the overlay is open, or
-// the buttons that closed it are still held). The Create button edge opens the overlay while the
-// VM runs or is paused.
-bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, double dt);
+// the buttons that closed it are still held). Uses cfg.pause (default L3+R3 + L1) and cfg.hold_ms.
+bool OrbisPauseMenuPadTick(const OrbisPausePadState& pad, const orbis_padmap::Config& cfg, long long now_ms, double dt);
 
 // CPU thread. Executes the queued runtime commands in post order and publishes the VM status.
 void OrbisPauseMenuPumpCpu();

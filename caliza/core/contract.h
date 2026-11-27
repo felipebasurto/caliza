@@ -183,6 +183,10 @@ struct VmStatus
 	std::string title;
 	bool can_save = false;
 	bool can_load = false;
+	uint32_t occupied_slots = 0; // bit s (1u << s) set when slot s (1..10) has a save state or backup
+	int disc_index = 0;          // 1-based current disc in multi-disc set (0 when single/unknown)
+	int disc_count = 0;          // total discs in set (>=2 enables disc swap)
+	std::string disc_label;      // short current disc name when known
 	bool progress_seen = false;
 	std::string message;
 };
