@@ -2783,10 +2783,13 @@ void VMManager::InitializeCPUProviders()
 	const bool vifrec_off = ::OrbisFlag("novifrec");
 	const bool eretfast_off = ::OrbisFlag("noeretfast");
 	const bool vifslow_off = ::OrbisFlag("vifslow");
+	const bool plzcw_has_abm = OrbisCpuHasLzcnt();
+	const bool plzcw_off = ::OrbisFlag("noplzcw");
 
 	newVifDynaRec = code_exec && !vifrec_off;
 	g_orbis_eret_fast.store(eretfast_off ? 0 : 1, std::memory_order_relaxed);
 	g_orbis_vif_fast.store(vifslow_off ? 0 : 1, std::memory_order_relaxed);
+	g_orbis_ee_plzcw_lzcnt.store((plzcw_has_abm && !plzcw_off) ? 1 : 0, std::memory_order_relaxed);
 
 	printf("[perf] vif_unpack_rec: %s (%s)\n",
 		newVifDynaRec ? "on" : "off",
@@ -2797,6 +2800,10 @@ void VMManager::InitializeCPUProviders()
 	printf("[perf] vif1_fast_and_mpg_skip: %s (%s)\n",
 		vifslow_off ? "off" : "on",
 		vifslow_off ? "flags/vifslow" : "default");
+	printf("[perf] ee_plzcw_lzcnt: %s (%s) emits=%llu\n",
+		(plzcw_has_abm && !plzcw_off) ? "on" : "off",
+		!plzcw_has_abm ? "no CPU ABM/LZCNT" : (plzcw_off ? "flags/noplzcw" : "default"),
+		static_cast<unsigned long long>(g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed)));
 	fflush(stdout);
 
 	if (code_exec)

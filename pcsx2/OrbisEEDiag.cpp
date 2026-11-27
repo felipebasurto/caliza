@@ -81,6 +81,26 @@ u64 g_orbis_waitloop_ext_blocks = 0, g_orbis_waitloop_ext_runs = 0; // vk-285-12
 alignas(64) char g_orbis_ee_counters_fence[64] = {};
 OrbisDvifStats g_orbis_dvif_stats[2] = {};
 
+alignas(64) std::atomic<int> g_orbis_ee_plzcw_lzcnt{1};
+alignas(64) std::atomic<u64> g_orbis_plzcw_lzcnt_emits{0};
+
+bool OrbisCpuHasLzcnt()
+{
+#if defined(__x86_64__) || defined(_M_X64)
+	static const bool s_has_lzcnt = []() {
+		u32 eax = 0, ebx = 0, ecx = 0, edx = 0;
+		asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000000u));
+		if (eax < 0x80000001u)
+			return false;
+		asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000001u));
+		return (ecx & (1u << 5)) != 0; // ABM / LZCNT
+	}();
+	return s_has_lzcnt;
+#else
+	return false;
+#endif
+}
+
 // The EE core's cycles per TSC tick, x1e6, measured on the EE thread every 300 vsyncs (0: not yet).
 static std::atomic<u64> s_orbis_ee_ratio_u{0};
 
@@ -194,6 +214,7 @@ void OrbisEEDiagSecond(bool print)
 		{g_orbis_nt_store, OrbisHasFlag("ntstore") ? 1 : 0, "GS streaming stores"},
 		{g_orbis_gs_pfw, OrbisHasFlag("nogspfw") ? 0 : 1, "GS stream prefetch"}, // vk-285-107: on unless flags/nogspfw
 		{g_orbis_waitloop_ext, OrbisHasFlag("waitloop_upstream") ? 0 : 1, "wider wait-loop rule"}, // vk-285-126
+		{g_orbis_ee_plzcw_lzcnt, (!OrbisCpuHasLzcnt() || OrbisHasFlag("noplzcw")) ? 0 : 1, "EE PLZCW LZCNT"},
 	};
 	bool changed = diag != was_diag;
 	for (Switch& sw : switches)
@@ -251,6 +272,20 @@ void OrbisEEDiagSecond(bool print)
 				static_cast<unsigned long long>(cur[17] - s_prev[17]), static_cast<unsigned long long>(cur[18] - s_prev[18]),
 				static_cast<unsigned long long>(cur[10] - s_prev[10]), static_cast<unsigned long long>(cur[11]));
 		std::memcpy(s_prev, cur, sizeof(cur));
+	}
+
+	// Caliza adopted optimization/guard counters (printed when any counter advances).
+	{
+		static u64 s_caliza_prev[1] = {};
+		const u64 caliza_cur[1] = {
+			g_orbis_plzcw_lzcnt_emits.load(std::memory_order_relaxed),
+		};
+		if (std::memcmp(caliza_cur, s_caliza_prev, sizeof(caliza_cur)) != 0)
+		{
+			printf("[calizaperf] total: plzcw_lzcnt=%llu\n",
+				static_cast<unsigned long long>(caliza_cur[0]));
+			std::memcpy(s_caliza_prev, caliza_cur, sizeof(caliza_cur));
+		}
 	}
 
 	// [cpuclk] every 5 s: the TSC's rate against steady_clock over the 5 s, and the EE's and this (GS)

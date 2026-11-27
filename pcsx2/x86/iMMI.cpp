@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
+#include "OrbisEEDiag.h"
 #include "R5900OpcodeTables.h"
 #include "iR5900.h"
 #include "common/BitUtils.h"
@@ -111,19 +112,42 @@ void recPLZCW()
 
 	// --- first word ---
 
-	xMOV(ecx, 31);
-	xTEST(eax, eax); // TEST sets the sign flag accordingly.
-	u8* label_notSigned = JNS8(0);
-	xNOT(eax);
-	x86SetJ8(label_notSigned);
+	// Adapted from Forja SX2 (GPL-3.0+, app 173, commit 5e3e38c): branchless PLZCW using ABM LZCNT
+	// (supported natively on PS4 AMD Jaguar / btver2). Bit-exact across all 2^32 inputs:
+	// lzcnt(x ^ (x >> 31)) - 1 yields 31 for x == 0 and x == -1 because lzcnt(0) == 32.
+	// Disabled via /data/caliza/flags/noplzcw or when host CPU lacks ABM/LZCNT.
+	const bool use_lzcnt = g_orbis_ee_plzcw_lzcnt.load(std::memory_order_relaxed) != 0 && OrbisCpuHasLzcnt();
+	const auto emit_plzcw_lzcnt = []() {
+		xMOV(ecx, eax);
+		xSAR(ecx, 31);
+		xXOR(eax, ecx);
+		xWrite8(0xF3); // LZCNT eax, eax is BSR with an F3 prefix
+		xBSR(eax, eax);
+		xDEC(eax);
+	};
 
-	xBSR(eax, eax);
-	u8* label_Zeroed = JZ8(0); // If BSR sets the ZF, eax is "trash"
-	xSUB(ecx, eax);
-	xDEC(ecx); // PS2 doesn't count the first bit
+	if (use_lzcnt)
+	{
+		emit_plzcw_lzcnt();
+		xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[0]], eax);
+		g_orbis_plzcw_lzcnt_emits.fetch_add(1, std::memory_order_relaxed);
+	}
+	else
+	{
+		xMOV(ecx, 31);
+		xTEST(eax, eax); // TEST sets the sign flag accordingly.
+		u8* label_notSigned = JNS8(0);
+		xNOT(eax);
+		x86SetJ8(label_notSigned);
 
-	x86SetJ8(label_Zeroed);
-	xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[0]], ecx);
+		xBSR(eax, eax);
+		u8* label_Zeroed = JZ8(0); // If BSR sets the ZF, eax is "trash"
+		xSUB(ecx, eax);
+		xDEC(ecx); // PS2 doesn't count the first bit
+
+		x86SetJ8(label_Zeroed);
+		xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[0]], ecx);
+	}
 
 	// second word
 
@@ -141,19 +165,27 @@ void recPLZCW()
 		xMOV(eax, ptr[&cpuRegs.GPR.r[_Rs_].UL[1]]);
 	}
 
-	xMOV(ecx, 31);
-	xTEST(eax, eax); // TEST sets the sign flag accordingly.
-	label_notSigned = JNS8(0);
-	xNOT(eax);
-	x86SetJ8(label_notSigned);
+	if (use_lzcnt)
+	{
+		emit_plzcw_lzcnt();
+		xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[1]], eax);
+	}
+	else
+	{
+		xMOV(ecx, 31);
+		xTEST(eax, eax); // TEST sets the sign flag accordingly.
+		u8* label_notSigned = JNS8(0);
+		xNOT(eax);
+		x86SetJ8(label_notSigned);
 
-	xBSR(eax, eax);
-	label_Zeroed = JZ8(0); // If BSR sets the ZF, eax is "trash"
-	xSUB(ecx, eax);
-	xDEC(ecx); // PS2 doesn't count the first bit
+		xBSR(eax, eax);
+		u8* label_Zeroed = JZ8(0); // If BSR sets the ZF, eax is "trash"
+		xSUB(ecx, eax);
+		xDEC(ecx); // PS2 doesn't count the first bit
 
-	x86SetJ8(label_Zeroed);
-	xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[1]], ecx);
+		x86SetJ8(label_Zeroed);
+		xMOV(ptr[&cpuRegs.GPR.r[_Rd_].UL[1]], ecx);
+	}
 
 	GPR_DEL_CONST(_Rd_);
 }

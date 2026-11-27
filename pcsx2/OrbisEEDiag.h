@@ -63,6 +63,12 @@ extern OrbisDvifStats g_orbis_dvif_stats[2];
 extern std::atomic<int> g_orbis_waitloop_ext;
 extern u64 g_orbis_waitloop_ext_blocks, g_orbis_waitloop_ext_runs;
 
+// Caliza adopted accuracy-preserving switches and counters (each with a /data/caliza/flags/ off-switch).
+extern std::atomic<int> g_orbis_ee_plzcw_lzcnt; // 1 unless flags/noplzcw (and CPU has ABM/LZCNT)
+extern std::atomic<u64> g_orbis_plzcw_lzcnt_emits;
+
+bool OrbisCpuHasLzcnt();
+
 #define ORBIS_EEDIAG(expr) \
 	do \
 	{ \
