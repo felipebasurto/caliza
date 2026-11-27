@@ -138,7 +138,8 @@ const GROUPS = [
     item(calizaKey("UiReduceMotion"), "Reduce motion", "toggle", "false", { short: "Motion %" }),
     item(calizaKey("UiLargeFocus"), "Large focus indicator", "toggle", "true", { short: "Focus %" }),
   ]},
-  { title: "State and disc shortcuts", tab: "controls", hint: "Combos use two physical buttons held together. These shortcuts do not depend on the in-game remapping below.", items: [
+  { title: "Pause, state and disc shortcuts", tab: "controls", hint: "Combos use two physical buttons held together and avoid Share/PS system and GoldHEN shortcuts. These shortcuts do not depend on the in-game remapping below.", items: [
+    comboItem("PauseButton1", "Pause menu: first button", "L3R3", "Pause menu"), comboItem("PauseButton2", "Pause menu: second button", "L1"),
     comboItem("SaveButton1", "Save: first button", "L3R3", "Save state"), comboItem("SaveButton2", "Save: second button", "Up"),
     comboItem("LoadButton1", "Load: first button", "L3R3", "Load state"), comboItem("LoadButton2", "Load: second button", "Down"),
     item(calizaKey("StateHold"), "Hold time", "seg", "0", { cols: 6, options: [["0","Instant"],["0.5","0.5 s"],["1","1 s"],["1.5","1.5 s"],["2","2 s"],["3","3 s"]], hint: "A longer hold prevents accidental saves and loads." }),

@@ -161,7 +161,7 @@ bool DecodePatchMemberId(const std::string& encoded, PatchMemberRef* out)
 	return true;
 }
 
-settings::DocumentState CanonicalDocument(const settings::DocumentState& input)
+settings::DocumentState CanonicalDocument(const settings::DocumentState& input, bool* pause_migrated = nullptr)
 {
 	settings::DocumentState out;
 	for (const auto& kv : input.values)
@@ -175,6 +175,9 @@ settings::DocumentState CanonicalDocument(const settings::DocumentState& input)
 	}
 	out.patches = input.patches;
 	out.cheats = input.cheats;
+	const bool migrated = settings::MigrateLegacyPauseCombo(&out);
+	if (pause_migrated)
+		*pause_migrated = migrated;
 	return out;
 }
 
@@ -202,6 +205,7 @@ public:
 	{
 		if (!m_storage)
 			m_storage = CreateBackend(m_options.storage);
+		MigrateLegacyPauseBindingOnDisk();
 		RefreshProjection(true);
 		SyncFolderProjection();
 		m_worker = std::thread([this] { WorkerMain(); });
@@ -598,6 +602,31 @@ private:
 			default:
 				return Unsupported("this command");
 		}
+	}
+
+	void MigrateLegacyPauseBindingOnDisk()
+	{
+		if (!m_options.hooks.edit_settings_file || m_options.global_settings_path.empty())
+			return;
+		std::string text, read_error;
+		const bool ok = m_options.hooks.read_text_file
+			? m_options.hooks.read_text_file(m_options.global_settings_path, &text, &read_error)
+			: storage::fs::ReadFile(m_options.global_settings_path, &text, &read_error);
+		if (!ok || text.empty())
+			return;
+		bool migrated = false;
+		const settings::DocumentState doc = CanonicalDocument(settings::ParseSettingsDocument(text), &migrated);
+		if (!migrated)
+			return;
+		const std::string* p1 = settings::FindValue(doc, "Caliza/PauseButton1");
+		const std::string* p2 = settings::FindValue(doc, "Caliza/PauseButton2");
+		if (!p1 || !p2)
+			return;
+		std::vector<settings::Mutation> mutations;
+		mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseButton1", *p1});
+		mutations.push_back({settings::Mutation::Kind::Set, "Caliza/PauseButton2", *p2});
+		std::string summary, write_error;
+		m_options.hooks.edit_settings_file(m_options.global_settings_path, mutations, &summary, &write_error);
 	}
 
 	bool ReadSettingsDocument(const std::string& path, settings::DocumentState* out, std::string* error)

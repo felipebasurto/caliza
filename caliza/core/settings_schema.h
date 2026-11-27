@@ -228,6 +228,9 @@ DocumentState ParseSettingsDocument(const std::string& text);
 std::string SerializeSettingsDocument(const DocumentState& state);
 const std::string* FindValue(const DocumentState& state, const std::string& key);
 std::string EffectiveValue(const SettingDef& def, const DocumentState& own, const DocumentState& global, bool* inherited = nullptr);
+// Replaces legacy Share/Create pause bindings in `doc` with the GoldHEN-safe default (L3R3 + L1).
+// Returns true when `doc` was modified.
+bool MigrateLegacyPauseCombo(DocumentState* doc);
 
 struct Mutation
 {

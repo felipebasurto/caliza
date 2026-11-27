@@ -228,6 +228,7 @@ std::vector<OptionChoice> ComboChoices()
 // The Buttons group: the save and load combos and their hold time first, then a row for each button.
 std::vector<OptionDef> ButtonsGroup()
 {
+	constexpr const char* pause_hint = "Hold both pause menu buttons together to open or close the in-game pause menu. The default is L3 + R3 with L1, avoiding GoldHEN's long-press Share shortcut. Nothing on both disables the combo.";
 	constexpr const char* save_hint = "Hold both save buttons together to save the state (slot 1). L3 + R3: both sticks pressed in. Touchpad "
 									  "left or right: a finger on that side. Nothing, or the same button twice, makes it one button. F1 on a "
 									  "keyboard saves too.";
@@ -237,6 +238,8 @@ std::vector<OptionDef> ButtonsGroup()
 	constexpr const char* fast_hint = "Experimental, for skipping videos: hold both fast forward buttons together (for the hold time above) to run the game as fast as it goes, and again to go back to full speed. Nothing on both: no fast forward button. Sound may skip while it's on.";
 	constexpr const char* disc_hint = "Hold both change disc buttons together to put in the game's next disc: images named \"(Disc 1)\", \"(Disc 2)\"... in the same folder, or listed in an .m3u file, are one game's discs. Any image (a GameShark disc's game, say) goes in from the settings page's Disc section while you play. Nothing on both: no change disc button.";
 	std::vector<OptionDef> out = {
+		Seg("Caliza/PauseButton1", "Pause menu: button 1", "L3R3", "", ComboChoices(), pause_hint),
+		Seg("Caliza/PauseButton2", "Pause menu: button 2", "L1", "", ComboChoices(), pause_hint),
 		Seg("Caliza/SaveButton1", "Save: button 1", "L3R3", "", ComboChoices(), save_hint),
 		Seg("Caliza/SaveButton2", "Save: button 2", "Up", "", ComboChoices(), save_hint),
 		Seg("Caliza/LoadButton1", "Load: button 1", "L3R3", "", ComboChoices(), load_hint),

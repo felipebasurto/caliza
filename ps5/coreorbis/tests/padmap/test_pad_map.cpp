@@ -419,6 +419,87 @@ int main()
 		CHECK(w.Update(c.fast, c.hold_ms, st, 0, block) && !w.Update(c.fast, c.hold_ms, st, 10, block));
 	}
 
+	// Pause menu combo: defaults to L3+R3 + L1 (never Share/Create bit 0x1), remappable, and
+	// migrates legacy Share/Create values automatically so GoldHEN never clashes.
+	{
+		const Config def = From({});
+		CHECK(def.pause[0] == CB_L3R3 && def.pause[1] == CB_L1);
+		CHECK(DescribeCombo(def.pause, def.hold_ms) == "L3+R3 + L1");
+		CHECK(def.IsDefault());
+
+		// Default combo fires on L3+R3 + L1, ignores Share/Create bit 0x1, and does not clash with L3+R3 + Up (save).
+		ComboWatch pause_w, save_w;
+		ComboState st;
+		uint32_t block = 0;
+		st.buttons = 0x00000001u; // Share/Create alone must never fire pause
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 0, block));
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 2500, block));
+		st.buttons = 0x6u | 0x10u; // L3+R3 + Up: save fires, pause does not
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 2600, block));
+		CHECK(save_w.Update(def.save, def.hold_ms, st, 2600, block));
+		st.buttons = 0x6u; // L3+R3 held
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 2610, block));
+		st.buttons = 0x6u | 0x400u; // + L1: pause fires once and suppresses L1
+		block = 0;
+		CHECK(pause_w.Update(def.pause, def.hold_ms, st, 2620, block));
+		CHECK(block == 0x400u);
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 2630, block));
+		st.buttons = 0; // release re-arms
+		CHECK(!pause_w.Update(def.pause, def.hold_ms, st, 2640, block));
+		st.buttons = 0x6u | 0x400u;
+		CHECK(pause_w.Update(def.pause, def.hold_ms, st, 2650, block));
+
+		// Custom remapping and disabling.
+		bool migrated = true;
+		const Config custom = FromSettings([&](const char* key, std::string& v) {
+			if (std::string(key) == "PauseButton1") { v = "Options"; return true; }
+			if (std::string(key) == "PauseButton2") { v = "Touchpad"; return true; }
+			return false;
+		}, &migrated);
+		CHECK(!migrated);
+		CHECK(custom.pause[0] == CB_OPTIONS && custom.pause[1] == CB_TOUCHPAD);
+		CHECK(Describe(custom) == "pause menu on Options + the touchpad's click");
+
+		const Config disabled = FromSettings([&](const char* key, std::string& v) {
+			if (std::string(key) == "PauseButton1" || std::string(key) == "PauseButton2") { v = "None"; return true; }
+			return false;
+		}, &migrated);
+		CHECK(!migrated);
+		CHECK(disabled.pause[0] == CB_NONE && disabled.pause[1] == CB_NONE);
+
+		// Legacy Share/Create pause bindings migrate to L3R3 + L1 (preserving a custom partner when present).
+		for (const char* legacy : {"Share", "Create", "sharehold", "CreateHold", "ShareLong", "CreateLong"})
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = legacy; return true; }
+				return false;
+			}, &m);
+			CHECK(m);
+			CHECK(c.pause[0] == CB_L3R3 && c.pause[1] == CB_L1);
+		}
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = "Share"; return true; }
+				if (std::string(key) == "PauseButton2") { v = "Options"; return true; }
+				return false;
+			}, &m);
+			CHECK(m);
+			CHECK(c.pause[0] == CB_L3R3 && c.pause[1] == CB_OPTIONS);
+		}
+		{
+			bool m = false;
+			const Config c = FromSettings([&](const char* key, std::string& v) {
+				if (std::string(key) == "PauseButton1") { v = "L3R3"; return true; }
+				if (std::string(key) == "PauseButton2") { v = "Create"; return true; }
+				return false;
+			}, &m);
+			CHECK(m);
+			CHECK(c.pause[0] == CB_L3R3 && c.pause[1] == CB_L1);
+		}
+	}
+
 	if (s_failures == 0)
 		printf("test_pad_map: all checks passed\n");
 	return s_failures == 0 ? 0 : 1;

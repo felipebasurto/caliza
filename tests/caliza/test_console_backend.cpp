@@ -523,6 +523,36 @@ void TestPatchAndCheatTogglePersistence()
 	CHECK_TRUE(written.find("Patches/Enable=60 FPS") == std::string::npos);
 }
 
+void TestLegacyPauseComboMigration()
+{
+	TempDir root;
+	ConsoleBackendOptions options = TestOptions(root);
+	// Seed gs.ini with the old Share/Create pause binding before starting ConsoleBackend.
+	{
+		std::ofstream out(options.global_settings_path);
+		out << "Caliza/PauseButton1=Share\nCaliza/PauseButton2=None\n";
+	}
+	ConsoleBackend backend(options);
+	const Snapshot snap = backend.GetSnapshot();
+	const SettingItem* p1 = nullptr;
+	const SettingItem* p2 = nullptr;
+	for (const SettingCategory& category : snap.settings)
+	{
+		for (const SettingItem& item : category.items)
+		{
+			if (item.id == "Caliza/PauseButton1")
+				p1 = &item;
+			else if (item.id == "Caliza/PauseButton2")
+				p2 = &item;
+		}
+	}
+	CHECK_TRUE(p1 != nullptr && p1->value == "L3R3");
+	CHECK_TRUE(p2 != nullptr && p2->value == "L1");
+	// Startup migration also upgrades gs.ini on disk so the old Share binding is removed.
+	const std::string on_disk = ReadFile(options.global_settings_path);
+	CHECK_TRUE(on_disk.find("Share") == std::string::npos);
+}
+
 } // namespace
 
 int main()
@@ -536,6 +566,7 @@ int main()
 	TestProductionServiceCommandHooks();
 	TestAsyncProjectionRefreshOffRenderThread();
 	TestPatchAndCheatTogglePersistence();
+	TestLegacyPauseComboMigration();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");

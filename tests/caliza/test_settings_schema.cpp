@@ -80,6 +80,8 @@ const char* const kCompatibilityKeys[] = {
 	"CropTop",
 	"CropRight",
 	"CropBottom",
+	"Caliza/PauseButton1",
+	"Caliza/PauseButton2",
 	"Caliza/SaveButton1",
 	"Caliza/SaveButton2",
 	"Caliza/LoadButton1",
@@ -263,9 +265,9 @@ void TestInventory()
 	using namespace caliza::settings;
 	CHECK(kSchemaVersion == 1);
 	CHECK(Groups().size() == 21);
-	CHECK(Settings().size() == 117);
+	CHECK(Settings().size() == 119);
 	CHECK(Actions().size() == 49);
-	CheckHash(SettingsInventoryHash(), 0x8b0e6ba783e550e1ull, "settings");
+	CheckHash(SettingsInventoryHash(), 0xd84e28bbdb6811acull, "settings");
 	CheckHash(ActionsInventoryHash(), 0x61f27149f87f73c3ull, "actions");
 	CHECK(sizeof(kCompatibilityKeys) / sizeof(kCompatibilityKeys[0]) == Settings().size());
 
@@ -381,7 +383,7 @@ void TestInventory()
 	CHECK(manual_fixes == 10);
 	CHECK(saw_master);
 
-	for (const char* pair_key : {"Caliza/SaveButton1", "Caliza/LoadButton1", "Caliza/FastButton1", "Caliza/DiscButton1"})
+	for (const char* pair_key : {"Caliza/PauseButton1", "Caliza/SaveButton1", "Caliza/LoadButton1", "Caliza/FastButton1", "Caliza/DiscButton1"})
 	{
 		const SettingDef* first = FindSettingByKey(pair_key);
 		CHECK(first != nullptr);
@@ -447,7 +449,8 @@ void TestLegacyKeyMigration()
 	size_t migratable_canonical_keys = 0;
 	for (const SettingDef& def : Settings())
 		if (def.compatibility_key.compare(0, 7, "Caliza/") == 0 && def.compatibility_key.compare(0, 9, "Caliza/Ui") != 0 &&
-			def.compatibility_key != "Caliza/VUClampMode")
+			def.compatibility_key != "Caliza/VUClampMode" && def.compatibility_key != "Caliza/PauseButton1" &&
+			def.compatibility_key != "Caliza/PauseButton2")
 			++migratable_canonical_keys;
 	CHECK(migratable_canonical_keys == migrations.size());
 	std::set<std::string> legacy_keys, canonical_keys;
@@ -493,6 +496,32 @@ void TestLegacyKeyMigration()
 	const std::string* migrated_folders = FindValue(migrated, "Caliza/GameFolders");
 	CHECK(migrated_renderer != nullptr && *migrated_renderer == "Hardware");
 	CHECK(migrated_folders != nullptr && *migrated_folders == "/data/caliza/games");
+
+	// Legacy Share/Create pause bindings migrate to L3R3 + L1 in both MigrateIniText and MigrateLegacyPauseCombo.
+	{
+		const std::string share_ini = "Caliza/PauseButton1=Share\nCaliza/PauseButton2=None\n";
+		const std::string fixed_text = caliza::legacy::MigrateIniText(share_ini);
+		const DocumentState fixed_doc = ParseSettingsDocument(fixed_text);
+		const std::string* p1 = FindValue(fixed_doc, "Caliza/PauseButton1");
+		const std::string* p2 = FindValue(fixed_doc, "Caliza/PauseButton2");
+		CHECK(p1 != nullptr && *p1 == "L3R3");
+		CHECK(p2 != nullptr && *p2 == "L1");
+	}
+	{
+		DocumentState doc = ParseSettingsDocument("Caliza/PauseButton1=CreateHold\n");
+		CHECK(MigrateLegacyPauseCombo(&doc));
+		const std::string* p1 = FindValue(doc, "Caliza/PauseButton1");
+		const std::string* p2 = FindValue(doc, "Caliza/PauseButton2");
+		CHECK(p1 != nullptr && *p1 == "L3R3");
+		CHECK(p2 != nullptr && *p2 == "L1");
+		CHECK(!MigrateLegacyPauseCombo(&doc)); // idempotent after migration
+	}
+	{
+		DocumentState custom = ParseSettingsDocument("Caliza/PauseButton1=Options\nCaliza/PauseButton2=Touchpad\n");
+		CHECK(!MigrateLegacyPauseCombo(&custom));
+		CHECK(*FindValue(custom, "Caliza/PauseButton1") == "Options");
+		CHECK(*FindValue(custom, "Caliza/PauseButton2") == "Touchpad");
+	}
 }
 
 void TestSerialization()

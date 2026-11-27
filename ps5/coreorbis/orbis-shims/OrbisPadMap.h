@@ -10,6 +10,9 @@
 //   Caliza/InvertLeft, InvertRight = 0 no, 1 up-down, 2 left-right, 3 both: the PS2 stick's axes (after the swap).
 //   Caliza/LeftStickDpad = 0 no, 1 the PS2's left stick also presses the D-pad, 2 it presses only the D-pad (the stick
 //     itself stays in the middle).
+//   Caliza/PauseButton1, PauseButton2 = the two buttons held together to open or close the in-game pause menu. Unset:
+//     L3R3 + L1 (avoids GoldHEN's long-press Share and PS4 system Share/PS combos). Legacy Share/Create values migrate
+//     automatically to L3R3 + L1.
 //   Caliza/SaveButton1, SaveButton2, LoadButton1, LoadButton2 = the two buttons held together to save or load the state
 //     (slot 1): L3R3 (both stick clicks) Cross Circle Square Triangle L1 R1 L2 R2 L3 R3 Options Touchpad (its click)
 //     TouchLeft TouchRight (a finger on the touchpad's left or right third) Up Down Left Right, or None. Unset: L3R3 + Up
@@ -207,6 +210,53 @@ inline bool ParseComboButton(std::string v, ComboButton& out)
 	return false;
 }
 
+constexpr ComboButton kDefaultPauseButton1 = CB_L3R3;
+constexpr ComboButton kDefaultPauseButton2 = CB_L1;
+
+// Legacy Share/Create pause trigger names that clash with GoldHEN's cheat menu (long-press Share)
+// and PS4 system Share interception.
+inline bool IsLegacyPauseTrigger(std::string v)
+{
+	while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '\r'))
+		v.pop_back();
+	size_t start = 0;
+	while (start < v.size() && (v[start] == ' ' || v[start] == '\t'))
+		start++;
+	v.erase(0, start);
+	return SameText(v, "Share") || SameText(v, "Create") || SameText(v, "ShareHold") || SameText(v, "CreateHold") ||
+	       SameText(v, "ShareLong") || SameText(v, "CreateLong");
+}
+
+// Replaces any legacy Share/Create pause binding with the GoldHEN-safe default (L3R3 + L1),
+// preserving a valid custom second button when present. Returns true if either value changed.
+inline bool MigratePauseButtons(std::string& button1, std::string& button2)
+{
+	const bool leg1 = IsLegacyPauseTrigger(button1);
+	const bool leg2 = IsLegacyPauseTrigger(button2);
+	if (!leg1 && !leg2)
+		return false;
+	if (leg1 && leg2)
+	{
+		button1 = ComboButtonName(kDefaultPauseButton1);
+		button2 = ComboButtonName(kDefaultPauseButton2);
+		return true;
+	}
+	std::string& leg = leg1 ? button1 : button2;
+	std::string& other = leg1 ? button2 : button1;
+	ComboButton parsed = CB_NONE;
+	if (!ParseComboButton(other, parsed) || parsed == CB_NONE)
+	{
+		button1 = ComboButtonName(kDefaultPauseButton1);
+		button2 = ComboButtonName(kDefaultPauseButton2);
+	}
+	else
+	{
+		const ComboButton replacement = (parsed == kDefaultPauseButton1) ? kDefaultPauseButton2 : kDefaultPauseButton1;
+		leg = ComboButtonName(replacement);
+	}
+	return true;
+}
+
 // The ScePad bits a combo button is (0 for the touchpad's zones, which are a touch, not a button; L2 and R2 are also
 // held by their triggers).
 inline uint32_t ComboBits(ComboButton b)
@@ -251,6 +301,8 @@ struct Config
 	uint8_t deadzone_right = 0;
 	uint8_t invert_left = 0;  // bit 0 up-down, bit 1 left-right
 	uint8_t invert_right = 0;
+	// In-game pause menu combo (Caliza/PauseButton1/2): L3+R3 + L1 by default (avoids GoldHEN Share / system PS).
+	ComboButton pause[2] = {kDefaultPauseButton1, kDefaultPauseButton2};
 	// vk-285-117: the save and load state combos (two buttons each) and how long they're held first.
 	ComboButton save[2] = {CB_L3R3, CB_UP};
 	ComboButton load[2] = {CB_L3R3, CB_DOWN};
@@ -277,6 +329,7 @@ struct Config
 				return false;
 		return swap_sticks == o.swap_sticks && left_dpad == o.left_dpad && deadzone_left == o.deadzone_left &&
 		       deadzone_right == o.deadzone_right && invert_left == o.invert_left && invert_right == o.invert_right &&
+		       pause[0] == o.pause[0] && pause[1] == o.pause[1] &&
 		       save[0] == o.save[0] && save[1] == o.save[1] && load[0] == o.load[0] && load[1] == o.load[1] && hold_ms == o.hold_ms &&
 		       fast[0] == o.fast[0] && fast[1] == o.fast[1] && disc[0] == o.disc[0] && disc[1] == o.disc[1];
 	}
@@ -314,8 +367,10 @@ inline float ParsePressure(const std::string& v)
 // The settings, read with `get(key, value)` (the key within [Caliza]; true when it is set). An unknown value leaves that
 // button or stick option as it is by default.
 template <typename Get>
-inline Config FromSettings(Get get)
+inline Config FromSettings(Get get, bool* pause_migrated = nullptr)
 {
+	if (pause_migrated)
+		*pause_migrated = false;
 	Config c;
 	std::string v;
 	for (int s = 0; s < S_COUNT; s++)
@@ -346,6 +401,24 @@ inline Config FromSettings(Get get)
 	v.clear();
 	if (get("InvertRight", v))
 		c.invert_right = SmallInt(v, 3);
+	// Pause menu combo: migrate legacy Share/Create bindings automatically so GoldHEN never clashes.
+	{
+		std::string p1, p2;
+		bool has_p1 = get("PauseButton1", p1);
+		bool has_p2 = get("PauseButton2", p2);
+		if (MigratePauseButtons(p1, p2))
+		{
+			if (pause_migrated)
+				*pause_migrated = true;
+			has_p1 = true;
+			has_p2 = true;
+		}
+		ComboButton b;
+		if (has_p1 && ParseComboButton(p1, b))
+			c.pause[0] = b;
+		if (has_p2 && ParseComboButton(p2, b))
+			c.pause[1] = b;
+	}
 	// vk-285-117: the save and load combos; a value that isn't a button leaves that one at its default.
 	static const char* const combo_keys[8] = {"SaveButton1", "SaveButton2", "LoadButton1", "LoadButton2", "FastButton1", "FastButton2",
 		"DiscButton1", "DiscButton2"};
@@ -389,6 +462,20 @@ inline bool ComboHeld(ComboButton b, const ComboState& s)
 		case CB_TOUCH_RIGHT: return s.touch == 2;
 		default: return (s.buttons & ComboBits(b)) != 0;
 	}
+}
+
+inline bool ComboActive(const ComboButton (&b)[2], const ComboState& s)
+{
+	int n = 0;
+	bool all = true;
+	for (ComboButton x : b)
+	{
+		if (x == CB_NONE || x >= CB_COUNT)
+			continue;
+		n++;
+		all = all && ComboHeld(x, s);
+	}
+	return n > 0 && all;
 }
 
 // One combo (save, or load): it fires once its buttons have been held together for hold_ms, and again only after one of
@@ -625,9 +712,11 @@ inline std::string Describe(const Config& c)
 	// vk-285-117: the save and load combos, when they aren't the default.
 	const Config def;
 	std::string states;
+	if (c.pause[0] != def.pause[0] || c.pause[1] != def.pause[1])
+		states = "pause menu on " + DescribeCombo(c.pause, c.hold_ms);
 	if (c.save[0] != def.save[0] || c.save[1] != def.save[1] || c.load[0] != def.load[0] || c.load[1] != def.load[1] ||
 		c.hold_ms != def.hold_ms)
-		states = "save state on " + DescribeCombo(c.save, c.hold_ms) + ", load on " + DescribeCombo(c.load, c.hold_ms);
+		states += (states.empty() ? "" : ", ") + std::string("save state on ") + DescribeCombo(c.save, c.hold_ms) + ", load on " + DescribeCombo(c.load, c.hold_ms);
 	if (c.fast[0] != CB_NONE || c.fast[1] != CB_NONE)
 		states += (states.empty() ? "" : ", ") + std::string("fast forward on ") + DescribeCombo(c.fast, c.hold_ms);
 	std::string out = buttons;
