@@ -68,6 +68,11 @@ echo '== migration =='
 echo '== web panel smoke =='
 (cd caliza/web && node smoke-test.mjs)
 
+if command -v chdman >/dev/null 2>&1; then
+  echo '== real libchdr =='
+  bash ps5/frontend/host/test-chd-real.sh
+fi
+
 echo '== dead-brand audit =='
 python3 ps4/tools/audit_brand.py
 python3 ps4/tools/audit_visible_ps5.py
