@@ -1410,4 +1410,39 @@ std::vector<LibrarySource> SavedSourceStore::Resolve(const std::vector<VolumeInf
 	}
 	return sources;
 }
+
+std::string ResolveGameSettingsPath(const std::string& settings_dir,
+	const std::string& serial,
+	const std::string& stem)
+{
+	std::string safe_serial;
+	size_t begin = 0;
+	while (begin < serial.size() && std::isspace(static_cast<unsigned char>(serial[begin])))
+		++begin;
+	size_t end = serial.size();
+	while (end > begin && std::isspace(static_cast<unsigned char>(serial[end - 1])))
+		--end;
+	bool valid = (end > begin);
+	for (size_t i = begin; i < end && valid; ++i)
+	{
+		const unsigned char c = static_cast<unsigned char>(serial[i]);
+		if (std::isalnum(c) || c == '-' || c == '_')
+			safe_serial.push_back(static_cast<char>(std::toupper(c)));
+		else
+			valid = false;
+	}
+	if (!valid)
+		safe_serial.clear();
+
+	const std::string stem_path = settings_dir + "/" + stem + ".ini";
+	if (safe_serial.empty())
+		return stem_path;
+
+	const std::string serial_path = settings_dir + "/" + safe_serial + ".ini";
+	if (fs::Exists(serial_path))
+		return serial_path;
+	if (!stem.empty() && fs::Exists(stem_path))
+		return stem_path;
+	return serial_path;
+}
 } // namespace caliza::storage

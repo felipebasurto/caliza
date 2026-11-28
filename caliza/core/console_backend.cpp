@@ -854,12 +854,13 @@ private:
 
 	std::string GameSettingsPath(const GameEntry& game) const
 	{
-		std::string stem;
 		if (m_options.game_settings_stem)
-			stem = m_options.game_settings_stem(game);
-		if (stem.empty())
-			stem = StemOf(game.file);
-		return m_options.game_settings_dir + "/" + stem + ".ini";
+		{
+			const std::string custom = m_options.game_settings_stem(game);
+			if (!custom.empty())
+				return m_options.game_settings_dir + "/" + custom + ".ini";
+		}
+		return storage::ResolveGameSettingsPath(m_options.game_settings_dir, game.serial, StemOf(game.file));
 	}
 
 	Execution SelectBios(const Command& command)

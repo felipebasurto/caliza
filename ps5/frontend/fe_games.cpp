@@ -1368,10 +1368,43 @@ bool FileHas(const std::string& path, const char* text)
 }
 } // namespace
 
+std::string GameSettingsPath(const std::string& settings_dir, const std::string& serial, const std::string& stem)
+{
+	std::string safe_serial;
+	size_t begin = 0;
+	while (begin < serial.size() && std::isspace(static_cast<unsigned char>(serial[begin])))
+		++begin;
+	size_t end = serial.size();
+	while (end > begin && std::isspace(static_cast<unsigned char>(serial[end - 1])))
+		--end;
+	bool valid = (end > begin);
+	for (size_t i = begin; i < end && valid; ++i)
+	{
+		const unsigned char c = static_cast<unsigned char>(serial[i]);
+		if (std::isalnum(c) || c == '-' || c == '_')
+			safe_serial.push_back(static_cast<char>(std::toupper(c)));
+		else
+			valid = false;
+	}
+	if (!valid)
+		safe_serial.clear();
+
+	const std::string stem_path = settings_dir + "/" + stem + ".ini";
+	if (safe_serial.empty())
+		return stem_path;
+
+	const std::string serial_path = settings_dir + "/" + safe_serial + ".ini";
+	if (access(serial_path.c_str(), F_OK) == 0)
+		return serial_path;
+	if (!stem.empty() && access(stem_path.c_str(), F_OK) == 0)
+		return stem_path;
+	return serial_path;
+}
+
 void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string& gs_ini, const std::string& patches_dir)
 {
 	g.badges.clear();
-	const std::string ini = settings_dir + "/" + g.stem + ".ini";
+	const std::string ini = GameSettingsPath(settings_dir, g.serial, g.stem);
 	g.hidden = IniValue(ini, "Caliza/HideGame") == "true"; // vk-285-137: the game's own file only, never gs.ini
 	std::string scale = IniValue(ini, "upscale_multiplier");
 	if (scale.empty())

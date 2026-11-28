@@ -682,7 +682,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			return false;
 		}
 		const std::string stem = StemOfPath(game.file);
-		const std::string settings_path = paths.settings_dir + "/" + stem + ".ini";
+		const std::string settings_path = fe::GameSettingsPath(paths.settings_dir, game.serial, stem);
 		const std::string header = "# " + game.title + (game.serial.empty() ? std::string() : " (" + game.serial + ")");
 		TrackSerial(service_tracking, game.serial);
 		return texture_service.begin(game.serial, pack_index, settings_path, header, game.title, pack_id);
@@ -694,7 +694,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			*error = "The texture pack service is unavailable";
 			return false;
 		}
-		const std::string settings_path = paths.settings_dir + "/" + StemOfPath(game.file) + ".ini";
+		const std::string settings_path = fe::GameSettingsPath(paths.settings_dir, game.serial, StemOfPath(game.file));
 		const std::string header = "# " + game.title + " (" + game.serial + ")";
 		TrackSerial(service_tracking, game.serial);
 		return texture_service.import(game.serial, archive, settings_path, header, game.title);

@@ -3826,12 +3826,13 @@ int main()
   }
   else
   {
-    // vk-285-32: its settings file, named after the image without the extension.
+    // Per-game settings: prefer <serial>.ini when known, preserving an existing <stem>.ini.
     std::string stem = s_game_path.substr(s_game_path.rfind('/') + 1);
     const size_t dot = stem.rfind('.');
     if (dot != std::string::npos && dot > 0)
       stem.erase(dot);
-    s_game_ini_path = "/data/caliza/settings/" + stem + ".ini";
+    const std::string serial = fe::ReadSerial(s_game_path);
+    s_game_ini_path = fe::GameSettingsPath("/data/caliza/settings", serial, stem);
   }
 #ifdef ORBIS_VULKAN
   if (!system_menu)

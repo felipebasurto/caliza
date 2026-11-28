@@ -173,4 +173,10 @@ private:
 	uint64_t m_next_order = 1;
 	bool m_load_failed = false;
 };
+
+// Resolves a per-game settings .ini path. When a valid serial is known, uses <serial>.ini
+// unless <serial>.ini does not exist yet and a legacy <stem>.ini already exists.
+std::string ResolveGameSettingsPath(const std::string& settings_dir,
+	const std::string& serial,
+	const std::string& stem);
 } // namespace caliza::storage

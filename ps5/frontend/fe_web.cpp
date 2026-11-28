@@ -841,7 +841,7 @@ void WebServer::ApiGames(Response& res)
 		out += "{\"id\":" + Json(g.file) + ",\"title\":" + Json(g.title) + ",\"region\":" + Json(g.region) +
 		       ",\"serial\":" + Json(g.serial) + ",\"size\":" + std::to_string(g.bytes) + ",\"badges\":" + badges +
 		       ",\"cover\":" + (CoverPath(finder, g).empty() ? "false" : "true") +
-		       ",\"settings\":" + (Exists(m_cfg.settings_dir + "/" + g.stem + ".ini") ? "true" : "false") +
+		       ",\"settings\":" + (Exists(GameSettingsPath(m_cfg.settings_dir, g.serial, g.stem)) ? "true" : "false") +
 		       ",\"playing\":" + (g.file == playing ? "true" : "false") + "}";
 	}
 	res.body = out + "]";
@@ -951,7 +951,7 @@ void WebServer::ApiSettings(const Request& req, Response& res)
 			res.body = Error("no such game");
 			return;
 		}
-		path = m_cfg.settings_dir + "/" + g->stem + ".ini";
+		path = GameSettingsPath(m_cfg.settings_dir, g->serial, g->stem);
 	}
 	std::string text, global_text, preset;
 	ReadFile(path, text);
@@ -962,8 +962,10 @@ void WebServer::ApiSettings(const Request& req, Response& res)
 	const IniState rec = ReadState(FilterPresetForPlatform(preset));
 	const std::vector<std::string>& enabled = own.enabled;
 	const std::vector<std::string>& cheats_on = own.cheats; // 2026-10-08
+	const size_t slash = path.rfind('/');
+	const std::string file_label = g ? ("settings/" + (slash == std::string::npos ? path : path.substr(slash + 1))) : "gs.ini";
 	std::string out = "{\"id\":" + Json(id) + ",\"title\":" + Json(g ? g->title : "All games") + ",\"serial\":" +
-	                  Json(g ? g->serial : "") + ",\"file\":" + Json(g ? "settings/" + g->stem + ".ini" : "gs.ini") +
+	                  Json(g ? g->serial : "") + ",\"file\":" + Json(file_label) +
 	                  ",\"exists\":" + (Exists(path) ? "true" : "false") + ",\"values\":" + KvJson(own);
 	out += ",\"global\":" + (g ? KvJson(ReadState(global_text)) : std::string("{}"));
 	out += std::string(",\"recommended\":{\"found\":") + (has_preset ? "true" : "false") + ",\"values\":" + KvJson(rec) +
@@ -1052,7 +1054,7 @@ void WebServer::ApiSave(const Request& req, Response& res)
 			res.body = Error("no such game");
 			return;
 		}
-		path = m_cfg.settings_dir + "/" + g->stem + ".ini";
+		path = GameSettingsPath(m_cfg.settings_dir, g->serial, g->stem);
 	}
 	if (Trim(req.body) == "recommended")
 	{

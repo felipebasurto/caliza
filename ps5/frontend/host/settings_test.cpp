@@ -226,7 +226,7 @@ int RunSheet(const std::string& data, const std::string& presets)
 {
 	using namespace settings;
 	std::string what, error, made;
-	const std::string god = data + "/settings/God of War (USA).ini", sample = data + "/settings/Sample Game (Europe).ini";
+	const std::string god = data + "/settings/SCUS-97399.ini", sample = data + "/settings/SLES-12345.ini";
 	const std::string hg = "# God of War (SCUS-97399): written from the Caliza shelf", hs = "# Sample Game (SLES-12345): written from the Caliza shelf";
 	bool ok = true;
 	ok &= EditSettingsFile(god, hg,

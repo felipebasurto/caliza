@@ -83,7 +83,11 @@ std::vector<std::pair<std::string, int>> GameDbHwFixes(const std::string& serial
 // titles ApplyGameDbTitle changed sorts again.
 void SortGames(std::vector<GameInfo>& games);
 
-// Badges from settings/<stem>.ini, gs.ini and the patches folder.
+// Per-game settings .ini path: prefers <serial>.ini when a safe serial is known, unless
+// <serial>.ini does not exist yet and a legacy <stem>.ini already exists.
+std::string GameSettingsPath(const std::string& settings_dir, const std::string& serial, const std::string& stem);
+
+// Badges from the game's settings .ini, gs.ini and the patches folder.
 void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string& gs_ini, const std::string& patches_dir);
 
 // vk-285-137: gs.ini's Caliza/ShowHiddenGames (the sheet for all games): hidden games stay on the shelf, dimmed.
