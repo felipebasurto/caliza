@@ -74,6 +74,136 @@ std::string StemOf(const std::string& file)
 	return dot == std::string::npos ? file : file.substr(0, dot);
 }
 
+int ParseDiscNumber(const std::string& name, std::string* rest)
+{
+	const std::string stem = StemOf(name);
+	const std::string low = LowerAscii(stem);
+	int number = 0;
+	size_t at = std::string::npos;
+	size_t end = 0;
+	for (size_t p = low.find("(disc"); p != std::string::npos; p = low.find("(disc", p + 1))
+	{
+		size_t q = p + 5;
+		while (q < low.size() && low[q] == ' ')
+			++q;
+		size_t digit = q;
+		while (digit < low.size() && std::isdigit(static_cast<unsigned char>(low[digit])))
+			++digit;
+		if (digit == q || digit - q > 2)
+			continue;
+		size_t e = digit;
+		if (low.compare(e, 4, " of ") == 0)
+		{
+			e += 4;
+			const size_t total_digits = e;
+			while (e < low.size() && std::isdigit(static_cast<unsigned char>(low[e])))
+				++e;
+			if (e == total_digits)
+				continue;
+		}
+		if (e >= low.size() || low[e] != ')')
+			continue;
+		number = std::atoi(low.c_str() + q);
+		at = p;
+		end = e + 1;
+		break;
+	}
+	if (rest)
+	{
+		const std::string raw = at == std::string::npos ? low : low.substr(0, at) + low.substr(end);
+		std::string compact;
+		for (const char c : raw)
+			if (!(c == ' ' && !compact.empty() && compact.back() == ' '))
+				compact += c;
+		*rest = Trim(compact);
+	}
+	return number;
+}
+
+std::string StripDiscTag(const std::string& title)
+{
+	const std::string low = LowerAscii(title);
+	for (size_t p = low.find("(disc"); p != std::string::npos; p = low.find("(disc", p + 1))
+	{
+		size_t q = p + 5;
+		while (q < low.size() && low[q] == ' ')
+			++q;
+		size_t digit = q;
+		while (digit < low.size() && std::isdigit(static_cast<unsigned char>(low[digit])))
+			++digit;
+		if (digit == q || digit - q > 2)
+			continue;
+		size_t e = digit;
+		if (low.compare(e, 4, " of ") == 0)
+		{
+			e += 4;
+			const size_t total_digits = e;
+			while (e < low.size() && std::isdigit(static_cast<unsigned char>(low[e])))
+				++e;
+			if (e == total_digits)
+				continue;
+		}
+		if (e >= low.size() || low[e] != ')')
+			continue;
+		std::string raw = title.substr(0, p) + title.substr(e + 1);
+		std::string compact;
+		for (const char c : raw)
+			if (!(c == ' ' && !compact.empty() && compact.back() == ' '))
+				compact += c;
+		const std::string trimmed = Trim(compact);
+		return trimmed.empty() ? title : trimmed;
+	}
+	return title;
+}
+
+std::vector<std::string> ReadM3uPlaylist(const std::string& m3u_path,
+	const std::string& dir_path,
+	const std::string& root_path)
+{
+	std::vector<std::string> out;
+	std::FILE* f = std::fopen(m3u_path.c_str(), "rb");
+	if (!f)
+		return out;
+	std::string text;
+	char buf[4096];
+	while (text.size() < 64 * 1024)
+	{
+		const size_t n = std::fread(buf, 1, sizeof(buf), f);
+		if (n == 0)
+			break;
+		text.append(buf, n);
+	}
+	std::fclose(f);
+
+	const std::string norm_root = storage::fs::NormalizePath(root_path);
+	std::set<std::string> seen;
+	size_t pos = 0;
+	while (pos < text.size() && out.size() < 32)
+	{
+		size_t eol = text.find('\n', pos);
+		if (eol == std::string::npos)
+			eol = text.size();
+		std::string line = Trim(text.substr(pos, eol - pos));
+		pos = eol + 1;
+		if (line.empty() || line[0] == '#')
+			continue;
+		const std::string raw = line[0] == '/' ? line : storage::fs::JoinPath(dir_path, line);
+		const std::string resolved = storage::fs::NormalizePath(raw);
+		if (resolved.empty() || !storage::fs::IsPathWithin(resolved, norm_root))
+			continue;
+		if (!seen.insert(resolved).second)
+			continue;
+		const std::string base = storage::fs::BaseName(resolved);
+		if (!storage::LooksLikeGameImageName(base) || ExtensionLower(base) == ".elf")
+			continue;
+		struct stat st = {};
+		if (lstat(resolved.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+			continue;
+		out.push_back(resolved);
+	}
+	return out;
+}
+
 bool ReadAt(int fd, uint64_t offset, void* buffer, size_t size)
 {
 	uint8_t* out = static_cast<uint8_t*>(buffer);
@@ -529,6 +659,7 @@ private:
 
 		std::vector<std::pair<std::string, uint32_t>> stack;
 		stack.emplace_back(job.root_path, 0);
+		std::set<std::string> suppressed_disc_paths;
 		std::string first_error;
 		while (!stack.empty())
 		{
@@ -579,6 +710,129 @@ private:
 				return la == lb ? a < b : la < lb;
 			});
 
+			struct DiscSetMeta
+			{
+				int disc_number = 0;
+				std::string disc_set_key;
+				std::vector<std::string> disc_paths;
+				std::string playlist_title;
+			};
+			std::map<std::string, DiscSetMeta> primary_sets;
+
+			// 1) Read .m3u playlists in this folder first so playlist order wins over filename heuristics.
+			for (const std::string& name : names)
+			{
+				if (ExtensionLower(name) != ".m3u")
+					continue;
+				const std::string m3u_path = storage::fs::JoinPath(current.first, name);
+				struct stat m3u_st = {};
+				if (lstat(m3u_path.c_str(), &m3u_st) != 0 || !S_ISREG(m3u_st.st_mode))
+					continue;
+				std::vector<std::string> discs = ReadM3uPlaylist(m3u_path, current.first, job.root_path);
+				if (discs.empty())
+					continue;
+				const std::string primary = discs.front();
+				if (suppressed_disc_paths.count(primary) || primary_sets.count(primary))
+					continue;
+				DiscSetMeta meta;
+				meta.disc_number = 1;
+				meta.disc_set_key = "m3u:" + LowerAscii(StemOf(name));
+				meta.disc_paths = discs;
+				meta.playlist_title = Trim(StemOf(name));
+				primary_sets[primary] = std::move(meta);
+				for (size_t i = 1; i < discs.size(); ++i)
+					suppressed_disc_paths.insert(discs[i]);
+			}
+
+			// 2) Group remaining "(Disc N)" / "(Disc N of M)" images in this folder by disc_set_key.
+			struct DiscCandidate
+			{
+				int disc_number = 0;
+				std::string path;
+				std::string name;
+			};
+			std::map<std::string, std::vector<DiscCandidate>> disc_groups;
+			for (const std::string& name : names)
+			{
+				if (!storage::LooksLikeGameImageName(name) || ExtensionLower(name) == ".elf")
+					continue;
+				const std::string child = storage::fs::NormalizePath(storage::fs::JoinPath(current.first, name));
+				if (suppressed_disc_paths.count(child) || primary_sets.count(child))
+					continue;
+				struct stat st = {};
+				if (lstat(child.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+					continue;
+				std::string key;
+				const int num = ParseDiscNumber(name, &key);
+				if (num > 0 && !key.empty())
+					disc_groups[key].push_back({num, child, name});
+			}
+			for (auto& kv : disc_groups)
+			{
+				auto& group = kv.second;
+				std::sort(group.begin(), group.end(), [](const DiscCandidate& a, const DiscCandidate& b) {
+					if (a.disc_number != b.disc_number)
+						return a.disc_number < b.disc_number;
+					return LowerAscii(a.name) < LowerAscii(b.name);
+				});
+				DiscSetMeta meta;
+				meta.disc_number = group.front().disc_number;
+				meta.disc_set_key = kv.first;
+				for (const DiscCandidate& c : group)
+					meta.disc_paths.push_back(c.path);
+				primary_sets[group.front().path] = std::move(meta);
+				for (size_t i = 1; i < group.size(); ++i)
+					suppressed_disc_paths.insert(group[i].path);
+			}
+
+			auto inspect_and_emit = [&](const std::string& file_path, const std::string& file_name, uint64_t bytes, const DiscSetMeta* meta) {
+				GameEntry game;
+				game.id = file_path;
+				game.path = file_path;
+				game.file = file_name;
+				game.source_id = job.source_id;
+				game.bytes = bytes;
+				if (meta)
+				{
+					game.disc_number = meta->disc_number;
+					game.disc_set_key = meta->disc_set_key;
+					game.disc_paths = meta->disc_paths;
+				}
+				if (!m_inspector || m_inspector->Inspect(game))
+				{
+					if (game.disc_paths.size() > 1)
+					{
+						if (meta && !meta->playlist_title.empty() && game.title == StemOf(file_name))
+							game.title = meta->playlist_title;
+						else
+							game.title = StripDiscTag(game.title);
+					}
+					progress.games_found++;
+					outcome.seen_ids.push_back(game.id);
+					Publish(job, progress, &game, true);
+				}
+			};
+
+			// Emit any .m3u primary disc that resides in a different subfolder right now and suppress it there.
+			const std::string norm_current = storage::fs::NormalizePath(current.first);
+			for (const auto& kv : primary_sets)
+			{
+				if (Cancelled(job))
+					break;
+				const std::string& primary_path = kv.first;
+				const size_t slash = primary_path.rfind('/');
+				const std::string parent_dir = slash == std::string::npos ? std::string() : primary_path.substr(0, slash);
+				if (parent_dir == norm_current)
+					continue;
+				struct stat st = {};
+				if (lstat(primary_path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+					continue;
+				suppressed_disc_paths.insert(primary_path);
+				progress.files_seen++;
+				progress.current_path = primary_path;
+				inspect_and_emit(primary_path, storage::fs::BaseName(primary_path), static_cast<uint64_t>(st.st_size), &kv.second);
+			}
+
 			for (const std::string& name : names)
 			{
 				if (Cancelled(job))
@@ -615,17 +869,12 @@ private:
 				progress.current_path = child;
 				if (storage::LooksLikeGameImageName(name))
 				{
-					GameEntry game;
-					game.id = child;
-					game.path = child;
-					game.file = name;
-					game.source_id = job.source_id;
-					game.bytes = static_cast<uint64_t>(st.st_size);
-					if (!m_inspector || m_inspector->Inspect(game))
+					const std::string norm_child = storage::fs::NormalizePath(child);
+					if (!suppressed_disc_paths.count(norm_child))
 					{
-						progress.games_found++;
-						outcome.seen_ids.push_back(game.id);
-						Publish(job, progress, &game, true);
+						const auto meta_it = primary_sets.find(norm_child);
+						inspect_and_emit(child, name, static_cast<uint64_t>(st.st_size),
+							meta_it == primary_sets.end() ? nullptr : &meta_it->second);
 					}
 				}
 				Publish(job, progress, nullptr, false);

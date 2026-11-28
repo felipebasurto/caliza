@@ -122,6 +122,9 @@ struct GameEntry
 	std::vector<std::string> badges;
 	uint64_t bytes = 0;
 	uint64_t last_played = 0;
+	int disc_number = 0;
+	std::string disc_set_key;
+	std::vector<std::string> disc_paths;
 	bool damaged = false;
 	bool hidden = false;
 	bool can_launch = true;

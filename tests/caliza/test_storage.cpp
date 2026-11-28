@@ -428,6 +428,96 @@ void TestCompressedImageHeaderValidation()
 	CHECK_TRUE(valid_zso.problem.empty());
 }
 
+void TestMultiDiscAndM3uGrouping()
+{
+	TempDir env;
+	const std::string data_root = env.path + "/caliza";
+	const std::string games = data_root + "/games";
+	CHECK_TRUE(storage::fs::MakeDirs(games, nullptr));
+
+	// 1) (Disc N) grouping across mixed formats (.chd + .iso).
+	CHECK_TRUE(WriteFile(games + "/Story (USA) (Disc 1).chd", "MComprHD"));
+	MakeMinimalIso(games + "/Story (USA) (Disc 2).iso");
+
+	// 2) .m3u playlist grouping arbitrarily named discs (ignoring comments and missing files).
+	MakeMinimalIso(games + "/Saga Part A.iso");
+	MakeMinimalIso(games + "/Saga Part B.iso");
+	CHECK_TRUE(WriteFile(games + "/Epic Saga.m3u", "# playlist comment\nSaga Part A.iso\nSaga Part B.iso\nMissing.iso\n"));
+
+	// 3) Combined .m3u + (Disc N) in the same folder produces one set, not two.
+	CHECK_TRUE(WriteFile(games + "/Tale (Disc 1).chd", "MComprHD"));
+	MakeMinimalIso(games + "/Tale (Disc 2).iso");
+	CHECK_TRUE(WriteFile(games + "/Tale.m3u", "Tale (Disc 1).chd\nTale (Disc 2).iso\n"));
+
+	// 4) Single disc with a (Disc N) suffix stays visible and records disc_number/disc_set_key.
+	MakeMinimalIso(games + "/Solo (Disc 2).iso");
+
+	BackendOptions options;
+	options.data_root = data_root;
+	options.discovery.internal_root = data_root;
+	StorageBackend backend(options);
+	EventLog log;
+	Command rescan;
+	rescan.type = CommandType::RescanAll;
+	const CommandEvent* scan = log.WaitTerminal(backend, backend.Post(rescan));
+	CHECK_TRUE(scan != nullptr && scan->status == CommandStatus::Succeeded);
+
+	const Snapshot snap = backend.GetSnapshot();
+	CHECK_EQ(snap.games.size(), 4u);
+
+	auto find_by_file = [&](const std::string& file) -> const GameEntry* {
+		for (const GameEntry& g : snap.games)
+			if (g.file == file)
+				return &g;
+		return nullptr;
+	};
+
+	const GameEntry* story = find_by_file("Story (USA) (Disc 1).chd");
+	CHECK_TRUE(story != nullptr);
+	CHECK_TRUE(find_by_file("Story (USA) (Disc 2).iso") == nullptr);
+	if (story)
+	{
+		CHECK_EQ(story->disc_number, 1);
+		CHECK_EQ(story->disc_set_key, std::string("story (usa)"));
+		CHECK_EQ(story->disc_paths.size(), 2u);
+		if (story->disc_paths.size() == 2u)
+		{
+			CHECK_EQ(storage::fs::BaseName(story->disc_paths[0]), std::string("Story (USA) (Disc 1).chd"));
+			CHECK_EQ(storage::fs::BaseName(story->disc_paths[1]), std::string("Story (USA) (Disc 2).iso"));
+		}
+	}
+
+	const GameEntry* saga = find_by_file("Saga Part A.iso");
+	CHECK_TRUE(saga != nullptr);
+	CHECK_TRUE(find_by_file("Saga Part B.iso") == nullptr);
+	if (saga)
+	{
+		CHECK_EQ(saga->disc_number, 1);
+		CHECK_EQ(saga->disc_set_key, std::string("m3u:epic saga"));
+		CHECK_EQ(saga->title, std::string("Epic Saga"));
+		CHECK_EQ(saga->disc_paths.size(), 2u);
+	}
+
+	const GameEntry* tale = find_by_file("Tale (Disc 1).chd");
+	CHECK_TRUE(tale != nullptr);
+	CHECK_TRUE(find_by_file("Tale (Disc 2).iso") == nullptr);
+	if (tale)
+	{
+		CHECK_EQ(tale->disc_number, 1);
+		CHECK_EQ(tale->disc_set_key, std::string("m3u:tale"));
+		CHECK_EQ(tale->disc_paths.size(), 2u);
+	}
+
+	const GameEntry* solo = find_by_file("Solo (Disc 2).iso");
+	CHECK_TRUE(solo != nullptr);
+	if (solo)
+	{
+		CHECK_EQ(solo->disc_number, 2);
+		CHECK_EQ(solo->disc_set_key, std::string("solo"));
+		CHECK_EQ(solo->disc_paths.size(), 1u);
+	}
+}
+
 } // namespace
 
 int main()
@@ -438,6 +528,7 @@ int main()
 	TestRealScanCancellationAndDisconnect();
 	TestBackendSavedSourceRestartPersistence();
 	TestCompressedImageHeaderValidation();
+	TestMultiDiscAndM3uGrouping();
 	if (Failures() == 0)
 	{
 		std::cout << "test_storage: PASS\n";
