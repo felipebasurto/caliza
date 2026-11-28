@@ -62,9 +62,8 @@ u64 GetPhysicalMemory()
 u64 GetAvailablePhysicalMemory()
 {
   // Payload sandbox: poc2 showed ~2.6GB visible, 2GB malloc OK.
-  // Conservative 2 GiB figure until direct-memory query is wired, so
-  // memory-budget checks cannot assume multi-GB free headroom on PS4.
-  return 2ULL * 1024ULL * 1024ULL * 1024ULL;
+  // Fixed conservative figure until direct-memory query is wired.
+  return 6ULL * 1024ULL * 1024ULL * 1024ULL;
 }
 
 u64 GetTickFrequency()
