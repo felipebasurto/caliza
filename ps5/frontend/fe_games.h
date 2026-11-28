@@ -44,8 +44,9 @@ std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs);
 
 // "SLUS-21351" from the image's SYSTEM.CNF (ISO 9660); empty if unreadable. A .cso or .zso is decompressed here
 // (zlib, LZ4). A .chd is read through libchdr
-// (a DVD's 2048-byte units or a CD's raw frames); one that needs a parent CHD reads as empty.
-std::string ReadSerial(const std::string& image_path);
+// (a DVD's 2048-byte units or a CD's raw frames). When `reason` is non-null, open/inspect detail is returned
+// from the same open (or cache hit) so callers do not need a second DescribeImage open.
+std::string ReadSerial(const std::string& image_path, std::string* reason = nullptr);
 
 // Read the BOOT2 executable for the RA hash. Supports the shelf image formats. (AI-assisted)
 bool ReadAchievementExecutable(const std::string& path, std::string& name, std::vector<uint8_t>& bytes);

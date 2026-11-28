@@ -277,14 +277,14 @@ public:
 		info.stem = dot == std::string::npos ? info.file : info.file.substr(0, dot);
 		info.bytes = entry.bytes;
 		fe::MakeTitle(info.stem, info.title, info.region, info.extra);
-		info.serial = fe::ReadSerial(entry.path);
+		std::string read_reason;
+		info.serial = fe::ReadSerial(entry.path, &read_reason);
 		fe::ApplyGameDbTitle(info);
-		if (info.serial.empty())
+		if (info.serial.empty() && !read_reason.empty())
 		{
-			const std::string description = fe::DescribeImage(entry.path);
 			const std::string cant_open = "libchdr can't open it: ";
-			if (description.rfind(cant_open, 0) == 0 && description.find("parent") == std::string::npos)
-				info.damaged = description.substr(cant_open.size());
+			if (read_reason.rfind(cant_open, 0) == 0 && read_reason.find("parent") == std::string::npos)
+				info.damaged = read_reason.substr(cant_open.size());
 		}
 		fe::ReadBadges(info, m_paths.settings_dir, m_paths.gs_ini, m_paths.patches_dir);
 		entry.title = info.title.empty() ? entry.title : info.title;

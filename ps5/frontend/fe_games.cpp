@@ -293,25 +293,64 @@ public:
 
 	bool Open(const std::string& path)
 	{
+		m_what.clear();
 		m_fd = open(path.c_str(), O_RDONLY);
 		if (m_fd < 0)
+		{
+			m_what = "can't open compressed image";
 			return false;
+		}
+		struct stat st = {};
+		const uint64_t file_bytes = (fstat(m_fd, &st) == 0 && st.st_size > 0) ? static_cast<uint64_t>(st.st_size) : 0;
 		uint8_t h[24];
 		if (!ReadAt(m_fd, 0, h, sizeof(h)))
+		{
+			m_what = "cso header truncated";
 			return false;
+		}
 		m_lz4 = std::memcmp(h, "ZISO", 4) == 0;
 		if (!m_lz4 && std::memcmp(h, "CISO", 4) != 0)
+		{
+			m_what = "not a CISO or ZISO header";
 			return false;
+		}
+		const uint8_t ver = h[20];
+		if (ver > 1)
+		{
+			m_what = "unsupported CSO version";
+			return false;
+		}
 		m_total = Le32(h + 8) | (static_cast<uint64_t>(Le32(h + 12)) << 32);
 		m_frame = Le32(h + 16);
 		m_shift = h[21];
-		if (m_frame < 2048 || m_frame > (1u << 20) || (m_frame & (m_frame - 1)) != 0 || m_shift > 8 || m_total == 0)
+		if (m_frame < 2048 || m_frame > (1u << 20) || (m_frame & (m_frame - 1)) != 0)
+		{
+			m_what = "invalid CSO frame size";
 			return false;
-		m_frames = static_cast<uint32_t>((m_total + m_frame - 1) / m_frame);
+		}
+		if (m_shift > 8)
+		{
+			m_what = "invalid CSO index alignment";
+			return false;
+		}
+		if (m_total == 0)
+		{
+			m_what = "empty CSO disc";
+			return false;
+		}
+		const uint64_t frames64 = (m_total + m_frame - 1) / m_frame;
+		if (frames64 > 0x1fffffffULL || 24ULL + (frames64 + 1ULL) * 4ULL > file_bytes)
+		{
+			m_what = "cso index truncated";
+			return false;
+		}
+		m_frames = static_cast<uint32_t>(frames64);
 		m_out.resize(m_frame);
 		m_in.resize(static_cast<size_t>(m_frame) * 2 + 4096);
 		return true;
 	}
+
+	const std::string& What() const { return m_what; }
 
 	bool Read(uint32_t lba, void* buf, size_t len) override
 	{
@@ -397,6 +436,7 @@ private:
 	uint32_t m_cached = ~0u;
 	size_t m_out_len = 0;
 	std::vector<uint8_t> m_in, m_out;
+	std::string m_what;
 };
 
 // "SLUS-21351" from SYSTEM.CNF's BOOT2 line, found in the root directory of the ISO 9660 file system.
@@ -459,15 +499,33 @@ std::string SerialFromDisc(SectorReader& disc)
 	return serial;
 }
 
-// vk-285-108: a CHD's serial costs its map's decompression (tens of milliseconds for a DVD), so the ones
-// found are kept in a file, one "<path>\t<size>\t<mtime>\t<serial>" line each (a later line wins).
+// vk-285-108: a CHD's serial costs its map's decompression (tens of milliseconds for a DVD), so results
+// (including failed/empty reads and their reason) are kept in a file keyed by "<path>\t<size>\t<mtime>"
+// (a later line wins). 4-column lines (<path>\t<size>\t<mtime>\t<serial>) stay readable for compatibility;
+// 5-column lines add "\t<reason>" so failed/empty reads are cached and inspected in a single open.
+struct CachedSerial
+{
+	std::string serial;
+	std::string reason;
+};
+
 std::mutex s_serial_mutex;
 std::string s_serial_file;
 bool s_serial_loaded = false;
-std::unordered_map<std::string, std::string> s_serials; // "<path>\t<size>\t<mtime>" -> serial
+std::unordered_map<std::string, CachedSerial> s_serials; // "<path>\t<size>\t<mtime>" -> {serial, reason}
+
+std::string SanitizeCacheField(std::string s)
+{
+	for (char& c : s)
+		if (c == '\t' || c == '\r' || c == '\n')
+			c = ' ';
+	return s;
+}
 
 std::string SerialKey(const std::string& path)
 {
+	if (path.find('\t') != std::string::npos || path.find('\n') != std::string::npos || path.find('\r') != std::string::npos)
+		return {};
 	struct stat st = {};
 	if (stat(path.c_str(), &st) != 0)
 		return {};
@@ -489,14 +547,31 @@ void LoadSerialsLocked()
 		std::string l = line;
 		while (!l.empty() && (l.back() == '\n' || l.back() == '\r'))
 			l.pop_back();
-		const size_t tab = l.rfind('\t');
-		if (tab != std::string::npos && tab > 0 && tab + 1 < l.size())
-			s_serials[l.substr(0, tab)] = l.substr(tab + 1);
+		const size_t t1 = l.find('\t');
+		if (t1 == std::string::npos || t1 == 0)
+			continue;
+		const size_t t2 = l.find('\t', t1 + 1);
+		if (t2 == std::string::npos)
+			continue;
+		const size_t t3 = l.find('\t', t2 + 1);
+		if (t3 == std::string::npos)
+			continue;
+		const std::string key = l.substr(0, t3);
+		const size_t t4 = l.find('\t', t3 + 1);
+		if (t4 == std::string::npos)
+		{
+			if (t3 + 1 < l.size())
+				s_serials[key] = {l.substr(t3 + 1), {}};
+		}
+		else
+		{
+			s_serials[key] = {l.substr(t3 + 1, t4 - (t3 + 1)), l.substr(t4 + 1)};
+		}
 	}
 	std::fclose(f);
 }
 
-std::string ChdSerial(const std::string& path)
+std::string ChdSerial(const std::string& path, std::string* reason)
 {
 	const std::string key = SerialKey(path);
 	if (!key.empty())
@@ -505,23 +580,32 @@ std::string ChdSerial(const std::string& path)
 		LoadSerialsLocked();
 		const auto it = s_serials.find(key);
 		if (it != s_serials.end())
-			return it->second;
+		{
+			if (reason)
+				*reason = it->second.reason;
+			return it->second.serial;
+		}
 	}
 	std::string serial;
+	std::string detail;
 	if (HasExtension(path.c_str(), ".chd"))
 	{
 		ChdSectors disc;
-		serial = disc.Open(path) ? SerialFromDisc(disc) : std::string();
+		if (disc.Open(path))
+			serial = SerialFromDisc(disc);
+		detail = SanitizeCacheField(disc.What());
 	}
 	else
 	{
 		CsoSectors disc; // vk-285-113
-		serial = disc.Open(path) ? SerialFromDisc(disc) : std::string();
+		if (disc.Open(path))
+			serial = SerialFromDisc(disc);
+		detail = SanitizeCacheField(disc.What());
 	}
-	if (!serial.empty() && !key.empty())
+	if (!key.empty())
 	{
 		std::lock_guard<std::mutex> lock(s_serial_mutex);
-		s_serials[key] = serial;
+		s_serials[key] = {serial, detail};
 		if (!s_serial_file.empty())
 		{
 			const size_t slash = s_serial_file.rfind('/');
@@ -529,23 +613,35 @@ std::string ChdSerial(const std::string& path)
 				mkdir(s_serial_file.substr(0, slash).c_str(), 0777);
 			if (FILE* f = std::fopen(s_serial_file.c_str(), "ab"))
 			{
-				const std::string line = key + "\t" + serial + "\n";
+				const std::string line = (!serial.empty() && detail.empty())
+					? (key + "\t" + serial + "\n")
+					: (key + "\t" + serial + "\t" + detail + "\n");
 				std::fwrite(line.data(), 1, line.size(), f);
 				std::fclose(f);
 			}
 		}
 	}
+	if (reason)
+		*reason = detail;
 	return serial;
 }
 } // namespace
 
 std::string DescribeImage(const std::string& image_path)
 {
-	if (!HasExtension(image_path.c_str(), ".chd"))
-		return {};
-	ChdSectors disc;
-	disc.Open(image_path);
-	return disc.What();
+	if (HasExtension(image_path.c_str(), ".chd"))
+	{
+		ChdSectors disc;
+		disc.Open(image_path);
+		return disc.What();
+	}
+	if (HasExtension(image_path.c_str(), ".cso") || HasExtension(image_path.c_str(), ".zso"))
+	{
+		CsoSectors disc;
+		disc.Open(image_path);
+		return disc.What();
+	}
+	return {};
 }
 
 bool IsDiscImageName(const char* name)
@@ -570,10 +666,12 @@ void SetSerialCacheFile(const std::string& path)
 	s_serials.clear();
 }
 
-std::string ReadSerial(const std::string& image_path)
+std::string ReadSerial(const std::string& image_path, std::string* reason)
 {
+	if (reason)
+		reason->clear();
 	if (HasExtension(image_path.c_str(), ".chd") || HasExtension(image_path.c_str(), ".cso") || HasExtension(image_path.c_str(), ".zso"))
-		return ChdSerial(image_path); // vk-285-113: the compressed formats keep their serials in the cache file
+		return ChdSerial(image_path, reason); // vk-285-113: the compressed formats keep their serials in the cache file
 	const int fd = open(image_path.c_str(), O_RDONLY);
 	if (fd < 0)
 		return {};

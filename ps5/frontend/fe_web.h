@@ -176,7 +176,13 @@ private:
 	uint64_t m_game_sequence = 0;
 	std::vector<GameInfo> m_games;
 	double m_games_time = -1e9;
-	std::map<std::string, std::pair<uint64_t, std::string>> m_serials; // path -> (size, serial): USB drives are slow
+	struct SerialCacheEntry
+	{
+		uint64_t bytes = 0;
+		int64_t mtime = 0;
+		std::string serial;
+	};
+	std::map<std::string, SerialCacheEntry> m_serials; // path -> (size, mtime, serial)
 };
 
 // The IPv4 address other devices reach this machine on: the one the default route uses, else the

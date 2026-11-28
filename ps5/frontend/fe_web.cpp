@@ -733,14 +733,17 @@ std::vector<GameInfo> WebServer::Games()
 		m_games = ScanGames(m_cfg.game_dirs);
 		for (GameInfo& g : m_games)
 		{
-			// Test build 1: an image's serial is read once (per size), not at every rescan.
+			// Key by (size, mtime) so a same-size replacement refreshes its serial; compressed images also hit
+			// fe::ReadSerial's persistent negative+positive cache under path+size+mtime.
+			struct stat st = {};
+			const int64_t mtime = stat(g.path.c_str(), &st) == 0 ? static_cast<int64_t>(st.st_mtime) : 0;
 			const auto it = m_serials.find(g.path);
-			if (it != m_serials.end() && it->second.first == g.bytes)
-				g.serial = it->second.second;
+			if (it != m_serials.end() && it->second.bytes == g.bytes && it->second.mtime == mtime)
+				g.serial = it->second.serial;
 			else
 			{
 				g.serial = ReadSerial(g.path);
-				m_serials[g.path] = {g.bytes, g.serial};
+				m_serials[g.path] = {g.bytes, mtime, g.serial};
 			}
 			ApplyGameDbTitle(g); // vk-285-113: the game's name from the game database, as on the shelf
 			ReadBadges(g, m_cfg.settings_dir, m_cfg.gs_ini, m_cfg.patches_dir);

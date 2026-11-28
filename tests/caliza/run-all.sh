@@ -65,6 +65,12 @@ echo '== migration =='
   -o "$out/test_migration"
 "$out/test_migration"
 
+echo '== serial cache =='
+"$cc" -O2 -c ps5/third_party/lz4/lz4.c -o "$out/lz4.o"
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -Ips5/frontend -I3rdparty/libchdr/include -Ips5/third_party/lz4 -pthread \
+  tests/caliza/test_serial_cache.cpp ps5/frontend/fe_games.cpp "$out/lz4.o" -lz -o "$out/test_serial_cache"
+"$out/test_serial_cache"
+
 echo '== web panel smoke =='
 (cd caliza/web && node smoke-test.mjs)
 
