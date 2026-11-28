@@ -499,7 +499,7 @@ struct ScanJob
 	uint64_t batch = 0;
 	std::string source_id;
 	std::string root_path;
-	uint32_t max_depth = 2;
+	uint32_t max_depth = 32;
 	std::shared_ptr<ScanControl> control;
 };
 
@@ -859,7 +859,6 @@ private:
 				inspect_and_emit(primary_path, storage::fs::BaseName(primary_path), static_cast<uint64_t>(st.st_size), &kv.second);
 			}
 
-			uint32_t subdirs_queued = 0;
 			for (const std::string& name : names)
 			{
 				if (Cancelled(job))
@@ -883,11 +882,8 @@ private:
 				}
 				if (S_ISDIR(st.st_mode))
 				{
-					if (current.second < job.max_depth && subdirs_queued < 64 && !ShouldSkipScanSubfolder(name))
-					{
+					if (current.second < job.max_depth && !ShouldSkipScanSubfolder(name))
 						stack.emplace_back(child, current.second + 1);
-						subdirs_queued++;
-					}
 					continue;
 				}
 				if (!S_ISREG(st.st_mode))

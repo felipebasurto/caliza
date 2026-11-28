@@ -39,7 +39,8 @@ bool IsDiscImageName(const char* name);
 // 2026-10-08: an .elf (a PS2 executable). ScanGames lists one whose first bytes are an ELF header; it has no serial.
 bool IsElfName(const char* name);
 
-// Lists the disc images in `dirs` (the first folder wins for a name found twice), sorted by title.
+// Lists the disc images in `dirs` and in folders up to 32 levels below them (the first folder wins for a name
+// found twice), sorted by title.
 std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs);
 
 // "SLUS-21351" from the image's SYSTEM.CNF (ISO 9660); empty if unreadable. A .cso or .zso is decompressed here

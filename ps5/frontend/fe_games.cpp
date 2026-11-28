@@ -1242,8 +1242,8 @@ namespace
 {
 // vk-285-115 (AI-assisted): the disc images one folder down too ("games/Ratchet & Clank (USA)/Ratchet & Clank.iso", a
 // USB drive's PS2/ or ISO/ folder). 1.50's logs: 29 consoles never found a game ("0 disc image(s), 0 on USB" on
-// every start), most with a USB drive that had files but no image at its root. PCSX2's own folders are skipped, and at
-// most 64 subfolders of a folder are opened (a backup drive's whole tree isn't walked).
+// every start), most with a USB drive that had files but no image at its root. PCSX2's own folders are skipped.
+// The walk continues 32 levels down, the same limit as the companion panel.
 bool SkipSubfolder(const char* name)
 {
 	if (name[0] == '.' || name[0] == '$')
@@ -1268,7 +1268,7 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 	{
 		if (!IsDiscImageName(e->d_name))
 		{
-			if (subdirs && subdirs->size() < 64 && !SkipSubfolder(e->d_name))
+			if (subdirs && !SkipSubfolder(e->d_name))
 			{
 				bool is_dir = e->d_type == DT_DIR;
 				if (e->d_type == DT_UNKNOWN)
@@ -1330,25 +1330,27 @@ std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs)
 {
 	std::vector<GameInfo> games;
 	std::unordered_set<std::string> visited_dirs;
-	const auto scan_once = [&](const std::string& path, std::vector<std::string>* subdirs) {
-		if (!visited_dirs.insert(path).second)
-			return;
-		ScanDir(path, games, subdirs);
-	};
-	for (const std::string& dir : dirs)
+	// Root plus 32 levels of subfolders, matching StorageBackend.
+	constexpr int kMaxDepth = 32;
+	struct Pending
 	{
-		std::vector<std::string> subdirs1;
-		scan_once(dir, &subdirs1);
-		std::sort(subdirs1.begin(), subdirs1.end());
-		for (const std::string& sub1 : subdirs1)
-		{
-			const std::string path1 = dir + "/" + sub1;
-			std::vector<std::string> subdirs2;
-			scan_once(path1, &subdirs2);
-			std::sort(subdirs2.begin(), subdirs2.end());
-			for (const std::string& sub2 : subdirs2)
-				scan_once(path1 + "/" + sub2, nullptr);
-		}
+		std::string path;
+		int depth;
+	};
+	std::vector<Pending> pending;
+	for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+		pending.push_back({*it, 0});
+	while (!pending.empty())
+	{
+		const Pending current = std::move(pending.back());
+		pending.pop_back();
+		if (!visited_dirs.insert(current.path).second)
+			continue;
+		std::vector<std::string> subdirs;
+		ScanDir(current.path, games, current.depth < kMaxDepth ? &subdirs : nullptr);
+		std::sort(subdirs.begin(), subdirs.end());
+		for (auto it = subdirs.rbegin(); it != subdirs.rend(); ++it)
+			pending.push_back({current.path + "/" + *it, current.depth + 1});
 	}
 	SortGames(games);
 	return games;

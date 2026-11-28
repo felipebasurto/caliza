@@ -525,17 +525,18 @@ void TestNetworkSourcesAndScanAlignment()
 	const std::string net0 = env.path + "/net/ps2share";
 	CHECK_TRUE(storage::fs::MakeDirs(data_root + "/games", nullptr));
 	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action", nullptr));
-	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action/TooDeep", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action/TooDeep/More", nullptr));
 	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/bios", nullptr));
 	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/covers", nullptr));
 
-	// Depth 0, 1, 2 on mounted network share should be found.
+	// Depth 0 through 4 on a mounted network share should be found.
 	CHECK_TRUE(WriteFile(net0 + "/RootGame (USA).chd", "MComprHD"));
 	MakeMinimalIso(net0 + "/PS2/Depth1 (USA).iso");
 	MakeMinimalIso(net0 + "/PS2/Action/Depth2 (USA).iso");
-
-	// Depth 3, skipped emulator folders, and <16 MiB .bin/.img must all be excluded.
 	MakeMinimalIso(net0 + "/PS2/Action/TooDeep/Depth3 (USA).iso");
+	MakeMinimalIso(net0 + "/PS2/Action/TooDeep/More/Depth4 (USA).iso");
+
+	// Skipped emulator folders and <16 MiB .bin/.img must stay excluded.
 	MakeMinimalIso(net0 + "/bios/BiosDir (USA).iso");
 	MakeMinimalIso(net0 + "/covers/CoversDir (USA).iso");
 	CHECK_TRUE(WriteFile(net0 + "/SmallBios.bin", std::string(1024, '\0')));
@@ -569,7 +570,7 @@ void TestNetworkSourcesAndScanAlignment()
 	CHECK_TRUE(scan != nullptr && scan->status == CommandStatus::Succeeded);
 
 	const Snapshot snap = backend.GetSnapshot();
-	CHECK_EQ(snap.games.size(), 3u);
+	CHECK_EQ(snap.games.size(), 5u);
 	auto has_file = [&](const std::string& file) {
 		for (const GameEntry& g : snap.games)
 			if (g.file == file)
@@ -579,7 +580,8 @@ void TestNetworkSourcesAndScanAlignment()
 	CHECK_TRUE(has_file("RootGame (USA).chd"));
 	CHECK_TRUE(has_file("Depth1 (USA).iso"));
 	CHECK_TRUE(has_file("Depth2 (USA).iso"));
-	CHECK_FALSE(has_file("Depth3 (USA).iso"));
+	CHECK_TRUE(has_file("Depth3 (USA).iso"));
+	CHECK_TRUE(has_file("Depth4 (USA).iso"));
 	CHECK_FALSE(has_file("BiosDir (USA).iso"));
 	CHECK_FALSE(has_file("CoversDir (USA).iso"));
 	CHECK_FALSE(has_file("SmallBios.bin"));
