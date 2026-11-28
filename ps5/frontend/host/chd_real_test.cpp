@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "libchdr/chd.h"
+#include "ps5/frontend/fe_games.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -203,13 +204,40 @@ void TestTruncatedChdRejected(const std::string& chd_path, const std::string& wo
 	}
 	Check(failed, "truncated CHD fails open or read cleanly");
 }
+void TestParentChildAndErrorSentences(const std::string& parent_chd, const std::string& child_with_parent,
+	const std::string& child_orphan, const std::string& work_dir)
+{
+	fe::SetSerialCacheFile("");
+	std::string reason;
+	const std::string parent_serial = fe::ReadSerial(parent_chd, &reason);
+	Check(parent_serial == "SLUS-20010", "real CHD parent serial read via libchdr (" + parent_serial + ")");
+
+	reason.clear();
+	const std::string child_serial = fe::ReadSerial(child_with_parent, &reason);
+	Check(child_serial == "SLUS-20010", "real child CHD resolves sibling parent and reads serial (" + child_serial + ")");
+
+	reason.clear();
+	const std::string orphan_serial = fe::ReadSerial(child_orphan, &reason);
+	bool orphan_launchable = true;
+	const std::string orphan_problem = fe::FormatImageProblem(reason, &orphan_launchable);
+	Check(orphan_serial.empty(), "parent-less child CHD has no serial");
+	Check(!orphan_launchable && orphan_problem == "This CHD needs its parent file in the same folder.",
+		"parent-less child CHD gets clear missing-parent sentence: " + orphan_problem);
+
+	reason.clear();
+	bool bad_codec_launchable = true;
+	(void)fe::ReadSerial(work_dir + "/bad-codec.chd", &reason);
+	const std::string bad_codec_problem = fe::FormatImageProblem(reason, &bad_codec_launchable);
+	Check(!bad_codec_launchable && bad_codec_problem == "This CHD uses a compression or version Caliza cannot read.",
+		"unsupported codec CHD gets clear user-facing sentence: " + bad_codec_problem);
+}
 } // namespace
 
 int main(int argc, char** argv)
 {
 	if (argc < 5)
 	{
-		std::cerr << "usage: chd_real_test <work_dir> <dvd_lzma.chd> <dvd_raw.bin> <cd_cdlz.chd> [cd_raw.bin]\n";
+		std::cerr << "usage: chd_real_test <work_dir> <dvd_lzma.chd> <dvd_raw.bin> <cd_cdlz.chd> [cd_raw.bin] [iso_parent.chd] [iso_child.chd] [orphan_child.chd]\n";
 		return 2;
 	}
 	const std::string work_dir = argv[1];
@@ -223,6 +251,8 @@ int main(int argc, char** argv)
 		TestCdCdlzAllocationAndBytes(cd_chd, cd_raw, "CD cdlz");
 	TestUnsupportedCodecRejectedAtOpen(dvd_chd, work_dir);
 	TestTruncatedChdRejected(dvd_chd, work_dir);
+	if (argc >= 9)
+		TestParentChildAndErrorSentences(argv[6], argv[7], argv[8], work_dir);
 
 	if (g_failures != 0)
 	{

@@ -51,9 +51,14 @@ std::string ReadSerial(const std::string& image_path, std::string* reason = null
 // Read the BOOT2 executable for the RA hash. Supports the shelf image formats. (AI-assisted)
 bool ReadAchievementExecutable(const std::string& path, std::string& name, std::vector<uint8_t>& bytes);
 
-// vk-285-109: what a CHD is (header, codecs, first track, data offset, or why libchdr can't open it), for
+// vk-285-109: what a CHD/CSO/ZSO is (header, codecs, first track, data offset, or why it can't be opened), for
 // the log when ReadSerial found no serial in it; empty for other images.
 std::string DescribeImage(const std::string& image_path);
+
+// Translates an open/inspect failure reason from ReadSerial/DescribeImage into a user-facing sentence.
+// Returns empty when `reason` does not indicate an error. When non-null, `*can_launch` is set to false
+// for problems that prevent booting the image.
+std::string FormatImageProblem(const std::string& reason, bool* can_launch = nullptr);
 
 // vk-285-108: where ReadSerial keeps the CHD serials it found (opening a CHD costs tens of milliseconds);
 // empty: none kept.

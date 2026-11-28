@@ -111,6 +111,7 @@ public:
 
 	const std::string& GetFilename() const { return m_filename; }
 	u32 GetBlockSize() const { return m_blocksize; }
+	virtual std::string GetLastReadError() const { return {}; }
 
 	virtual u32 GetBlockCount() const = 0;
 

@@ -47,16 +47,19 @@ for f in "$root"/ps5/third_party/zstd/lib/common/*.c "$root"/ps5/third_party/zst
   compile_c "$f"
 done
 
-"$CXX" -std=c++17 -O2 -Wall -Wextra -I"$root/3rdparty/libchdr/include" \
-  "$here/chd_real_test.cpp" "${objs[@]}" -o "$out/test_chd_real"
+compile_c "$root/ps5/third_party/lz4/lz4.c"
+
+"$CXX" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function \
+  -I"$root" -I"$root/ps5/frontend" -I"$root/3rdparty/libchdr/include" -I"$root/ps5/third_party/lz4" -I"$root/ps5/third_party/zlib" \
+  -pthread "$here/chd_real_test.cpp" "$root/ps5/frontend/fe_games.cpp" "${objs[@]}" -o "$out/test_chd_real"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/caliza-chd-real.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-# Generate synthetic patterned DVD data (256 KiB = 128 x 2048-byte sectors) and CD raw data (32 x 2352-byte sectors).
-python3 - "$work/dvd.bin" "$work/cd.bin" "$work/cd.cue" <<'PY'
-import sys
-dvd_path, cd_path, cue_path = sys.argv[1], sys.argv[2], sys.argv[3]
+# Generate synthetic patterned DVD data, CD raw data, and a minimal synthetic ISO9660 (SLUS-20010) for parent/child CHD tests.
+python3 - "$work/dvd.bin" "$work/cd.bin" "$work/cd.cue" "$work/iso_parent.iso" "$work/iso_child.iso" <<'PY'
+import struct, sys
+dvd_path, cd_path, cue_path, iso_parent_path, iso_child_path = sys.argv[1:6]
 # Patterned non-trivial sectors so LZMA actually compresses and decompresses real bytes.
 dvd = bytearray(256 * 1024)
 for i in range(len(dvd)):
@@ -78,9 +81,48 @@ with open(cd_path, "wb") as f:
 
 with open(cue_path, "w") as f:
     f.write('FILE "cd.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n')
+
+def make_minimal_iso(extra_byte):
+    buf = bytearray(32 * 2048)
+    # Sector 16: ISO9660 PVD
+    pvd = 16 * 2048
+    buf[pvd] = 1
+    buf[pvd+1:pvd+6] = b"CD001"
+    buf[pvd+6] = 1
+    # Root directory record at offset 156: LBA 18, size 2048
+    buf[pvd+156] = 34
+    struct.pack_into("<I", buf, pvd + 158, 18)
+    struct.pack_into("<I", buf, pvd + 166, 2048)
+    # Sector 18: root directory entry for SYSTEM.CNF;1 at LBA 19
+    cnf = b"BOOT2 = cdrom0:\\SLUS_200.10;1\r\nVER = 1.00\r\nVMODE = NTSC\r\n"
+    root = 18 * 2048
+    name = b"SYSTEM.CNF;1"
+    rec_len = 33 + len(name)
+    if rec_len % 2:
+        rec_len += 1
+    buf[root] = rec_len
+    struct.pack_into("<I", buf, root + 2, 19)
+    struct.pack_into("<I", buf, root + 10, len(cnf))
+    buf[root + 32] = len(name)
+    buf[root + 33:root + 33 + len(name)] = name
+    # Sector 19: SYSTEM.CNF
+    buf[19 * 2048:19 * 2048 + len(cnf)] = cnf
+    # Sector 24: small difference between parent and child
+    buf[24 * 2048] = extra_byte
+    return buf
+
+with open(iso_parent_path, "wb") as f:
+    f.write(make_minimal_iso(0x11))
+with open(iso_child_path, "wb") as f:
+    f.write(make_minimal_iso(0x22))
 PY
 
 chdman createdvd -f -i "$work/dvd.bin" -o "$work/dvd_lzma.chd" -hs 16384 -c lzma >/dev/null 2>&1
 chdman createcd -f -i "$work/cd.cue" -o "$work/cd_cdlz.chd" -c cdlz >/dev/null 2>&1
+mkdir -p "$work/with-parent" "$work/orphan-only"
+chdman createdvd -f -i "$work/iso_parent.iso" -o "$work/with-parent/parent.chd" -hs 16384 -c zlib >/dev/null 2>&1
+chdman createdvd -f -i "$work/iso_child.iso" -op "$work/with-parent/parent.chd" -o "$work/with-parent/child.chd" -hs 16384 -c zlib >/dev/null 2>&1
+cp "$work/with-parent/child.chd" "$work/orphan-only/child.chd"
 
-"$out/test_chd_real" "$work" "$work/dvd_lzma.chd" "$work/dvd.bin" "$work/cd_cdlz.chd" "$work/cd.bin"
+"$out/test_chd_real" "$work" "$work/dvd_lzma.chd" "$work/dvd.bin" "$work/cd_cdlz.chd" "$work/cd.bin" \
+  "$work/with-parent/parent.chd" "$work/with-parent/child.chd" "$work/orphan-only/child.chd"

@@ -178,6 +178,10 @@ bool CsoFileReader::InitializeBuffers(Error* error)
 
 void CsoFileReader::Close2()
 {
+	{
+		std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+		m_lastReadError.clear();
+	}
 	m_filename.clear();
 
 	if (m_src)
@@ -197,6 +201,12 @@ void CsoFileReader::Close2()
 u32 CsoFileReader::GetBlockCount() const
 {
 	return static_cast<u32>((m_totalSize - m_dataoffset) / m_blocksize);
+}
+
+std::string CsoFileReader::GetLastReadError() const
+{
+	std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+	return m_lastReadError;
 }
 
 ThreadedFileReader::Chunk CsoFileReader::ChunkForOffset(u64 offset)
@@ -300,7 +310,12 @@ int CsoFileReader::ReadChunk(void* dst, s64 chunkID)
 		}
 
 		if (!success)
-			Console.Error(fmt::format("Unable to decompress CSO frame using {}", (m_uselz4)? "lz4":"zlib"));
+		{
+			const std::string msg = fmt::format("Unable to decompress CSO frame using {}", m_uselz4 ? "lz4" : "zlib");
+			Console.Error(msg);
+			std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+			m_lastReadError = msg;
+		}
 		
 		if (!m_uselz4)
 			inflateReset(&m_z_stream);

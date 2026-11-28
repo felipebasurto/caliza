@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "ChdFileReader.h"
+#include "Host.h"
+#include "IconsFontAwesome.h"
 
 #include "common/Assertions.h"
 #include "common/Console.h"
@@ -493,15 +495,40 @@ int ChdFileReader::ReadChunk(void* dst, s64 chunkID)
 	chd_error error = chd_read(ChdFile, chunkID, dst);
 	if (error != CHDERR_NONE)
 	{
-		Console.Error("CDVD: chd_read returned error: %s", chd_error_string(error));
+		const char* reason = chd_error_string(error);
+		Console.Error("CDVD: chd_read returned error: %s", reason);
+		const std::string msg = fmt::format("CHD read error (hunk {}): {}", chunkID, reason);
+		bool notify_osd = false;
+		{
+			std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+			m_lastReadError = msg;
+			if (!m_reportedReadErrorOsd)
+			{
+				m_reportedReadErrorOsd = true;
+				notify_osd = true;
+			}
+		}
+		if (notify_osd)
+			Host::AddIconOSDMessage("ChdReadError", ICON_FA_TRIANGLE_EXCLAMATION, msg, Host::OSD_ERROR_DURATION);
 		return 0;
 	}
 
 	return hunk_size;
 }
 
+std::string ChdFileReader::GetLastReadError() const
+{
+	std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+	return m_lastReadError;
+}
+
 void ChdFileReader::Close2()
 {
+	{
+		std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+		m_lastReadError.clear();
+		m_reportedReadErrorOsd = false;
+	}
 	if (ChdFile)
 	{
 		chd_close(ChdFile);

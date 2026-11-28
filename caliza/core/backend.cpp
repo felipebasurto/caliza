@@ -280,17 +280,59 @@ bool PosixImageInspector::Inspect(GameEntry& entry)
 		if (!ReadAt(fd, 0, magic, sizeof(magic)) || std::memcmp(magic, "MComprHD", 8) != 0)
 		{
 			valid = false;
-			problem = "file has an .chd extension but no CHD header";
+			problem = "This file has a .chd extension, but no CHD header.";
 		}
 	}
 	else if (extension == ".cso" || extension == ".zso")
 	{
-		char magic[4] = {};
 		const bool zso = extension == ".zso";
-		if (!ReadAt(fd, 0, magic, sizeof(magic)) || std::memcmp(magic, zso ? "ZISO" : "CISO", 4) != 0)
+		const char* fmt_name = zso ? "ZSO" : "CSO";
+		uint8_t hdr[24] = {};
+		if (entry.bytes < sizeof(hdr) || !ReadAt(fd, 0, hdr, sizeof(hdr)))
 		{
 			valid = false;
-			problem = "compressed image has no " + std::string(zso ? "ZISO" : "CISO") + " header";
+			problem = std::string("This ") + fmt_name + " file is cut short or damaged.";
+		}
+		else if (std::memcmp(hdr, zso ? "ZISO" : "CISO", 4) != 0)
+		{
+			valid = false;
+			problem = std::string("This file has a ") + extension + " extension, but its " + fmt_name + " header is invalid.";
+		}
+		else
+		{
+			const uint64_t total_bytes = static_cast<uint64_t>(Le32(hdr + 8)) | (static_cast<uint64_t>(Le32(hdr + 12)) << 32);
+			const uint32_t frame_size = Le32(hdr + 16);
+			const uint8_t version = hdr[20];
+			const uint8_t align = hdr[21];
+			if (version > 1)
+			{
+				valid = false;
+				problem = std::string("This ") + fmt_name + " uses an unsupported version (only v1 is supported).";
+			}
+			else if (frame_size < 2048 || frame_size > (1u << 20) || (frame_size & (frame_size - 1)) != 0)
+			{
+				valid = false;
+				problem = std::string("This ") + fmt_name + " header has an invalid frame size.";
+			}
+			else if (align > 8)
+			{
+				valid = false;
+				problem = std::string("This ") + fmt_name + " header has an invalid index alignment.";
+			}
+			else if (total_bytes == 0)
+			{
+				valid = false;
+				problem = std::string("This ") + fmt_name + " header reports an empty disc.";
+			}
+			else
+			{
+				const uint64_t frames = (total_bytes + frame_size - 1) / frame_size;
+				if (frames > 0x1fffffffULL || 24ULL + (frames + 1ULL) * 4ULL > entry.bytes)
+				{
+					valid = false;
+					problem = std::string("This ") + fmt_name + " file is cut short or damaged.";
+				}
+			}
 		}
 	}
 	else if (extension == ".iso" || extension == ".bin" || extension == ".img")

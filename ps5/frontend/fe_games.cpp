@@ -150,12 +150,72 @@ public:
 			chd_close(m_chd);
 	}
 
-	bool Open(const std::string& path)
+	static bool IsHeaderParentChd(const chd_header& child, const chd_header& parent)
 	{
-		const chd_error err = chd_open(path.c_str(), CHD_OPEN_READ, nullptr, &m_chd);
+		static const uint8_t kZeroMd5[CHD_MD5_BYTES] = {};
+		static const uint8_t kZeroSha1[CHD_SHA1_BYTES] = {};
+		if (std::memcmp(kZeroMd5, child.parentmd5, CHD_MD5_BYTES) != 0 &&
+			std::memcmp(kZeroMd5, parent.md5, CHD_MD5_BYTES) != 0 &&
+			std::memcmp(parent.md5, child.parentmd5, CHD_MD5_BYTES) != 0)
+			return false;
+		if (std::memcmp(kZeroSha1, child.parentsha1, CHD_SHA1_BYTES) != 0 &&
+			std::memcmp(kZeroSha1, parent.sha1, CHD_SHA1_BYTES) != 0 &&
+			std::memcmp(parent.sha1, child.parentsha1, CHD_SHA1_BYTES) != 0)
+			return false;
+		return true;
+	}
+
+	static chd_error OpenWithParents(const std::string& path, int depth, chd_file** out)
+	{
+		*out = nullptr;
+		chd_error err = chd_open(path.c_str(), CHD_OPEN_READ, nullptr, out);
+		if (err != CHDERR_REQUIRES_PARENT)
+			return err;
+		if (depth >= 8)
+			return CHDERR_REQUIRES_PARENT;
+		chd_header child_hdr = {};
+		if (chd_read_header(path.c_str(), &child_hdr) != CHDERR_NONE)
+			return CHDERR_REQUIRES_PARENT;
+		const size_t slash = path.rfind('/');
+		const std::string dir = slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+		DIR* d = opendir(dir.c_str());
+		if (!d)
+			return CHDERR_REQUIRES_PARENT;
+		chd_file* parent = nullptr;
+		while (const dirent* e = readdir(d))
+		{
+			if (e->d_name[0] == '.' || !HasExtension(e->d_name, ".chd"))
+				continue;
+			const std::string cand = dir + "/" + e->d_name;
+			if (cand == path)
+				continue;
+			chd_header parent_hdr = {};
+			if (chd_read_header(cand.c_str(), &parent_hdr) != CHDERR_NONE)
+				continue;
+			if (!IsHeaderParentChd(child_hdr, parent_hdr))
+				continue;
+			if (OpenWithParents(cand, depth + 1, &parent) == CHDERR_NONE && parent)
+				break;
+			parent = nullptr;
+		}
+		closedir(d);
+		if (!parent)
+			return CHDERR_REQUIRES_PARENT;
+		err = chd_open(path.c_str(), CHD_OPEN_READ, parent, out);
 		if (err != CHDERR_NONE)
 		{
-			m_chd = nullptr; // a CHD that needs its parent reads as no serial (PCSX2 finds the parent itself)
+			chd_close(parent);
+			*out = nullptr;
+		}
+		return err;
+	}
+
+	bool Open(const std::string& path)
+	{
+		const chd_error err = OpenWithParents(path, 0, &m_chd);
+		if (err != CHDERR_NONE)
+		{
+			m_chd = nullptr;
 			m_what = std::string("libchdr can't open it: ") + chd_error_string(err);
 			return false;
 		}
@@ -640,6 +700,81 @@ std::string DescribeImage(const std::string& image_path)
 		CsoSectors disc;
 		disc.Open(image_path);
 		return disc.What();
+	}
+	return {};
+}
+
+std::string FormatImageProblem(const std::string& reason, bool* can_launch)
+{
+	if (can_launch)
+		*can_launch = true;
+	if (reason.empty())
+		return {};
+	const std::string cant_open = "libchdr can't open it: ";
+	if (reason.rfind(cant_open, 0) == 0)
+	{
+		if (can_launch)
+			*can_launch = false;
+		const std::string detail = Lower(reason.substr(cant_open.size()));
+		if (detail.find("parent") != std::string::npos)
+			return "This CHD needs its parent file in the same folder.";
+		if (detail.find("unsupported format") != std::string::npos || detail.find("unsupported chd version") != std::string::npos)
+			return "This CHD uses a compression or version Caliza cannot read.";
+		if (detail.find("out of memory") != std::string::npos)
+			return "Not enough memory to open this CHD.";
+		if (detail.find("invalid data") != std::string::npos || detail.find("invalid file") != std::string::npos ||
+			detail.find("read error") != std::string::npos || detail.find("decompression error") != std::string::npos ||
+			detail.find("codec error") != std::string::npos)
+			return "This CHD is cut short or damaged.";
+		return "This CHD could not be opened (" + reason.substr(cant_open.size()) + ").";
+	}
+	if (reason == "no hunk or unit size in its header")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CHD is cut short or damaged.";
+	}
+	if (reason == "cso header truncated" || reason == "cso index truncated")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO file is cut short or damaged.";
+	}
+	if (reason == "not a CISO or ZISO header")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This file has a bad CSO/ZSO header.";
+	}
+	if (reason == "unsupported CSO version")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO uses an unsupported version (only v1 is supported).";
+	}
+	if (reason == "invalid CSO frame size")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header has an invalid frame size.";
+	}
+	if (reason == "invalid CSO index alignment")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header has an invalid index alignment.";
+	}
+	if (reason == "empty CSO disc")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header reports an empty disc.";
+	}
+	if (reason == "can't open compressed image")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This compressed image could not be opened.";
 	}
 	return {};
 }

@@ -26,6 +26,7 @@ public:
 	void Close2() override;
 
 	u32 GetBlockCount() const override;
+	std::string GetLastReadError() const override;
 
 private:
 	static bool ValidateHeader(const CsoHeader& hdr, Error* error);
@@ -48,4 +49,6 @@ private:
 	std::unique_ptr<u8[]> m_file_cache;
 	size_t m_file_cache_size = 0;
 	z_stream m_z_stream = {};
+	mutable std::mutex m_lastReadErrorMutex;
+	std::string m_lastReadError;
 };

@@ -53,6 +53,7 @@ const char* chd_error_string(chd_error err)
 	return err == CHDERR_INVALID_DATA ? "invalid data" : "error";
 }
 const chd_header* chd_get_header(chd_file*) { return nullptr; }
+chd_error chd_read_header(const char*, chd_header*) { return CHDERR_INVALID_DATA; }
 chd_error chd_read(chd_file*, uint32_t, void*) { return CHDERR_INVALID_FILE; }
 chd_error chd_get_metadata(chd_file*, uint32_t, uint32_t, void*, uint32_t, uint32_t*, uint32_t*, uint8_t*)
 {
@@ -137,6 +138,19 @@ int main()
 	Check(fe::ReadSerial(cso, &cso_reason2).empty(), "reloaded CSO hits negative cache");
 	Check(cso_reason2 == cso_reason, "reloaded CSO returns cached reason without re-opening");
 	(void)chmod(cso.c_str(), 0644);
+
+	// Verify user-facing error translation for CHD/CSO/ZSO failure reasons.
+	bool can_launch = true;
+	Check(fe::FormatImageProblem("libchdr can't open it: invalid data", &can_launch) == "This CHD is cut short or damaged." && !can_launch,
+		"invalid data maps to clear damaged CHD sentence");
+	Check(fe::FormatImageProblem("libchdr can't open it: requires parent", &can_launch) == "This CHD needs its parent file in the same folder." && !can_launch,
+		"requires parent maps to clear missing-parent sentence");
+	Check(fe::FormatImageProblem("libchdr can't open it: unsupported format", &can_launch) == "This CHD uses a compression or version Caliza cannot read." && !can_launch,
+		"unsupported format maps to clear unsupported-compression sentence");
+	Check(fe::FormatImageProblem("unsupported CSO version", &can_launch).find("unsupported version") != std::string::npos && !can_launch,
+		"unsupported CSO version maps to clear sentence");
+	Check(fe::FormatImageProblem("v5, 2048-byte units, 16384-byte hunks", &can_launch).empty() && can_launch,
+		"non-error CHD description is not treated as damaged");
 
 	(void)unlink(chd.c_str());
 	(void)unlink(cso.c_str());

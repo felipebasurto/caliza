@@ -358,6 +358,76 @@ void TestBackendSavedSourceRestartPersistence()
 	}
 }
 
+std::string MakeSyntheticCsoHeader(const char magic[4], uint64_t total_bytes, uint32_t frame_size, uint8_t version, uint8_t align,
+	size_t extra_bytes)
+{
+	std::string out(24 + extra_bytes, '\0');
+	std::memcpy(&out[0], magic, 4);
+	out[4] = 24;
+	for (int i = 0; i < 8; i++)
+		out[8 + i] = static_cast<char>((total_bytes >> (i * 8)) & 0xff);
+	for (int i = 0; i < 4; i++)
+		out[16 + i] = static_cast<char>((frame_size >> (i * 8)) & 0xff);
+	out[20] = static_cast<char>(version);
+	out[21] = static_cast<char>(align);
+	return out;
+}
+
+void TestCompressedImageHeaderValidation()
+{
+	TempDir temp;
+	PosixImageInspector inspector;
+	auto inspect = [&](const std::string& name, const std::string& content) {
+		const std::string path = temp.path + "/" + name;
+		CHECK_TRUE(WriteFile(path, content));
+		GameEntry entry;
+		entry.id = path;
+		entry.path = path;
+		entry.file = name;
+		entry.bytes = content.size();
+		CHECK_TRUE(inspector.Inspect(entry));
+		return entry;
+	};
+
+	const GameEntry bad_chd = inspect("NotChd.chd", "NOT_A_CHD_FILE");
+	CHECK_TRUE(bad_chd.damaged && !bad_chd.can_launch);
+	CHECK_TRUE(bad_chd.problem.find("no CHD header") != std::string::npos);
+
+	const GameEntry short_cso = inspect("Short.cso", "CISO");
+	CHECK_TRUE(short_cso.damaged && !short_cso.can_launch);
+	CHECK_TRUE(short_cso.problem.find("cut short or damaged") != std::string::npos);
+
+	const GameEntry bad_ver = inspect("V2.cso", MakeSyntheticCsoHeader("CISO", 4096, 2048, 2, 0, 12));
+	CHECK_TRUE(bad_ver.damaged && !bad_ver.can_launch);
+	CHECK_TRUE(bad_ver.problem.find("unsupported version") != std::string::npos);
+
+	const GameEntry bad_frame = inspect("BadFrame.zso", MakeSyntheticCsoHeader("ZISO", 6000, 3000, 1, 0, 12));
+	CHECK_TRUE(bad_frame.damaged && !bad_frame.can_launch);
+	CHECK_TRUE(bad_frame.problem.find("invalid frame size") != std::string::npos);
+
+	const GameEntry small_frame = inspect("SmallFrame.cso", MakeSyntheticCsoHeader("CISO", 4096, 1024, 1, 0, 20));
+	CHECK_TRUE(small_frame.damaged && !small_frame.can_launch);
+	CHECK_TRUE(small_frame.problem.find("invalid frame size") != std::string::npos);
+
+	const GameEntry bad_align = inspect("BadAlign.zso", MakeSyntheticCsoHeader("ZISO", 4096, 2048, 1, 9, 12));
+	CHECK_TRUE(bad_align.damaged && !bad_align.can_launch);
+	CHECK_TRUE(bad_align.problem.find("invalid index alignment") != std::string::npos);
+
+	const GameEntry trunc_index = inspect("TruncIndex.zso", MakeSyntheticCsoHeader("ZISO", 2048 * 100, 2048, 1, 0, 16));
+	CHECK_TRUE(trunc_index.damaged && !trunc_index.can_launch);
+	CHECK_TRUE(trunc_index.problem.find("cut short or damaged") != std::string::npos);
+
+	const GameEntry valid_cso = inspect("Good.cso", MakeSyntheticCsoHeader("CISO", 4096, 2048, 1, 0, 12));
+	CHECK_FALSE(valid_cso.damaged);
+	CHECK_TRUE(valid_cso.can_launch);
+	CHECK_TRUE(valid_cso.problem.empty());
+
+	const GameEntry valid_zso = inspect("Good.zso", MakeSyntheticCsoHeader("ZISO", 4096, 2048, 1, 0, 12));
+	CHECK_FALSE(valid_zso.damaged);
+	CHECK_TRUE(valid_zso.can_launch);
+	CHECK_TRUE(valid_zso.problem.empty());
+}
+
 } // namespace
 
 int main()
@@ -367,6 +437,7 @@ int main()
 	TestInternalRootRejectedAsScanSource();
 	TestRealScanCancellationAndDisconnect();
 	TestBackendSavedSourceRestartPersistence();
+	TestCompressedImageHeaderValidation();
 	if (Failures() == 0)
 	{
 		std::cout << "test_storage: PASS\n";

@@ -32,6 +32,13 @@ const chd_header *chd_get_header(chd_file *chd)
 	return 0;
 }
 
+chd_error chd_read_header(const char *filename, chd_header *header)
+{
+	(void)filename;
+	(void)header;
+	return CHDERR_FILE_NOT_FOUND;
+}
+
 chd_error chd_read(chd_file *chd, uint32_t hunknum, void *buffer)
 {
 	(void)chd;

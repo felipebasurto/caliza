@@ -282,9 +282,10 @@ public:
 		fe::ApplyGameDbTitle(info);
 		if (info.serial.empty() && !read_reason.empty())
 		{
-			const std::string cant_open = "libchdr can't open it: ";
-			if (read_reason.rfind(cant_open, 0) == 0 && read_reason.find("parent") == std::string::npos)
-				info.damaged = read_reason.substr(cant_open.size());
+			bool launchable = true;
+			const std::string formatted = fe::FormatImageProblem(read_reason, &launchable);
+			if (!formatted.empty())
+				info.damaged = formatted;
 		}
 		fe::ReadBadges(info, m_paths.settings_dir, m_paths.gs_ini, m_paths.patches_dir);
 		entry.title = info.title.empty() ? entry.title : info.title;
