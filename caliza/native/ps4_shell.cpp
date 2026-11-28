@@ -621,6 +621,15 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	// readable, non-empty root are useful evidence here. /mnt/usb0 itself is still probed, and the direct
 	// sandbox mount performed during boot makes it non-empty when the Toshiba is visible to this process.
 	options.storage.discovery.include_absent_slots = false;
+	for (const std::string& dir : paths.usb_dirs)
+	{
+		if (dir == "/net" || dir.compare(0, 5, "/net/") == 0)
+		{
+			auto& nets = options.storage.discovery.network_roots;
+			if (std::find(nets.begin(), nets.end(), dir) == nets.end())
+				nets.push_back(dir);
+		}
+	}
 	options.storage.image_inspector = std::make_shared<FrontendImageInspector>(paths);
 	options.global_settings_path = paths.gs_ini;
 	options.game_settings_dir = paths.settings_dir;

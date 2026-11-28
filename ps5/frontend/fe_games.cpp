@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace fe
 {
@@ -801,6 +802,27 @@ void SetSerialCacheFile(const std::string& path)
 	s_serials.clear();
 }
 
+bool LookupCachedSerial(const std::string& image_path, std::string& serial, std::string* reason)
+{
+	serial.clear();
+	if (reason)
+		reason->clear();
+	struct stat st = {};
+	if (stat(image_path.c_str(), &st) != 0)
+		return false;
+	const std::string key =
+		image_path + '\t' + std::to_string(static_cast<long long>(st.st_size)) + '\t' + std::to_string(static_cast<long long>(st.st_mtime));
+	std::lock_guard<std::mutex> lock(s_serial_mutex);
+	LoadSerialsLocked();
+	const auto it = s_serials.find(key);
+	if (it == s_serials.end())
+		return false;
+	serial = it->second.serial;
+	if (reason)
+		*reason = it->second.reason;
+	return true;
+}
+
 std::string ReadSerial(const std::string& image_path, std::string* reason)
 {
 	if (reason)
@@ -1307,13 +1329,26 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs)
 {
 	std::vector<GameInfo> games;
+	std::unordered_set<std::string> visited_dirs;
+	const auto scan_once = [&](const std::string& path, std::vector<std::string>* subdirs) {
+		if (!visited_dirs.insert(path).second)
+			return;
+		ScanDir(path, games, subdirs);
+	};
 	for (const std::string& dir : dirs)
 	{
-		std::vector<std::string> subdirs;
-		ScanDir(dir, games, &subdirs);
-		std::sort(subdirs.begin(), subdirs.end());
-		for (const std::string& sub : subdirs)
-			ScanDir(dir + "/" + sub, games, nullptr);
+		std::vector<std::string> subdirs1;
+		scan_once(dir, &subdirs1);
+		std::sort(subdirs1.begin(), subdirs1.end());
+		for (const std::string& sub1 : subdirs1)
+		{
+			const std::string path1 = dir + "/" + sub1;
+			std::vector<std::string> subdirs2;
+			scan_once(path1, &subdirs2);
+			std::sort(subdirs2.begin(), subdirs2.end());
+			for (const std::string& sub2 : subdirs2)
+				scan_once(path1 + "/" + sub2, nullptr);
+		}
 	}
 	SortGames(games);
 	return games;

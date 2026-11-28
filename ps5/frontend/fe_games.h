@@ -64,6 +64,10 @@ std::string FormatImageProblem(const std::string& reason, bool* can_launch = nul
 // empty: none kept.
 void SetSerialCacheFile(const std::string& path);
 
+// Non-blocking lookup in ReadSerial's persistent serial cache for a compressed image. Returns true on a
+// cache hit (including cached empty/failed reads) without opening the image file.
+bool LookupCachedSerial(const std::string& image_path, std::string& serial, std::string* reason = nullptr);
+
 // Display title and region from a file name stem ("Lord of the Rings, The - The Two Towers (USA)").
 void MakeTitle(const std::string& stem, std::string& title, std::string& region, std::string& extra);
 

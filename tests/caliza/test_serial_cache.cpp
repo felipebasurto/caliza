@@ -152,6 +152,62 @@ int main()
 	Check(fe::FormatImageProblem("v5, 2048-byte units, 16384-byte hunks", &can_launch).empty() && can_launch,
 		"non-error CHD description is not treated as damaged");
 
+	// Non-blocking LookupCachedSerial must never invoke chd_open, and must distinguish cache hit vs miss.
+	{
+		const std::string uncached = root + "/uncached.chd";
+		WriteBytes(uncached, "MComprHD");
+		const int before = g_chd_open_calls;
+		std::string s, r;
+		Check(!fe::LookupCachedSerial(uncached, s, &r), "LookupCachedSerial misses for uncached CHD");
+		Check(g_chd_open_calls == before, "LookupCachedSerial miss does not call chd_open");
+		Check(fe::LookupCachedSerial(chd, s, &r), "LookupCachedSerial hits for cached CHD");
+		Check(g_chd_open_calls == before, "LookupCachedSerial hit does not call chd_open");
+		(void)unlink(uncached.c_str());
+	}
+
+	// ScanGames depth (root + 2 levels), skip list, and 16 MiB .bin floor match StorageBackend.
+	{
+		const std::string scan_root = root + "/scan";
+		const std::string d1 = scan_root + "/PS2";
+		const std::string d2 = d1 + "/Action";
+		const std::string d3 = d2 + "/TooDeep";
+		const std::string bios_dir = scan_root + "/bios";
+		(void)mkdir(scan_root.c_str(), 0755);
+		(void)mkdir(d1.c_str(), 0755);
+		(void)mkdir(d2.c_str(), 0755);
+		(void)mkdir(d3.c_str(), 0755);
+		(void)mkdir(bios_dir.c_str(), 0755);
+		WriteBytes(scan_root + "/Root.chd", "MComprHD");
+		WriteBytes(d1 + "/Depth1.chd", "MComprHD");
+		WriteBytes(d2 + "/Depth2.chd", "MComprHD");
+		WriteBytes(d3 + "/Depth3.chd", "MComprHD");
+		WriteBytes(bios_dir + "/Bios.chd", "MComprHD");
+		WriteBytes(scan_root + "/SmallBios.bin", std::string(1024, '\0'));
+
+		const auto games = fe::ScanGames({scan_root});
+		auto has = [&](const std::string& file) {
+			for (const auto& g : games)
+				if (g.file == file)
+					return true;
+			return false;
+		};
+		Check(games.size() == 3u, "ScanGames finds depth 0..2 and excludes depth 3, bios/, and small .bin");
+		Check(has("Root.chd") && has("Depth1.chd") && has("Depth2.chd"), "ScanGames includes depth 0, 1, 2");
+		Check(!has("Depth3.chd") && !has("Bios.chd") && !has("SmallBios.bin"), "ScanGames excludes depth 3, bios/, and <16 MiB .bin");
+
+		(void)unlink((scan_root + "/Root.chd").c_str());
+		(void)unlink((d1 + "/Depth1.chd").c_str());
+		(void)unlink((d2 + "/Depth2.chd").c_str());
+		(void)unlink((d3 + "/Depth3.chd").c_str());
+		(void)unlink((bios_dir + "/Bios.chd").c_str());
+		(void)unlink((scan_root + "/SmallBios.bin").c_str());
+		(void)rmdir(bios_dir.c_str());
+		(void)rmdir(d3.c_str());
+		(void)rmdir(d2.c_str());
+		(void)rmdir(d1.c_str());
+		(void)rmdir(scan_root.c_str());
+	}
+
 	(void)unlink(chd.c_str());
 	(void)unlink(cso.c_str());
 	(void)unlink(zso.c_str());

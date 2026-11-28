@@ -499,9 +499,33 @@ struct ScanJob
 	uint64_t batch = 0;
 	std::string source_id;
 	std::string root_path;
-	uint32_t max_depth = 32;
+	uint32_t max_depth = 2;
 	std::shared_ptr<ScanControl> control;
 };
+
+bool ShouldSkipScanSubfolder(const std::string& name)
+{
+	if (name.empty() || name[0] == '.' || name[0] == '$')
+		return true;
+	static constexpr const char* kSkip[] = {
+		"bios", "cache", "cheats", "cheats_ws", "covers", "flags", "inputprofiles", "lang",
+		"logs", "memcards", "patches", "resources", "settings", "snaps", "sstates", "savestates",
+		"textures", "videos", "system volume information", "lost.dir",
+	};
+	const std::string lower = LowerAscii(name);
+	for (const char* skip : kSkip)
+		if (lower == skip)
+			return true;
+	return false;
+}
+
+bool MeetsRawDiscSizeFloor(const std::string& name, uint64_t bytes)
+{
+	const std::string ext = ExtensionLower(name);
+	if (ext == ".bin" || ext == ".img")
+		return bytes >= (16ULL << 20);
+	return true;
+}
 
 struct ScanOutcome
 {
@@ -762,6 +786,8 @@ private:
 				struct stat st = {};
 				if (lstat(child.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
 					continue;
+				if (!MeetsRawDiscSizeFloor(name, static_cast<uint64_t>(st.st_size)))
+					continue;
 				std::string key;
 				const int num = ParseDiscNumber(name, &key);
 				if (num > 0 && !key.empty())
@@ -833,6 +859,7 @@ private:
 				inspect_and_emit(primary_path, storage::fs::BaseName(primary_path), static_cast<uint64_t>(st.st_size), &kv.second);
 			}
 
+			uint32_t subdirs_queued = 0;
 			for (const std::string& name : names)
 			{
 				if (Cancelled(job))
@@ -856,10 +883,11 @@ private:
 				}
 				if (S_ISDIR(st.st_mode))
 				{
-					if (current.second < job.max_depth)
+					if (current.second < job.max_depth && subdirs_queued < 64 && !ShouldSkipScanSubfolder(name))
+					{
 						stack.emplace_back(child, current.second + 1);
-					else if (first_error.empty())
-						first_error = "maximum scan depth reached";
+						subdirs_queued++;
+					}
 					continue;
 				}
 				if (!S_ISREG(st.st_mode))
@@ -867,7 +895,7 @@ private:
 
 				progress.files_seen++;
 				progress.current_path = child;
-				if (storage::LooksLikeGameImageName(name))
+				if (storage::LooksLikeGameImageName(name) && MeetsRawDiscSizeFloor(name, static_cast<uint64_t>(st.st_size)))
 				{
 					const std::string norm_child = storage::fs::NormalizePath(child);
 					if (!suppressed_disc_paths.count(norm_child))
@@ -1103,10 +1131,12 @@ private:
 		{
 			for (const VolumeInfo& volume : snapshot.volumes)
 			{
-				if ((volume.kind != VolumeKind::USB && volume.kind != VolumeKind::Extended) || !volume.present)
+				if ((volume.kind != VolumeKind::USB && volume.kind != VolumeKind::Extended && volume.kind != VolumeKind::Network) ||
+					!volume.present)
 					continue;
-				const std::string id = std::string(volume.kind == VolumeKind::USB ? "volume:usb" : "volume:ext") +
-					std::to_string(volume.slot);
+				const char* prefix = volume.kind == VolumeKind::USB ? "volume:usb"
+					: (volume.kind == VolumeKind::Extended ? "volume:ext" : "volume:net");
+				const std::string id = std::string(prefix) + std::to_string(volume.slot);
 				LibrarySource source = MakeAutomaticSource(id, volume.root_path, volume.label, volume.present, volume.readable);
 				source.volume_id = volume.id;
 				if (!source.problem.empty() && volume.extended_managed)

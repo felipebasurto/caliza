@@ -518,6 +518,74 @@ void TestMultiDiscAndM3uGrouping()
 	}
 }
 
+void TestNetworkSourcesAndScanAlignment()
+{
+	TempDir env;
+	const std::string data_root = env.path + "/caliza";
+	const std::string net0 = env.path + "/net/ps2share";
+	CHECK_TRUE(storage::fs::MakeDirs(data_root + "/games", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action/TooDeep", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/bios", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/covers", nullptr));
+
+	// Depth 0, 1, 2 on mounted network share should be found.
+	CHECK_TRUE(WriteFile(net0 + "/RootGame (USA).chd", "MComprHD"));
+	MakeMinimalIso(net0 + "/PS2/Depth1 (USA).iso");
+	MakeMinimalIso(net0 + "/PS2/Action/Depth2 (USA).iso");
+
+	// Depth 3, skipped emulator folders, and <16 MiB .bin/.img must all be excluded.
+	MakeMinimalIso(net0 + "/PS2/Action/TooDeep/Depth3 (USA).iso");
+	MakeMinimalIso(net0 + "/bios/BiosDir (USA).iso");
+	MakeMinimalIso(net0 + "/covers/CoversDir (USA).iso");
+	CHECK_TRUE(WriteFile(net0 + "/SmallBios.bin", std::string(1024, '\0')));
+	CHECK_TRUE(WriteFile(net0 + "/SmallCard.img", std::string(2048, '\0')));
+
+	BackendOptions options;
+	options.data_root = data_root;
+	options.discovery.internal_root = data_root;
+	options.discovery.usb_roots.clear();
+	options.discovery.extended_roots.clear();
+	options.discovery.network_roots = {net0};
+	options.discovery.include_absent_slots = false;
+
+	StorageBackend backend(options);
+	const Snapshot initial = backend.GetSnapshot();
+	bool saw_net_volume = false;
+	bool saw_net_source = false;
+	for (const VolumeInfo& v : initial.volumes)
+		if (v.kind == VolumeKind::Network && v.present && v.root_path == net0)
+			saw_net_volume = true;
+	for (const LibrarySource& s : initial.sources)
+		if (s.id == "volume:net0" && s.path == net0 && s.state == SourceState::Connected)
+			saw_net_source = true;
+	CHECK_TRUE(saw_net_volume);
+	CHECK_TRUE(saw_net_source);
+
+	EventLog log;
+	Command rescan;
+	rescan.type = CommandType::RescanAll;
+	const CommandEvent* scan = log.WaitTerminal(backend, backend.Post(rescan));
+	CHECK_TRUE(scan != nullptr && scan->status == CommandStatus::Succeeded);
+
+	const Snapshot snap = backend.GetSnapshot();
+	CHECK_EQ(snap.games.size(), 3u);
+	auto has_file = [&](const std::string& file) {
+		for (const GameEntry& g : snap.games)
+			if (g.file == file)
+				return true;
+		return false;
+	};
+	CHECK_TRUE(has_file("RootGame (USA).chd"));
+	CHECK_TRUE(has_file("Depth1 (USA).iso"));
+	CHECK_TRUE(has_file("Depth2 (USA).iso"));
+	CHECK_FALSE(has_file("Depth3 (USA).iso"));
+	CHECK_FALSE(has_file("BiosDir (USA).iso"));
+	CHECK_FALSE(has_file("CoversDir (USA).iso"));
+	CHECK_FALSE(has_file("SmallBios.bin"));
+	CHECK_FALSE(has_file("SmallCard.img"));
+}
+
 } // namespace
 
 int main()
@@ -529,6 +597,7 @@ int main()
 	TestBackendSavedSourceRestartPersistence();
 	TestCompressedImageHeaderValidation();
 	TestMultiDiscAndM3uGrouping();
+	TestNetworkSourcesAndScanAlignment();
 	if (Failures() == 0)
 	{
 		std::cout << "test_storage: PASS\n";

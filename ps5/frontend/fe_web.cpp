@@ -434,12 +434,24 @@ bool WebServer::Start(const WebConfig& cfg)
 
 void WebServer::Stop()
 {
-	if (m_listen < 0)
+	if (m_listen < 0 && !m_thread_started && !m_serial_thread_started)
 		return;
-	m_stop = true;
-	shutdown(m_listen, SHUT_RDWR);
-	close(m_listen);
-	m_listen = -1;
+	bool join_serial = false;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_stop = true;
+		join_serial = m_serial_thread_started;
+		m_serial_thread_started = false;
+		m_serial_queue.clear();
+		m_serial_inflight.clear();
+	}
+	m_serial_cv.notify_all();
+	if (m_listen >= 0)
+	{
+		shutdown(m_listen, SHUT_RDWR);
+		close(m_listen);
+		m_listen = -1;
+	}
 	if (m_thread_started)
 	{
 #ifdef ORBIS_PS4
@@ -447,6 +459,13 @@ void WebServer::Stop()
 #endif
 		pthread_join(m_thread, nullptr);
 		m_thread_started = false;
+	}
+	if (join_serial)
+	{
+#ifdef ORBIS_PS4
+		OrbisHelperThreadRemove(m_serial_thread);
+#endif
+		pthread_join(m_serial_thread, nullptr);
 	}
 }
 
@@ -469,6 +488,76 @@ void* WebServer::ThreadMain(void* self)
 #endif
 	static_cast<WebServer*>(self)->Run();
 	return nullptr;
+}
+
+void* WebServer::SerialThreadMain(void* self)
+{
+#ifdef ORBIS_PS4
+	scePthreadSetprio(pthread_self(), 740);
+#endif
+	static_cast<WebServer*>(self)->RunSerialWorker();
+	return nullptr;
+}
+
+void WebServer::EnqueueSerialLocked(const std::string& path, uint64_t bytes, int64_t mtime)
+{
+	if (m_stop || !m_serial_inflight.insert(path).second)
+		return;
+	m_serial_queue.push_back({path, bytes, mtime});
+	if (!m_serial_thread_started)
+	{
+		pthread_attr_t attr;
+		pthread_attr_init(&attr);
+		pthread_attr_setstacksize(&attr, 512 * 1024);
+		m_serial_thread_started = pthread_create(&m_serial_thread, &attr, &WebServer::SerialThreadMain, this) == 0;
+		pthread_attr_destroy(&attr);
+#ifdef ORBIS_PS4
+		if (m_serial_thread_started)
+			OrbisHelperThreadAdd(m_serial_thread);
+#endif
+	}
+	m_serial_cv.notify_one();
+}
+
+void WebServer::RunSerialWorker()
+{
+	for (;;)
+	{
+		SerialTask task;
+		{
+			std::unique_lock<std::mutex> lock(m_mutex);
+			m_serial_cv.wait(lock, [this] { return m_stop.load() || !m_serial_queue.empty(); });
+			if (m_stop && m_serial_queue.empty())
+				return;
+			task = std::move(m_serial_queue.front());
+			m_serial_queue.pop_front();
+		}
+		if (m_stop)
+			return;
+		// Open and read the compressed image outside m_mutex so HTTP requests never stall on a slow share.
+		const std::string serial = ReadSerial(task.path);
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_serial_inflight.erase(task.path);
+		if (m_stop)
+			return;
+		m_serials[task.path] = {task.bytes, task.mtime, serial};
+		bool updated = false;
+		for (GameInfo& g : m_games)
+		{
+			if (g.path == task.path && g.bytes == task.bytes)
+			{
+				g.serial = serial;
+				ApplyGameDbTitle(g);
+				ReadBadges(g, m_cfg.settings_dir, m_cfg.gs_ini, m_cfg.patches_dir);
+				updated = true;
+			}
+		}
+		if (updated)
+		{
+			SortGames(m_games);
+			++m_game_sequence;
+		}
+	}
 }
 
 void WebServer::SetNowPlaying(const std::string& image_path)
@@ -725,6 +814,17 @@ void WebServer::Route(const Request& req, Response& res)
 	}
 }
 
+namespace
+{
+bool IsCompressedImagePath(const std::string& path)
+{
+	if (path.size() < 4)
+		return false;
+	const std::string ext = Lower(path.substr(path.size() - 4));
+	return ext == ".chd" || ext == ".cso" || ext == ".zso";
+}
+} // namespace
+
 std::vector<GameInfo> WebServer::Games()
 {
 	std::lock_guard<std::mutex> lock(m_mutex);
@@ -733,13 +833,28 @@ std::vector<GameInfo> WebServer::Games()
 		m_games = ScanGames(m_cfg.game_dirs);
 		for (GameInfo& g : m_games)
 		{
-			// Key by (size, mtime) so a same-size replacement refreshes its serial; compressed images also hit
-			// fe::ReadSerial's persistent negative+positive cache under path+size+mtime.
+			// Key by (size, mtime) so a same-size replacement refreshes its serial; compressed images hit
+			// fe::LookupCachedSerial non-blockingly and defer any uncached first open to the background worker
+			// so the HTTP request thread never stalls on a slow USB or network CHD.
 			struct stat st = {};
 			const int64_t mtime = stat(g.path.c_str(), &st) == 0 ? static_cast<int64_t>(st.st_mtime) : 0;
 			const auto it = m_serials.find(g.path);
 			if (it != m_serials.end() && it->second.bytes == g.bytes && it->second.mtime == mtime)
 				g.serial = it->second.serial;
+			else if (IsCompressedImagePath(g.path))
+			{
+				std::string cached;
+				if (LookupCachedSerial(g.path, cached))
+				{
+					g.serial = cached;
+					m_serials[g.path] = {g.bytes, mtime, g.serial};
+				}
+				else
+				{
+					g.serial.clear();
+					EnqueueSerialLocked(g.path, g.bytes, mtime);
+				}
+			}
 			else
 			{
 				g.serial = ReadSerial(g.path);

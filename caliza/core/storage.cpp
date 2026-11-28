@@ -251,6 +251,11 @@ VolumeInfo ProbeVolume(const std::string& root, VolumeKind kind, int slot, const
 		volume.label = slot == 0 ? "USB drive" : "USB drive " + std::to_string(slot + 1);
 	else if (kind == VolumeKind::Extended)
 		volume.label = slot == 0 ? "Extended storage" : "Extended storage " + std::to_string(slot + 1);
+	else if (kind == VolumeKind::Network)
+	{
+		const std::string base = fs::BaseName(volume.root_path);
+		volume.label = base.empty() ? "Network share" : "Network: " + base;
+	}
 	else
 		volume.label = volume.root_path;
 
@@ -800,6 +805,8 @@ std::vector<VolumeInfo> DiscoverVolumes(const StorageDiscoveryOptions& options)
 		volumes.push_back(ProbeVolume(options.usb_roots[i], VolumeKind::USB, static_cast<int>(i), options));
 	for (size_t i = 0; i < options.extended_roots.size(); i++)
 		volumes.push_back(ProbeVolume(options.extended_roots[i], VolumeKind::Extended, static_cast<int>(i), options));
+	for (size_t i = 0; i < options.network_roots.size(); i++)
+		volumes.push_back(ProbeVolume(options.network_roots[i], VolumeKind::Network, static_cast<int>(i), options));
 	if (!options.include_absent_slots)
 	{
 		volumes.erase(std::remove_if(volumes.begin(), volumes.end(), [](const VolumeInfo& volume) { return !volume.present; }),

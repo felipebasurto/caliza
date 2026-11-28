@@ -77,6 +77,15 @@ echo '== cso/zso reader =='
   tests/caliza/test_cso_reader.cpp pcsx2/CDVD/CsoFileReader.cpp "$out/lz4.o" -lz -o "$out/test_cso_reader"
 "$out/test_cso_reader"
 
+echo '== web panel non-blocking serials =='
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function \
+  -I. -Ips5/frontend -I3rdparty/libchdr/include -Ips5/third_party/lz4 -pthread \
+  tests/caliza/test_web_nonblocking.cpp ps5/frontend/fe_web.cpp ps5/frontend/fe_games.cpp \
+  ps5/frontend/fe_covers.cpp ps5/frontend/fe_text.cpp ps5/frontend/fe_i18n.cpp \
+  ps5/frontend/fe_modern_controls.cpp ps5/frontend/fe_settings.cpp "$out/lz4.o" -lz \
+  -o "$out/test_web_nonblocking"
+"$out/test_web_nonblocking"
+
 echo '== web panel smoke =='
 (cd caliza/web && node smoke-test.mjs)
 
