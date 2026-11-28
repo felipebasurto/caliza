@@ -551,8 +551,9 @@ void OptionsSheet::Open(const OptionsPaths& paths, const GameInfo* game)
 		m_title = game->title;
 		m_serial = game->serial;
 		m_id = game->serial;
-		m_path = paths.settings_dir + "/" + game->stem + ".ini";
-		m_file_label = "settings/" + game->stem + ".ini";
+		m_path = GameSettingsPath(paths.settings_dir, game->serial, game->stem);
+		const size_t slash = m_path.rfind('/');
+		m_file_label = "settings/" + (slash == std::string::npos ? m_path : m_path.substr(slash + 1));
 		m_header = "# " + game->title + (game->serial.empty() ? std::string() : " (" + game->serial + ")");
 		m_game_fixes = ManualFixSettings(game->serial); // 2026-10-08
 		m_elf = IsElfName(game->file.c_str());          // 2026-10-08

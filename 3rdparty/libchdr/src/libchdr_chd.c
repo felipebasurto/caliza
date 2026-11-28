@@ -320,6 +320,7 @@ struct _chd_file
 
 	uint8_t *					compressed;		/* pointer to buffer for compressed data */
 	const codec_interface *	codecintf[4];	/* interface to the codec */
+	uint8_t					codec_inited[4]; /* whether each codec slot has been initialized */
 
 	zlib_codec_data			zlib_codec_data;		/* zlib codec data */
 	lzma_codec_data			lzma_codec_data;		/* lzma codec data */
@@ -583,9 +584,10 @@ static uint32_t lzma_compute_aligned_dictionary_size(uint32_t hunkbytes)
 	if (dictSize > reduceSize)
 	{
 		const uint32_t kReduceMin = (uint32_t)1 << 12;
-		const uint32_t max = MIN(kReduceMin, reduceSize);
+		const uint32_t reduced = MAX(kReduceMin, reduceSize);
 
-		dictSize = MAX(max, dictSize);
+		if (dictSize > reduced)
+			dictSize = reduced;
 	}
 
 	/* LzmaEnc_SetProps */
@@ -598,7 +600,8 @@ static uint32_t lzma_compute_aligned_dictionary_size(uint32_t hunkbytes)
 		const uint32_t kDictMask = ((uint32_t)1 << 20) - 1;
 
 		alignedDictSize = (dictSize + kDictMask) & ~kDictMask;
-		alignedDictSize = MIN(dictSize, alignedDictSize);
+		if (alignedDictSize < dictSize)
+			alignedDictSize = dictSize;
 	}
 	else
 	{
@@ -690,24 +693,33 @@ static chd_error cdlz_codec_init(void* codec, uint32_t hunkbytes)
 	chd_error ret;
 	cdlz_codec_data* cdlz = (cdlz_codec_data*) codec;
 
+	/* make sure the CHD's hunk size is an even multiple of the frame size */
+	if (hunkbytes % CD_FRAME_SIZE != 0)
+		return CHDERR_CODEC_ERROR;
+
 	/* allocate buffer */
 	cdlz->buffer = (uint8_t*)malloc(sizeof(uint8_t) * hunkbytes);
 	if (cdlz->buffer == NULL)
 		return CHDERR_OUT_OF_MEMORY;
 
-	/* make sure the CHD's hunk size is an even multiple of the frame size */
 	ret = lzma_codec_init(&cdlz->base_decompressor, (hunkbytes / CD_FRAME_SIZE) * CD_MAX_SECTOR_DATA);
 	if (ret != CHDERR_NONE)
+	{
+		free(cdlz->buffer);
+		cdlz->buffer = NULL;
 		return ret;
+	}
 
 #ifdef WANT_SUBCODE
 	ret = zlib_codec_init(&cdlz->subcode_decompressor, (hunkbytes / CD_FRAME_SIZE) * CD_MAX_SUBCODE_DATA);
 	if (ret != CHDERR_NONE)
+	{
+		lzma_codec_free(&cdlz->base_decompressor);
+		free(cdlz->buffer);
+		cdlz->buffer = NULL;
 		return ret;
+	}
 #endif
-
-	if (hunkbytes % CD_FRAME_SIZE != 0)
-		return CHDERR_CODEC_ERROR;
 
 	return CHDERR_NONE;
 }
@@ -1167,24 +1179,33 @@ static chd_error cdzs_codec_init(void* codec, uint32_t hunkbytes)
 	chd_error ret;
 	cdzs_codec_data* cdzs = (cdzs_codec_data*) codec;
 
+	/* make sure the CHD's hunk size is an even multiple of the frame size */
+	if (hunkbytes % CD_FRAME_SIZE != 0)
+		return CHDERR_CODEC_ERROR;
+
 	/* allocate buffer */
 	cdzs->buffer = (uint8_t*)malloc(sizeof(uint8_t) * hunkbytes);
 	if (cdzs->buffer == NULL)
 		return CHDERR_OUT_OF_MEMORY;
 
-	/* make sure the CHD's hunk size is an even multiple of the frame size */
 	ret = zstd_codec_init(&cdzs->base_decompressor, (hunkbytes / CD_FRAME_SIZE) * CD_MAX_SECTOR_DATA);
 	if (ret != CHDERR_NONE)
+	{
+		free(cdzs->buffer);
+		cdzs->buffer = NULL;
 		return ret;
+	}
 
 #ifdef WANT_SUBCODE
 	ret = zstd_codec_init(&cdzs->subcode_decompressor, (hunkbytes / CD_FRAME_SIZE) * CD_MAX_SUBCODE_DATA);
 	if (ret != CHDERR_NONE)
+	{
+		zstd_codec_free(&cdzs->base_decompressor);
+		free(cdzs->buffer);
+		cdzs->buffer = NULL;
 		return ret;
+	}
 #endif
-
-	if (hunkbytes % CD_FRAME_SIZE != 0)
-		return CHDERR_CODEC_ERROR;
 
 	return CHDERR_NONE;
 }
@@ -1848,6 +1869,79 @@ CHD_EXPORT chd_error chd_open_file(FILE *file, int mode, chd_file *parent, chd_f
 	return chd_open_core_file(stream, mode, parent, chd);
 }
 
+static void *chd_v5_codec_data(chd_file *chd, uint32_t compression)
+{
+	switch (compression)
+	{
+		case CHD_CODEC_ZLIB:    return &chd->zlib_codec_data;
+		case CHD_CODEC_LZMA:    return &chd->lzma_codec_data;
+		case CHD_CODEC_HUFFMAN: return &chd->huff_codec_data;
+		case CHD_CODEC_FLAC:    return &chd->flac_codec_data;
+		case CHD_CODEC_ZSTD:    return &chd->zstd_codec_data;
+		case CHD_CODEC_CD_ZLIB: return &chd->cdzl_codec_data;
+		case CHD_CODEC_CD_LZMA: return &chd->cdlz_codec_data;
+		case CHD_CODEC_CD_FLAC: return &chd->cdfl_codec_data;
+		case CHD_CODEC_CD_ZSTD: return &chd->cdzs_codec_data;
+		default:                return NULL;
+	}
+}
+
+static chd_error chd_validate_v5_codec(uint32_t compression, uint32_t hunkbytes)
+{
+	switch (compression)
+	{
+		case CHD_CODEC_CD_ZLIB:
+		case CHD_CODEC_CD_LZMA:
+		case CHD_CODEC_CD_FLAC:
+		case CHD_CODEC_CD_ZSTD:
+			if (hunkbytes % CD_FRAME_SIZE != 0)
+				return CHDERR_CODEC_ERROR;
+			break;
+		case CHD_CODEC_FLAC:
+			if (hunkbytes % 4 != 0)
+				return CHDERR_CODEC_ERROR;
+			break;
+		default:
+			break;
+	}
+	return CHDERR_NONE;
+}
+
+static chd_error chd_ensure_v5_codec_init(chd_file *chd, uint8_t slot, void **out_codec)
+{
+	const codec_interface *intf;
+	void *codec;
+	int i;
+
+	if (slot >= ARRAY_LENGTH(chd->codecintf) || chd->codecintf[slot] == NULL)
+		return CHDERR_CODEC_ERROR;
+
+	intf = chd->codecintf[slot];
+	codec = chd_v5_codec_data(chd, intf->compression);
+	if (codec == NULL)
+		return CHDERR_CODEC_ERROR;
+
+	for (i = 0; i < (int)ARRAY_LENGTH(chd->codecintf); i++)
+	{
+		if (chd->codecintf[i] == intf && chd->codec_inited[i])
+		{
+			*out_codec = codec;
+			return CHDERR_NONE;
+		}
+	}
+
+	if (intf->init != NULL)
+	{
+		chd_error err = (*intf->init)(codec, chd->header.hunkbytes);
+		if (err != CHDERR_NONE)
+			return err;
+		chd->codec_inited[slot] = 1;
+	}
+
+	*out_codec = codec;
+	return CHDERR_NONE;
+}
+
 /*-------------------------------------------------
     chd_open_core_file - open a CHD file for access
 -------------------------------------------------*/
@@ -1952,7 +2046,7 @@ CHD_EXPORT chd_error chd_open_core_file(core_file *file, int mode, chd_file *par
 	if (newchd->compressed == NULL)
 		EARLY_EXIT(err = CHDERR_OUT_OF_MEMORY);
 
-	/* find the codec interface */
+	/* find the codec interface; defer heavy codec allocations until a hunk uses them */
 	if (newchd->header.version < 5)
 	{
 		for (intfnum = 0; intfnum < ARRAY_LENGTH(codec_interfaces); intfnum++)
@@ -1966,20 +2060,12 @@ CHD_EXPORT chd_error chd_open_core_file(core_file *file, int mode, chd_file *par
 
 		if (intfnum == ARRAY_LENGTH(codec_interfaces))
 			EARLY_EXIT(err = CHDERR_UNSUPPORTED_FORMAT);
-
-		/* initialize the codec */
-		if (newchd->codecintf[0]->init != NULL)
-		{
-			err = (*newchd->codecintf[0]->init)(&newchd->zlib_codec_data, newchd->header.hunkbytes);
-			if (err != CHDERR_NONE)
-				EARLY_EXIT(err);
-		}
 	}
 	else
 	{
-		int decompnum, needsinit;
+		int decompnum;
 
-		/* verify the compression types and initialize the codecs */
+		/* verify the compression types; each codec is initialized on first use */
 		for (decompnum = 0; decompnum < ARRAY_LENGTH(newchd->header.compression); decompnum++)
 		{
 			int i;
@@ -1995,66 +2081,11 @@ CHD_EXPORT chd_error chd_open_core_file(core_file *file, int mode, chd_file *par
 			if (newchd->codecintf[decompnum] == NULL && newchd->header.compression[decompnum] != 0)
 				EARLY_EXIT(err = CHDERR_UNSUPPORTED_FORMAT);
 
-			/* ensure we don't try to initialize the same codec twice */
-			/* this is "normal" for chds where the user overrides the codecs, it'll have none repeated */
-			needsinit = (newchd->codecintf[decompnum]->init != NULL);
-			for (i = 0; i < decompnum; i++)
+			if (newchd->codecintf[decompnum] != NULL && newchd->codecintf[decompnum]->init != NULL)
 			{
-				if (newchd->codecintf[decompnum] == newchd->codecintf[i])
-				{
-					/* already initialized */
-					needsinit = 0;
-					break;
-				}
-      }
-
-			/* initialize the codec */
-			if (needsinit)
-			{
-				void* codec = NULL;
-				switch (newchd->header.compression[decompnum])
-				{
-					case CHD_CODEC_ZLIB:
-						codec = &newchd->zlib_codec_data;
-						break;
-
-					case CHD_CODEC_LZMA:
-						codec = &newchd->lzma_codec_data;
-						break;
-
-					case CHD_CODEC_HUFFMAN:
-						codec = &newchd->huff_codec_data;
-						break;
-
-					case CHD_CODEC_FLAC:
-						codec = &newchd->flac_codec_data;
-						break;
-
-					case CHD_CODEC_ZSTD:
-						codec = &newchd->zstd_codec_data;
-						break;
-
-					case CHD_CODEC_CD_ZLIB:
-						codec = &newchd->cdzl_codec_data;
-						break;
-
-					case CHD_CODEC_CD_LZMA:
-						codec = &newchd->cdlz_codec_data;
-						break;
-
-					case CHD_CODEC_CD_FLAC:
-						codec = &newchd->cdfl_codec_data;
-						break;
-
-					case CHD_CODEC_CD_ZSTD:
-						codec = &newchd->cdzs_codec_data;
-						break;
-				}
-
-				if (codec == NULL)
+				if (chd_v5_codec_data(newchd, newchd->header.compression[decompnum]) == NULL)
 					EARLY_EXIT(err = CHDERR_UNSUPPORTED_FORMAT);
-
-				err = (*newchd->codecintf[decompnum]->init)(codec, newchd->header.hunkbytes);
+				err = chd_validate_v5_codec(newchd->header.compression[decompnum], newchd->header.hunkbytes);
 				if (err != CHDERR_NONE)
 					EARLY_EXIT(err);
 			}
@@ -2152,10 +2183,10 @@ CHD_EXPORT void chd_close(chd_file *chd)
 	if (chd == NULL || chd->cookie != COOKIE_VALUE)
 		return;
 
-	/* deinit the codec */
+	/* deinit only codecs that were initialized */
 	if (chd->header.version < 5)
 	{
-		if (chd->codecintf[0] != NULL && chd->codecintf[0]->free != NULL)
+		if (chd->codec_inited[0] && chd->codecintf[0] != NULL && chd->codecintf[0]->free != NULL)
 			(*chd->codecintf[0]->free)(&chd->zlib_codec_data);
 	}
 	else
@@ -2167,14 +2198,14 @@ CHD_EXPORT void chd_close(chd_file *chd)
 			void* codec = NULL;
 			int j, needsfree;
 
-			if (chd->codecintf[i] == NULL)
+			if (!chd->codec_inited[i] || chd->codecintf[i] == NULL)
 				continue;
 
 			/* only free each codec at max once */
 			needsfree = 1;
 			for (j = 0; j < i; j++)
 			{
-				if (chd->codecintf[i] == chd->codecintf[j])
+				if (chd->codec_inited[j] && chd->codecintf[i] == chd->codecintf[j])
 				{
 					needsfree = 0;
 					break;
@@ -2183,49 +2214,9 @@ CHD_EXPORT void chd_close(chd_file *chd)
 			if (!needsfree)
 				continue;
 
-			switch (chd->codecintf[i]->compression)
-			{
-				case CHD_CODEC_ZLIB:
-					codec = &chd->zlib_codec_data;
-					break;
-
-				case CHD_CODEC_LZMA:
-					codec = &chd->lzma_codec_data;
-					break;
-
-				case CHD_CODEC_HUFFMAN:
-					codec = &chd->huff_codec_data;
-					break;
-
-				case CHD_CODEC_FLAC:
-					codec = &chd->flac_codec_data;
-					break;
-
-				case CHD_CODEC_ZSTD:
-					codec = &chd->zstd_codec_data;
-					break;
-
-				case CHD_CODEC_CD_ZLIB:
-					codec = &chd->cdzl_codec_data;
-					break;
-
-				case CHD_CODEC_CD_LZMA:
-					codec = &chd->cdlz_codec_data;
-					break;
-
-				case CHD_CODEC_CD_FLAC:
-					codec = &chd->cdfl_codec_data;
-					break;
-
-				case CHD_CODEC_CD_ZSTD:
-					codec = &chd->cdzs_codec_data;
-					break;
-			}
-
-			if (codec)
-			{
+			codec = chd_v5_codec_data(chd, chd->codecintf[i]->compression);
+			if (codec && chd->codecintf[i]->free != NULL)
 				(*chd->codecintf[i]->free)(codec);
-			}
 		}
 
 		/* Free the raw map */
@@ -2904,6 +2895,13 @@ static chd_error hunk_read_into_memory(chd_file *chd, uint32_t hunknum, uint8_t 
 				/* now decompress using the codec */
 				err = CHDERR_NONE;
 				codec = &chd->zlib_codec_data;
+				if (!chd->codec_inited[0] && chd->codecintf[0]->init != NULL)
+				{
+					err = (*chd->codecintf[0]->init)(codec, chd->header.hunkbytes);
+					if (err != CHDERR_NONE)
+						return err;
+					chd->codec_inited[0] = 1;
+				}
 				if (chd->codecintf[0]->decompress != NULL)
 					err = (*chd->codecintf[0]->decompress)(codec, compressed_bytes, entry->length, dest, chd->header.hunkbytes);
 				if (err != CHDERR_NONE)
@@ -2991,46 +2989,9 @@ static chd_error hunk_read_into_memory(chd_file *chd, uint32_t hunknum, uint8_t 
 				compressed_bytes = hunk_read_compressed(chd, blockoffs, blocklen);
 				if (compressed_bytes == NULL)
 					return CHDERR_READ_ERROR;
-				switch (chd->codecintf[rawmap[0]]->compression)
-				{
-					case CHD_CODEC_ZLIB:
-						codec = &chd->zlib_codec_data;
-						break;
-
-					case CHD_CODEC_LZMA:
-						codec = &chd->lzma_codec_data;
-						break;
-
-					case CHD_CODEC_HUFFMAN:
-						codec = &chd->huff_codec_data;
-						break;
-
-					case CHD_CODEC_FLAC:
-						codec = &chd->flac_codec_data;
-						break;
-
-					case CHD_CODEC_ZSTD:
-						codec = &chd->zstd_codec_data;
-						break;
-
-					case CHD_CODEC_CD_ZLIB:
-						codec = &chd->cdzl_codec_data;
-						break;
-
-					case CHD_CODEC_CD_LZMA:
-						codec = &chd->cdlz_codec_data;
-						break;
-
-					case CHD_CODEC_CD_FLAC:
-						codec = &chd->cdfl_codec_data;
-						break;
-
-					case CHD_CODEC_CD_ZSTD:
-						codec = &chd->cdzs_codec_data;
-						break;
-				}
-				if (codec==NULL)
-					return CHDERR_CODEC_ERROR;
+				err = chd_ensure_v5_codec_init(chd, rawmap[0], &codec);
+				if (err != CHDERR_NONE)
+					return err;
 				err = chd->codecintf[rawmap[0]]->decompress(codec, compressed_bytes, blocklen, dest, chd->header.hunkbytes);
 				if (err != CHDERR_NONE)
 					return err;

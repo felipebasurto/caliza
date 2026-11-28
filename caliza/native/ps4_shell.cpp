@@ -277,14 +277,15 @@ public:
 		info.stem = dot == std::string::npos ? info.file : info.file.substr(0, dot);
 		info.bytes = entry.bytes;
 		fe::MakeTitle(info.stem, info.title, info.region, info.extra);
-		info.serial = fe::ReadSerial(entry.path);
+		std::string read_reason;
+		info.serial = fe::ReadSerial(entry.path, &read_reason);
 		fe::ApplyGameDbTitle(info);
-		if (info.serial.empty())
+		if (info.serial.empty() && !read_reason.empty())
 		{
-			const std::string description = fe::DescribeImage(entry.path);
-			const std::string cant_open = "libchdr can't open it: ";
-			if (description.rfind(cant_open, 0) == 0 && description.find("parent") == std::string::npos)
-				info.damaged = description.substr(cant_open.size());
+			bool launchable = true;
+			const std::string formatted = fe::FormatImageProblem(read_reason, &launchable);
+			if (!formatted.empty())
+				info.damaged = formatted;
 		}
 		fe::ReadBadges(info, m_paths.settings_dir, m_paths.gs_ini, m_paths.patches_dir);
 		entry.title = info.title.empty() ? entry.title : info.title;
@@ -620,6 +621,15 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 	// readable, non-empty root are useful evidence here. /mnt/usb0 itself is still probed, and the direct
 	// sandbox mount performed during boot makes it non-empty when the Toshiba is visible to this process.
 	options.storage.discovery.include_absent_slots = false;
+	for (const std::string& dir : paths.usb_dirs)
+	{
+		if (dir == "/net" || dir.compare(0, 5, "/net/") == 0)
+		{
+			auto& nets = options.storage.discovery.network_roots;
+			if (std::find(nets.begin(), nets.end(), dir) == nets.end())
+				nets.push_back(dir);
+		}
+	}
 	options.storage.image_inspector = std::make_shared<FrontendImageInspector>(paths);
 	options.global_settings_path = paths.gs_ini;
 	options.game_settings_dir = paths.settings_dir;
@@ -681,7 +691,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			return false;
 		}
 		const std::string stem = StemOfPath(game.file);
-		const std::string settings_path = paths.settings_dir + "/" + stem + ".ini";
+		const std::string settings_path = fe::GameSettingsPath(paths.settings_dir, game.serial, stem);
 		const std::string header = "# " + game.title + (game.serial.empty() ? std::string() : " (" + game.serial + ")");
 		TrackSerial(service_tracking, game.serial);
 		return texture_service.begin(game.serial, pack_index, settings_path, header, game.title, pack_id);
@@ -693,7 +703,7 @@ ShellResult RunEstratos(const OrbisFrontendPaths& paths, const char* build_tag)
 			*error = "The texture pack service is unavailable";
 			return false;
 		}
-		const std::string settings_path = paths.settings_dir + "/" + StemOfPath(game.file) + ".ini";
+		const std::string settings_path = fe::GameSettingsPath(paths.settings_dir, game.serial, StemOfPath(game.file));
 		const std::string header = "# " + game.title + " (" + game.serial + ")";
 		TrackSerial(service_tracking, game.serial);
 		return texture_service.import(game.serial, archive, settings_path, header, game.title);

@@ -197,7 +197,7 @@ int main(int argc, char** argv)
 	kh.stem = "Kingdom Hearts (USA)";
 	kh.title = "Kingdom Hearts";
 	kh.serial = "SLUS-20370";
-	const std::string kh_ini = root + "/settings/Kingdom Hearts (USA).ini";
+	const std::string kh_ini = root + "/settings/SLUS-20370.ini";
 	{
 		fe::OptionsSheet sheet;
 		sheet.Open(paths, &kh);
@@ -269,7 +269,7 @@ int main(int argc, char** argv)
 		sheet.Open(paths, &g);
 		const auto* manual = FindRow(sheet, "Manual hardware fixes");
 		sheet.Step(*manual, 1);
-		const std::string file = Read(root + "/settings/Shield Game (Europe).ini");
+		const std::string file = Read(root + "/settings/SLED-52031.ini");
 		Check(file.find("UserHacks=true\n") != std::string::npos && file.find("UserHacks_CPU_FB_Conversion=true\n") != std::string::npos &&
 				  file.find("UserHacks_AutoFlushLevel=2\n") != std::string::npos && file.find("UserHacks_HalfPixelOffset=3\n") != std::string::npos,
 			"the Manual row on writes every fix of the game's:\n" + file);
@@ -280,7 +280,7 @@ int main(int argc, char** argv)
 				sheet.Activate(r, 1.5);
 				break;
 			}
-		Check(Read(root + "/settings/Shield Game (Europe).ini").find("UserHacks") == std::string::npos, "and Reset all takes even those out");
+		Check(Read(root + "/settings/SLED-52031.ini").find("UserHacks") == std::string::npos, "and Reset all takes even those out");
 	}
 
 	// 2026-10-08: an ELF's sheet: the Disc image row first, cycling through the shelf's disc images by file name.

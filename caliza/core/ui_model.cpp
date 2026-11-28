@@ -2094,6 +2094,8 @@ UiView UiModel::BuildView() const
 				sub << (game->region.empty() ? "PS2" : game->region);
 				if (!game->serial.empty())
 					sub << " · " << game->serial;
+				if (game->disc_paths.size() > 1)
+					sub << " · " << game->disc_paths.size() << " discs";
 				if (game->bytes)
 					sub << " · " << FormatBytes(game->bytes);
 				view.subtitle = sub.str();

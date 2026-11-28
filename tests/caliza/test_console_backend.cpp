@@ -287,7 +287,7 @@ void TestLaunchHandoffAndRuntimeHonesty()
 	const std::string scoped_id = ConsoleBackend::EncodeSettingId(ConsoleSettingScope::Game, "display.aspect-ratio", scanned_snapshot.games.front().id);
 	const CommandEvent scoped = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, scoped_id, {}, "4:3")));
 	CHECK_EQ(static_cast<int>(scoped.status), static_cast<int>(CommandStatus::Succeeded));
-	CHECK_TRUE(ReadFile(root.path + "/settings/Valid Game (USA).ini").find("AspectRatio=4:3") != std::string::npos);
+	CHECK_TRUE(ReadFile(root.path + "/settings/SLUS-20010.ini").find("AspectRatio=4:3") != std::string::npos);
 	const CommandEvent select = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, scanned_snapshot.games.front().id)));
 	CHECK_EQ(static_cast<int>(select.status), static_cast<int>(CommandStatus::Succeeded));
 	const Snapshot selected_snapshot = backend.GetSnapshot();
@@ -495,7 +495,7 @@ void TestPatchAndCheatTogglePersistence()
 	const CommandEvent cheat_on = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, cheat_id, {}, "true")));
 	CHECK_EQ(static_cast<int>(cheat_on.status), static_cast<int>(CommandStatus::Succeeded));
 
-	const std::string ini_path = root.path + "/settings/Valid Game (USA).ini";
+	const std::string ini_path = root.path + "/settings/SLUS-20010.ini";
 	std::string written = ReadFile(ini_path);
 	CHECK_TRUE(written.find("Patches/Enable=60 FPS") != std::string::npos);
 	CHECK_TRUE(written.find("Cheats/Enable=Infinite HP") != std::string::npos);
@@ -592,7 +592,7 @@ void TestModernControlsCategoryAndBootLog()
 
 	const CommandEvent toggled = WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, modern_id, {}, "true")));
 	CHECK_EQ(static_cast<int>(toggled.status), static_cast<int>(CommandStatus::Succeeded));
-	const std::string ini_path = root.path + "/settings/Valid Game (USA).ini";
+	const std::string ini_path = root.path + "/settings/SLUS-20010.ini";
 	CHECK_TRUE(ReadFile(ini_path).find("Patches/Enable=Modern Control Profiles") != std::string::npos);
 	const Snapshot after_toggle = backend.GetSnapshot();
 	const SettingItem* modern_row_on = find_row(after_toggle, "modern-controls", "Modern Control Profiles");
@@ -682,6 +682,85 @@ void TestLegacyPauseComboMigration()
 	}
 }
 
+void TestPerGameSettingsSerialAndMigration()
+{
+	// 1. Two differently-named ISOs with the same serial (SLUS-20010) share settings/SLUS-20010.ini.
+	{
+		TempDir root;
+		ConsoleBackend backend(TestOptions(root));
+		EventLog log;
+		MakeMinimalIso(root.path + "/games/Alpha Copy (USA).iso");
+		MakeMinimalIso(root.path + "/games/Beta Copy (USA).iso");
+		CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::RescanAll))).status),
+			static_cast<int>(CommandStatus::Succeeded));
+		const Snapshot snap = backend.GetSnapshot();
+		CHECK_EQ(snap.games.size(), 2u);
+		const GameEntry* alpha = nullptr;
+		const GameEntry* beta = nullptr;
+		for (const GameEntry& g : snap.games)
+		{
+			if (g.file == "Alpha Copy (USA).iso")
+				alpha = &g;
+			else if (g.file == "Beta Copy (USA).iso")
+				beta = &g;
+		}
+		CHECK_TRUE(alpha != nullptr && beta != nullptr);
+		if (alpha && beta)
+		{
+			const std::string id = ConsoleBackend::EncodeSettingId(ConsoleSettingScope::Game, "display.aspect-ratio", alpha->id);
+			CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, id, {}, "4:3"))).status),
+				static_cast<int>(CommandStatus::Succeeded));
+			CHECK_TRUE(storage::fs::Exists(root.path + "/settings/SLUS-20010.ini"));
+			CHECK_FALSE(storage::fs::Exists(root.path + "/settings/Alpha Copy (USA).ini"));
+
+			CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, beta->id))).status),
+				static_cast<int>(CommandStatus::Succeeded));
+			const Snapshot selected = backend.GetSnapshot();
+			const SettingItem* aspect = FindSettingItem(selected, "AspectRatio");
+			CHECK_TRUE(aspect != nullptr && aspect->value == "4:3");
+		}
+	}
+
+	// 2. Migration: if <serial>.ini does not exist but <stem>.ini already exists, keep using <stem>.ini.
+	{
+		TempDir root;
+		CHECK_TRUE(WriteFile(root.path + "/settings/Legacy Stem (USA).ini", "AspectRatio=4:3\n"));
+		ConsoleBackend backend(TestOptions(root));
+		EventLog log;
+		MakeMinimalIso(root.path + "/games/Legacy Stem (USA).iso");
+		CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::RescanAll))).status),
+			static_cast<int>(CommandStatus::Succeeded));
+		const Snapshot snap = backend.GetSnapshot();
+		CHECK_EQ(snap.games.size(), 1u);
+		if (!snap.games.empty())
+		{
+			const GameEntry& g = snap.games.front();
+			CHECK_EQ(g.serial, std::string("SLUS-20010"));
+			CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SelectGame, g.id))).status),
+				static_cast<int>(CommandStatus::Succeeded));
+			const SettingItem* aspect = FindSettingItem(backend.GetSnapshot(), "AspectRatio");
+			CHECK_TRUE(aspect != nullptr && aspect->value == "4:3");
+
+			const std::string id = ConsoleBackend::EncodeSettingId(ConsoleSettingScope::Game, "display.aspect-ratio", g.id);
+			CHECK_EQ(static_cast<int>(WaitTerminal(backend, log, backend.Post(MakeCommand(CommandType::SetSetting, id, {}, "16:9"))).status),
+				static_cast<int>(CommandStatus::Succeeded));
+			CHECK_TRUE(ReadFile(root.path + "/settings/Legacy Stem (USA).ini").find("AspectRatio=16:9") != std::string::npos);
+			CHECK_FALSE(storage::fs::Exists(root.path + "/settings/SLUS-20010.ini"));
+		}
+	}
+
+	// 3. When <serial>.ini already exists alongside <stem>.ini, <serial>.ini wins; empty serial falls back to stem.
+	{
+		TempDir root;
+		CHECK_TRUE(WriteFile(root.path + "/settings/Both Exist (USA).ini", "AspectRatio=4:3\n"));
+		CHECK_TRUE(WriteFile(root.path + "/settings/SLUS-20010.ini", "AspectRatio=16:9\n"));
+		CHECK_EQ(storage::ResolveGameSettingsPath(root.path + "/settings", "SLUS-20010", "Both Exist (USA)"),
+			root.path + "/settings/SLUS-20010.ini");
+		CHECK_EQ(storage::ResolveGameSettingsPath(root.path + "/settings", "", "Homebrew"),
+			root.path + "/settings/Homebrew.ini");
+	}
+}
+
 } // namespace
 
 int main()
@@ -697,6 +776,7 @@ int main()
 	TestPatchAndCheatTogglePersistence();
 	TestModernControlsCategoryAndBootLog();
 	TestLegacyPauseComboMigration();
+	TestPerGameSettingsSerialAndMigration();
 	if (Failures() == 0)
 	{
 		std::printf("test_console_backend: PASS\n");

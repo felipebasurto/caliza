@@ -288,21 +288,23 @@ bool ThreadedFileReader::Precache2(ProgressCallback* progress, Error* error)
 
 bool ThreadedFileReader::CheckAvailableMemoryForPrecaching(u64 required_size, Error* error)
 {
+#if defined(__ORBIS__) || defined(ORBIS_PS4)
+	(void)required_size;
+	Error::SetStringView(error, TRANSLATE_SV("CDVD", "Disc precaching is disabled on PS4."));
+	return false;
+#else
 	// We want to check available physical memory instead of total.
 	const u64 memory_available = GetAvailablePhysicalMemory();
-	// Reserve 2GB of available memory for headroom.
-	constexpr u64 memory_reserve = 2147483648;
-	const u64 max_precache_size = std::max(s64{0}, static_cast<s64>(memory_available - memory_reserve));
-
-	if (required_size > max_precache_size)
+	if (!CanPrecacheSize(required_size, memory_available, false))
 	{
 		Error::SetStringFmt(error,
 			TRANSLATE_FS("CDVD", "Not enough memory available for precaching ({:.2f} GB required)."),
-			static_cast<double>(required_size + memory_reserve) / static_cast<double>(_1gb));
+			static_cast<double>(required_size + kPrecacheMemoryReserve) / static_cast<double>(_1gb));
 		return false;
 	}
 
 	return true;
+#endif
 }
 
 bool ThreadedFileReader::Open(std::string filename, Error* error)

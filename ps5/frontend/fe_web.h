@@ -17,7 +17,9 @@
 #include "fe_game_achievements.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -25,6 +27,7 @@
 #include <pthread.h>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace fe
@@ -164,6 +167,11 @@ private:
 	pthread_t m_thread{};          // vk-285-113: a thread of its own with a roomy stack (see Start)
 	bool m_thread_started = false;
 	static void* ThreadMain(void* self);
+	pthread_t m_serial_thread{};
+	bool m_serial_thread_started = false;
+	static void* SerialThreadMain(void* self);
+	void RunSerialWorker();
+	void EnqueueSerialLocked(const std::string& path, uint64_t bytes, int64_t mtime);
 	std::atomic<bool> m_stop{false};
 	std::atomic<uint64_t> m_requests{0};
 	std::atomic<double> m_last_request{-1.0}; // steady clock seconds
@@ -172,11 +180,26 @@ private:
 	double m_covers_time = -1e9;
 
 	mutable std::mutex m_mutex; // the fields below
+	std::condition_variable m_serial_cv;
+	struct SerialTask
+	{
+		std::string path;
+		uint64_t bytes = 0;
+		int64_t mtime = 0;
+	};
+	std::deque<SerialTask> m_serial_queue;
+	std::unordered_set<std::string> m_serial_inflight;
 	std::string m_now_playing;
 	uint64_t m_game_sequence = 0;
 	std::vector<GameInfo> m_games;
 	double m_games_time = -1e9;
-	std::map<std::string, std::pair<uint64_t, std::string>> m_serials; // path -> (size, serial): USB drives are slow
+	struct SerialCacheEntry
+	{
+		uint64_t bytes = 0;
+		int64_t mtime = 0;
+		std::string serial;
+	};
+	std::map<std::string, SerialCacheEntry> m_serials; // path -> (size, mtime, serial)
 };
 
 // The IPv4 address other devices reach this machine on: the one the default route uses, else the

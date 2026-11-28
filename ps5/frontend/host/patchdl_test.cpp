@@ -223,7 +223,7 @@ int main(int argc, char** argv)
 		Check(first_cheat && sheet.Value(*first_cheat) == "Off", "a cheat starts off");
 		if (first_cheat)
 			sheet.Step(*first_cheat, 1);
-		std::string file = Read(paths.settings_dir + "/Game (USA).ini");
+		std::string file = Read(paths.settings_dir + "/SLUS-20265.ini");
 		Check(file.find("Cheats/Enable=" + name) != std::string::npos && file.find("EmuCore/EnableCheats=true") != std::string::npos,
 			"turning a cheat on writes its line and turns on the game's cheats");
 		for (const auto& r : sheet.rows())
@@ -233,7 +233,7 @@ int main(int argc, char** argv)
 				sheet.Step(r, 1);
 				break;
 			}
-		file = Read(paths.settings_dir + "/Game (USA).ini");
+		file = Read(paths.settings_dir + "/SLUS-20265.ini");
 		Check(file.find("Cheats/Enable=") == std::string::npos && file.find("EnableCheats") == std::string::npos,
 			"turning the last cheat off takes both lines out");
 	}

@@ -39,24 +39,35 @@ bool IsDiscImageName(const char* name);
 // 2026-10-08: an .elf (a PS2 executable). ScanGames lists one whose first bytes are an ELF header; it has no serial.
 bool IsElfName(const char* name);
 
-// Lists the disc images in `dirs` (the first folder wins for a name found twice), sorted by title.
+// Lists the disc images in `dirs` and in folders up to 32 levels below them (the first folder wins for a name
+// found twice), sorted by title.
 std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs);
 
 // "SLUS-21351" from the image's SYSTEM.CNF (ISO 9660); empty if unreadable. A .cso or .zso is decompressed here
 // (zlib, LZ4). A .chd is read through libchdr
-// (a DVD's 2048-byte units or a CD's raw frames); one that needs a parent CHD reads as empty.
-std::string ReadSerial(const std::string& image_path);
+// (a DVD's 2048-byte units or a CD's raw frames). When `reason` is non-null, open/inspect detail is returned
+// from the same open (or cache hit) so callers do not need a second DescribeImage open.
+std::string ReadSerial(const std::string& image_path, std::string* reason = nullptr);
 
 // Read the BOOT2 executable for the RA hash. Supports the shelf image formats. (AI-assisted)
 bool ReadAchievementExecutable(const std::string& path, std::string& name, std::vector<uint8_t>& bytes);
 
-// vk-285-109: what a CHD is (header, codecs, first track, data offset, or why libchdr can't open it), for
+// vk-285-109: what a CHD/CSO/ZSO is (header, codecs, first track, data offset, or why it can't be opened), for
 // the log when ReadSerial found no serial in it; empty for other images.
 std::string DescribeImage(const std::string& image_path);
+
+// Translates an open/inspect failure reason from ReadSerial/DescribeImage into a user-facing sentence.
+// Returns empty when `reason` does not indicate an error. When non-null, `*can_launch` is set to false
+// for problems that prevent booting the image.
+std::string FormatImageProblem(const std::string& reason, bool* can_launch = nullptr);
 
 // vk-285-108: where ReadSerial keeps the CHD serials it found (opening a CHD costs tens of milliseconds);
 // empty: none kept.
 void SetSerialCacheFile(const std::string& path);
+
+// Non-blocking lookup in ReadSerial's persistent serial cache for a compressed image. Returns true on a
+// cache hit (including cached empty/failed reads) without opening the image file.
+bool LookupCachedSerial(const std::string& image_path, std::string& serial, std::string* reason = nullptr);
 
 // Display title and region from a file name stem ("Lord of the Rings, The - The Two Towers (USA)").
 void MakeTitle(const std::string& stem, std::string& title, std::string& region, std::string& extra);
@@ -77,7 +88,11 @@ std::vector<std::pair<std::string, int>> GameDbHwFixes(const std::string& serial
 // titles ApplyGameDbTitle changed sorts again.
 void SortGames(std::vector<GameInfo>& games);
 
-// Badges from settings/<stem>.ini, gs.ini and the patches folder.
+// Per-game settings .ini path: prefers <serial>.ini when a safe serial is known, unless
+// <serial>.ini does not exist yet and a legacy <stem>.ini already exists.
+std::string GameSettingsPath(const std::string& settings_dir, const std::string& serial, const std::string& stem);
+
+// Badges from the game's settings .ini, gs.ini and the patches folder.
 void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string& gs_ini, const std::string& patches_dir);
 
 // vk-285-137: gs.ini's Caliza/ShowHiddenGames (the sheet for all games): hidden games stay on the shelf, dimmed.

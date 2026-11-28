@@ -59,6 +59,7 @@ struct StorageDiscoveryOptions
 	std::string internal_root = "/data/caliza";
 	std::vector<std::string> usb_roots;      // defaults to /mnt/usb0 through /mnt/usb7
 	std::vector<std::string> extended_roots; // defaults to /mnt/ext0 through /mnt/ext1
+	std::vector<std::string> network_roots;  // mounted network shares (e.g. /net/<share>)
 	bool include_absent_slots = true;
 	VolumeIdentityProvider stable_identity;
 	ExtendedManagedEvidence extended_managed;
@@ -173,4 +174,10 @@ private:
 	uint64_t m_next_order = 1;
 	bool m_load_failed = false;
 };
+
+// Resolves a per-game settings .ini path. When a valid serial is known, uses <serial>.ini
+// unless <serial>.ini does not exist yet and a legacy <stem>.ini already exists.
+std::string ResolveGameSettingsPath(const std::string& settings_dir,
+	const std::string& serial,
+	const std::string& stem);
 } // namespace caliza::storage

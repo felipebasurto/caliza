@@ -244,7 +244,11 @@ bool InputIsoFile::Open(std::string srcfile, Error* error)
 
 	if (!Detect())
 	{
-		Error::SetStringFmt(error, "Unable to identify the ISO image type for '{}'", Path::GetFileName(m_filename));
+		const std::string read_err = m_reader ? m_reader->GetLastReadError() : std::string();
+		if (!read_err.empty())
+			Error::SetStringFmt(error, "Unable to read disc image '{}': {}", Path::GetFileName(m_filename), read_err);
+		else
+			Error::SetStringFmt(error, "Unable to identify the ISO image type for '{}'", Path::GetFileName(m_filename));
 		Close();
 		return false;
 	}

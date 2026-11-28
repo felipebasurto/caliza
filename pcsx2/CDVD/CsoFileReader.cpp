@@ -69,6 +69,12 @@ bool CsoFileReader::Open2(std::string filename, Error* error)
 	Close2();
 	m_filename = std::move(filename);
 	m_src = FileSystem::OpenCFile(m_filename.c_str(), "rb", error);
+	if (m_src)
+	{
+		// Coalesce sequential small CSO/ZSO frame reads into 128 KiB stdio reads, matching ChdFileReader.
+		std::setvbuf(m_src, nullptr, _IOFBF, 128 * 1024);
+		m_filePos = -1;
+	}
 
 	bool success = false;
 	if (m_src && ReadFileHeader(error) && InitializeBuffers(error))
@@ -104,8 +110,10 @@ bool CsoFileReader::Precache2(ProgressCallback* progress, Error* error)
 	}
 
 	m_readBuffer.reset();
+	m_readBufferSize = 0;
 	std::fclose(m_src);
 	m_src = nullptr;
+	m_filePos = -1;
 	return true;
 }
 
@@ -148,20 +156,23 @@ bool CsoFileReader::InitializeBuffers(Error* error)
 	// We might read a bit of alignment too, so be prepared.
 	if (m_frameSize + (1 << m_indexShift) < CSO_READ_BUFFER_SIZE)
 	{
-		m_readBuffer = std::make_unique<u8[]>(CSO_READ_BUFFER_SIZE);
+		m_readBufferSize = CSO_READ_BUFFER_SIZE;
 	}
 	else
 	{
-		m_readBuffer = std::make_unique<u8[]>(m_frameSize + (1 << m_indexShift));
+		m_readBufferSize = m_frameSize + (1 << m_indexShift);
 	}
+	m_readBuffer = std::make_unique<u8[]>(m_readBufferSize);
 
 	const u32 indexSize = numFrames + 1;
 	m_index = std::make_unique<u32[]>(indexSize);
 	if (fread(m_index.get(), sizeof(u32), indexSize, m_src) != indexSize)
 	{
+		m_filePos = -1;
 		Error::SetString(error, "Unable to read index data from CSO.");
 		return false;
 	}
+	m_filePos = static_cast<s64>(m_dataoffset + sizeof(CsoHeader) + static_cast<u64>(indexSize) * sizeof(u32));
 
 	// initialize zlib if not a ZSO
 	if (!m_uselz4)
@@ -176,8 +187,33 @@ bool CsoFileReader::InitializeBuffers(Error* error)
 	return true;
 }
 
+bool CsoFileReader::SeekIfNeeded(u64 offset)
+{
+	if (m_filePos == static_cast<s64>(offset))
+		return true;
+	if (FileSystem::FSeek64(m_src, static_cast<s64>(offset), SEEK_SET) != 0)
+	{
+		m_filePos = -1;
+		return false;
+	}
+	m_filePos = static_cast<s64>(offset);
+	return true;
+}
+
+size_t CsoFileReader::ReadTracked(void* dst, size_t bytes)
+{
+	const size_t n = std::fread(dst, 1, bytes, m_src);
+	if (m_filePos >= 0)
+		m_filePos = (n == bytes) ? (m_filePos + static_cast<s64>(n)) : -1;
+	return n;
+}
+
 void CsoFileReader::Close2()
 {
+	{
+		std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+		m_lastReadError.clear();
+	}
 	m_filename.clear();
 
 	if (m_src)
@@ -185,18 +221,26 @@ void CsoFileReader::Close2()
 		fclose(m_src);
 		m_src = nullptr;
 	}
+	m_filePos = -1;
 	if (m_file_cache)
 		m_file_cache.reset();
 	if (!m_uselz4)
 		inflateEnd(&m_z_stream);
 
 	m_readBuffer.reset();
+	m_readBufferSize = 0;
 	m_index.reset();
 }
 
 u32 CsoFileReader::GetBlockCount() const
 {
 	return static_cast<u32>((m_totalSize - m_dataoffset) / m_blocksize);
+}
+
+std::string CsoFileReader::GetLastReadError() const
+{
+	std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+	return m_lastReadError;
 }
 
 ThreadedFileReader::Chunk CsoFileReader::ChunkForOffset(u64 offset)
@@ -228,6 +272,12 @@ int CsoFileReader::ReadChunk(void* dst, s64 chunkID)
 	const u32 index1 = m_index[frame + 1] & 0x7FFFFFFF;
 
 	// Calculate where the compressed payload is (if compressed.)
+	if (index1 < index0)
+	{
+		std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+		m_lastReadError = "Invalid CSO/ZSO frame index.";
+		return 0;
+	}
 	const u64 frameRawPos = (u64)index0 << m_indexShift;
 	const u64 frameRawSize = (u64)(index1 - index0) << m_indexShift;
 
@@ -244,12 +294,12 @@ int CsoFileReader::ReadChunk(void* dst, s64 chunkID)
 		}
 
 		// Just read directly, easy.
-		if (FileSystem::FSeek64(m_src, frameRawPos, SEEK_SET) != 0)
+		if (!SeekIfNeeded(frameRawPos))
 		{
 			Console.Error("Unable to seek to uncompressed CSO data.");
 			return 0;
 		}
-		return fread(dst, 1, m_frameSize, m_src);
+		return static_cast<int>(ReadTracked(dst, m_frameSize));
 	}
 	else
 	{
@@ -267,13 +317,18 @@ int CsoFileReader::ReadChunk(void* dst, s64 chunkID)
 		}
 		else
 		{
-			if (FileSystem::FSeek64(m_src, frameRawPos, SEEK_SET) != 0)
+			if (frameRawSize > m_readBufferSize)
+			{
+				Console.Error("Compressed CSO frame exceeds read buffer.");
+				return 0;
+			}
+			if (!SeekIfNeeded(frameRawPos))
 			{
 				Console.Error("Unable to seek to compressed CSO data.");
 				return 0;
 			}
 			readBuffer = m_readBuffer.get();
-			readRawBytes = fread(m_readBuffer.get(), 1, frameRawSize, m_src);
+			readRawBytes = static_cast<u32>(ReadTracked(m_readBuffer.get(), static_cast<size_t>(frameRawSize)));
 		}
 
 		bool success = false;
@@ -300,7 +355,12 @@ int CsoFileReader::ReadChunk(void* dst, s64 chunkID)
 		}
 
 		if (!success)
-			Console.Error(fmt::format("Unable to decompress CSO frame using {}", (m_uselz4)? "lz4":"zlib"));
+		{
+			const std::string msg = fmt::format("Unable to decompress CSO frame using {}", m_uselz4 ? "lz4" : "zlib");
+			Console.Error(msg);
+			std::lock_guard<std::mutex> lock(m_lastReadErrorMutex);
+			m_lastReadError = msg;
+		}
 		
 		if (!m_uselz4)
 			inflateReset(&m_z_stream);

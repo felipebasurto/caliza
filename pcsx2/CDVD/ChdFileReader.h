@@ -24,6 +24,7 @@ public:
 
 	void Close2(void) override;
 	uint GetBlockCount(void) const override;
+	std::string GetLastReadError() const override;
 
 private:
 	bool ParseTOC(u64* out_frame_count);
@@ -31,4 +32,7 @@ private:
 	chd_file* ChdFile = nullptr;
 	u64 file_size = 0;
 	u32 hunk_size = 0;
+	mutable std::mutex m_lastReadErrorMutex;
+	std::string m_lastReadError;
+	bool m_reportedReadErrorOsd = false;
 };

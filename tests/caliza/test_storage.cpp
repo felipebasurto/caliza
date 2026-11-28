@@ -358,6 +358,236 @@ void TestBackendSavedSourceRestartPersistence()
 	}
 }
 
+std::string MakeSyntheticCsoHeader(const char magic[4], uint64_t total_bytes, uint32_t frame_size, uint8_t version, uint8_t align,
+	size_t extra_bytes)
+{
+	std::string out(24 + extra_bytes, '\0');
+	std::memcpy(&out[0], magic, 4);
+	out[4] = 24;
+	for (int i = 0; i < 8; i++)
+		out[8 + i] = static_cast<char>((total_bytes >> (i * 8)) & 0xff);
+	for (int i = 0; i < 4; i++)
+		out[16 + i] = static_cast<char>((frame_size >> (i * 8)) & 0xff);
+	out[20] = static_cast<char>(version);
+	out[21] = static_cast<char>(align);
+	return out;
+}
+
+void TestCompressedImageHeaderValidation()
+{
+	TempDir temp;
+	PosixImageInspector inspector;
+	auto inspect = [&](const std::string& name, const std::string& content) {
+		const std::string path = temp.path + "/" + name;
+		CHECK_TRUE(WriteFile(path, content));
+		GameEntry entry;
+		entry.id = path;
+		entry.path = path;
+		entry.file = name;
+		entry.bytes = content.size();
+		CHECK_TRUE(inspector.Inspect(entry));
+		return entry;
+	};
+
+	const GameEntry bad_chd = inspect("NotChd.chd", "NOT_A_CHD_FILE");
+	CHECK_TRUE(bad_chd.damaged && !bad_chd.can_launch);
+	CHECK_TRUE(bad_chd.problem.find("no CHD header") != std::string::npos);
+
+	const GameEntry short_cso = inspect("Short.cso", "CISO");
+	CHECK_TRUE(short_cso.damaged && !short_cso.can_launch);
+	CHECK_TRUE(short_cso.problem.find("cut short or damaged") != std::string::npos);
+
+	const GameEntry bad_ver = inspect("V2.cso", MakeSyntheticCsoHeader("CISO", 4096, 2048, 2, 0, 12));
+	CHECK_TRUE(bad_ver.damaged && !bad_ver.can_launch);
+	CHECK_TRUE(bad_ver.problem.find("unsupported version") != std::string::npos);
+
+	const GameEntry bad_frame = inspect("BadFrame.zso", MakeSyntheticCsoHeader("ZISO", 6000, 3000, 1, 0, 12));
+	CHECK_TRUE(bad_frame.damaged && !bad_frame.can_launch);
+	CHECK_TRUE(bad_frame.problem.find("invalid frame size") != std::string::npos);
+
+	const GameEntry small_frame = inspect("SmallFrame.cso", MakeSyntheticCsoHeader("CISO", 4096, 1024, 1, 0, 20));
+	CHECK_TRUE(small_frame.damaged && !small_frame.can_launch);
+	CHECK_TRUE(small_frame.problem.find("invalid frame size") != std::string::npos);
+
+	const GameEntry bad_align = inspect("BadAlign.zso", MakeSyntheticCsoHeader("ZISO", 4096, 2048, 1, 9, 12));
+	CHECK_TRUE(bad_align.damaged && !bad_align.can_launch);
+	CHECK_TRUE(bad_align.problem.find("invalid index alignment") != std::string::npos);
+
+	const GameEntry trunc_index = inspect("TruncIndex.zso", MakeSyntheticCsoHeader("ZISO", 2048 * 100, 2048, 1, 0, 16));
+	CHECK_TRUE(trunc_index.damaged && !trunc_index.can_launch);
+	CHECK_TRUE(trunc_index.problem.find("cut short or damaged") != std::string::npos);
+
+	const GameEntry valid_cso = inspect("Good.cso", MakeSyntheticCsoHeader("CISO", 4096, 2048, 1, 0, 12));
+	CHECK_FALSE(valid_cso.damaged);
+	CHECK_TRUE(valid_cso.can_launch);
+	CHECK_TRUE(valid_cso.problem.empty());
+
+	const GameEntry valid_zso = inspect("Good.zso", MakeSyntheticCsoHeader("ZISO", 4096, 2048, 1, 0, 12));
+	CHECK_FALSE(valid_zso.damaged);
+	CHECK_TRUE(valid_zso.can_launch);
+	CHECK_TRUE(valid_zso.problem.empty());
+}
+
+void TestMultiDiscAndM3uGrouping()
+{
+	TempDir env;
+	const std::string data_root = env.path + "/caliza";
+	const std::string games = data_root + "/games";
+	CHECK_TRUE(storage::fs::MakeDirs(games, nullptr));
+
+	// 1) (Disc N) grouping across mixed formats (.chd + .iso).
+	CHECK_TRUE(WriteFile(games + "/Story (USA) (Disc 1).chd", "MComprHD"));
+	MakeMinimalIso(games + "/Story (USA) (Disc 2).iso");
+
+	// 2) .m3u playlist grouping arbitrarily named discs (ignoring comments and missing files).
+	MakeMinimalIso(games + "/Saga Part A.iso");
+	MakeMinimalIso(games + "/Saga Part B.iso");
+	CHECK_TRUE(WriteFile(games + "/Epic Saga.m3u", "# playlist comment\nSaga Part A.iso\nSaga Part B.iso\nMissing.iso\n"));
+
+	// 3) Combined .m3u + (Disc N) in the same folder produces one set, not two.
+	CHECK_TRUE(WriteFile(games + "/Tale (Disc 1).chd", "MComprHD"));
+	MakeMinimalIso(games + "/Tale (Disc 2).iso");
+	CHECK_TRUE(WriteFile(games + "/Tale.m3u", "Tale (Disc 1).chd\nTale (Disc 2).iso\n"));
+
+	// 4) Single disc with a (Disc N) suffix stays visible and records disc_number/disc_set_key.
+	MakeMinimalIso(games + "/Solo (Disc 2).iso");
+
+	BackendOptions options;
+	options.data_root = data_root;
+	options.discovery.internal_root = data_root;
+	StorageBackend backend(options);
+	EventLog log;
+	Command rescan;
+	rescan.type = CommandType::RescanAll;
+	const CommandEvent* scan = log.WaitTerminal(backend, backend.Post(rescan));
+	CHECK_TRUE(scan != nullptr && scan->status == CommandStatus::Succeeded);
+
+	const Snapshot snap = backend.GetSnapshot();
+	CHECK_EQ(snap.games.size(), 4u);
+
+	auto find_by_file = [&](const std::string& file) -> const GameEntry* {
+		for (const GameEntry& g : snap.games)
+			if (g.file == file)
+				return &g;
+		return nullptr;
+	};
+
+	const GameEntry* story = find_by_file("Story (USA) (Disc 1).chd");
+	CHECK_TRUE(story != nullptr);
+	CHECK_TRUE(find_by_file("Story (USA) (Disc 2).iso") == nullptr);
+	if (story)
+	{
+		CHECK_EQ(story->disc_number, 1);
+		CHECK_EQ(story->disc_set_key, std::string("story (usa)"));
+		CHECK_EQ(story->disc_paths.size(), 2u);
+		if (story->disc_paths.size() == 2u)
+		{
+			CHECK_EQ(storage::fs::BaseName(story->disc_paths[0]), std::string("Story (USA) (Disc 1).chd"));
+			CHECK_EQ(storage::fs::BaseName(story->disc_paths[1]), std::string("Story (USA) (Disc 2).iso"));
+		}
+	}
+
+	const GameEntry* saga = find_by_file("Saga Part A.iso");
+	CHECK_TRUE(saga != nullptr);
+	CHECK_TRUE(find_by_file("Saga Part B.iso") == nullptr);
+	if (saga)
+	{
+		CHECK_EQ(saga->disc_number, 1);
+		CHECK_EQ(saga->disc_set_key, std::string("m3u:epic saga"));
+		CHECK_EQ(saga->title, std::string("Epic Saga"));
+		CHECK_EQ(saga->disc_paths.size(), 2u);
+	}
+
+	const GameEntry* tale = find_by_file("Tale (Disc 1).chd");
+	CHECK_TRUE(tale != nullptr);
+	CHECK_TRUE(find_by_file("Tale (Disc 2).iso") == nullptr);
+	if (tale)
+	{
+		CHECK_EQ(tale->disc_number, 1);
+		CHECK_EQ(tale->disc_set_key, std::string("m3u:tale"));
+		CHECK_EQ(tale->disc_paths.size(), 2u);
+	}
+
+	const GameEntry* solo = find_by_file("Solo (Disc 2).iso");
+	CHECK_TRUE(solo != nullptr);
+	if (solo)
+	{
+		CHECK_EQ(solo->disc_number, 2);
+		CHECK_EQ(solo->disc_set_key, std::string("solo"));
+		CHECK_EQ(solo->disc_paths.size(), 1u);
+	}
+}
+
+void TestNetworkSourcesAndScanAlignment()
+{
+	TempDir env;
+	const std::string data_root = env.path + "/caliza";
+	const std::string net0 = env.path + "/net/ps2share";
+	CHECK_TRUE(storage::fs::MakeDirs(data_root + "/games", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/PS2/Action/TooDeep/More", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/bios", nullptr));
+	CHECK_TRUE(storage::fs::MakeDirs(net0 + "/covers", nullptr));
+
+	// Depth 0 through 4 on a mounted network share should be found.
+	CHECK_TRUE(WriteFile(net0 + "/RootGame (USA).chd", "MComprHD"));
+	MakeMinimalIso(net0 + "/PS2/Depth1 (USA).iso");
+	MakeMinimalIso(net0 + "/PS2/Action/Depth2 (USA).iso");
+	MakeMinimalIso(net0 + "/PS2/Action/TooDeep/Depth3 (USA).iso");
+	MakeMinimalIso(net0 + "/PS2/Action/TooDeep/More/Depth4 (USA).iso");
+
+	// Skipped emulator folders and <16 MiB .bin/.img must stay excluded.
+	MakeMinimalIso(net0 + "/bios/BiosDir (USA).iso");
+	MakeMinimalIso(net0 + "/covers/CoversDir (USA).iso");
+	CHECK_TRUE(WriteFile(net0 + "/SmallBios.bin", std::string(1024, '\0')));
+	CHECK_TRUE(WriteFile(net0 + "/SmallCard.img", std::string(2048, '\0')));
+
+	BackendOptions options;
+	options.data_root = data_root;
+	options.discovery.internal_root = data_root;
+	options.discovery.usb_roots.clear();
+	options.discovery.extended_roots.clear();
+	options.discovery.network_roots = {net0};
+	options.discovery.include_absent_slots = false;
+
+	StorageBackend backend(options);
+	const Snapshot initial = backend.GetSnapshot();
+	bool saw_net_volume = false;
+	bool saw_net_source = false;
+	for (const VolumeInfo& v : initial.volumes)
+		if (v.kind == VolumeKind::Network && v.present && v.root_path == net0)
+			saw_net_volume = true;
+	for (const LibrarySource& s : initial.sources)
+		if (s.id == "volume:net0" && s.path == net0 && s.state == SourceState::Connected)
+			saw_net_source = true;
+	CHECK_TRUE(saw_net_volume);
+	CHECK_TRUE(saw_net_source);
+
+	EventLog log;
+	Command rescan;
+	rescan.type = CommandType::RescanAll;
+	const CommandEvent* scan = log.WaitTerminal(backend, backend.Post(rescan));
+	CHECK_TRUE(scan != nullptr && scan->status == CommandStatus::Succeeded);
+
+	const Snapshot snap = backend.GetSnapshot();
+	CHECK_EQ(snap.games.size(), 5u);
+	auto has_file = [&](const std::string& file) {
+		for (const GameEntry& g : snap.games)
+			if (g.file == file)
+				return true;
+		return false;
+	};
+	CHECK_TRUE(has_file("RootGame (USA).chd"));
+	CHECK_TRUE(has_file("Depth1 (USA).iso"));
+	CHECK_TRUE(has_file("Depth2 (USA).iso"));
+	CHECK_TRUE(has_file("Depth3 (USA).iso"));
+	CHECK_TRUE(has_file("Depth4 (USA).iso"));
+	CHECK_FALSE(has_file("BiosDir (USA).iso"));
+	CHECK_FALSE(has_file("CoversDir (USA).iso"));
+	CHECK_FALSE(has_file("SmallBios.bin"));
+	CHECK_FALSE(has_file("SmallCard.img"));
+}
+
 } // namespace
 
 int main()
@@ -367,6 +597,9 @@ int main()
 	TestInternalRootRejectedAsScanSource();
 	TestRealScanCancellationAndDisconnect();
 	TestBackendSavedSourceRestartPersistence();
+	TestCompressedImageHeaderValidation();
+	TestMultiDiscAndM3uGrouping();
+	TestNetworkSourcesAndScanAlignment();
 	if (Failures() == 0)
 	{
 		std::cout << "test_storage: PASS\n";

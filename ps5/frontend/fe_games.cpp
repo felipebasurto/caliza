@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace fe
 {
@@ -150,12 +151,72 @@ public:
 			chd_close(m_chd);
 	}
 
-	bool Open(const std::string& path)
+	static bool IsHeaderParentChd(const chd_header& child, const chd_header& parent)
 	{
-		const chd_error err = chd_open(path.c_str(), CHD_OPEN_READ, nullptr, &m_chd);
+		static const uint8_t kZeroMd5[CHD_MD5_BYTES] = {};
+		static const uint8_t kZeroSha1[CHD_SHA1_BYTES] = {};
+		if (std::memcmp(kZeroMd5, child.parentmd5, CHD_MD5_BYTES) != 0 &&
+			std::memcmp(kZeroMd5, parent.md5, CHD_MD5_BYTES) != 0 &&
+			std::memcmp(parent.md5, child.parentmd5, CHD_MD5_BYTES) != 0)
+			return false;
+		if (std::memcmp(kZeroSha1, child.parentsha1, CHD_SHA1_BYTES) != 0 &&
+			std::memcmp(kZeroSha1, parent.sha1, CHD_SHA1_BYTES) != 0 &&
+			std::memcmp(parent.sha1, child.parentsha1, CHD_SHA1_BYTES) != 0)
+			return false;
+		return true;
+	}
+
+	static chd_error OpenWithParents(const std::string& path, int depth, chd_file** out)
+	{
+		*out = nullptr;
+		chd_error err = chd_open(path.c_str(), CHD_OPEN_READ, nullptr, out);
+		if (err != CHDERR_REQUIRES_PARENT)
+			return err;
+		if (depth >= 8)
+			return CHDERR_REQUIRES_PARENT;
+		chd_header child_hdr = {};
+		if (chd_read_header(path.c_str(), &child_hdr) != CHDERR_NONE)
+			return CHDERR_REQUIRES_PARENT;
+		const size_t slash = path.rfind('/');
+		const std::string dir = slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+		DIR* d = opendir(dir.c_str());
+		if (!d)
+			return CHDERR_REQUIRES_PARENT;
+		chd_file* parent = nullptr;
+		while (const dirent* e = readdir(d))
+		{
+			if (e->d_name[0] == '.' || !HasExtension(e->d_name, ".chd"))
+				continue;
+			const std::string cand = dir + "/" + e->d_name;
+			if (cand == path)
+				continue;
+			chd_header parent_hdr = {};
+			if (chd_read_header(cand.c_str(), &parent_hdr) != CHDERR_NONE)
+				continue;
+			if (!IsHeaderParentChd(child_hdr, parent_hdr))
+				continue;
+			if (OpenWithParents(cand, depth + 1, &parent) == CHDERR_NONE && parent)
+				break;
+			parent = nullptr;
+		}
+		closedir(d);
+		if (!parent)
+			return CHDERR_REQUIRES_PARENT;
+		err = chd_open(path.c_str(), CHD_OPEN_READ, parent, out);
 		if (err != CHDERR_NONE)
 		{
-			m_chd = nullptr; // a CHD that needs its parent reads as no serial (PCSX2 finds the parent itself)
+			chd_close(parent);
+			*out = nullptr;
+		}
+		return err;
+	}
+
+	bool Open(const std::string& path)
+	{
+		const chd_error err = OpenWithParents(path, 0, &m_chd);
+		if (err != CHDERR_NONE)
+		{
+			m_chd = nullptr;
 			m_what = std::string("libchdr can't open it: ") + chd_error_string(err);
 			return false;
 		}
@@ -293,25 +354,64 @@ public:
 
 	bool Open(const std::string& path)
 	{
+		m_what.clear();
 		m_fd = open(path.c_str(), O_RDONLY);
 		if (m_fd < 0)
+		{
+			m_what = "can't open compressed image";
 			return false;
+		}
+		struct stat st = {};
+		const uint64_t file_bytes = (fstat(m_fd, &st) == 0 && st.st_size > 0) ? static_cast<uint64_t>(st.st_size) : 0;
 		uint8_t h[24];
 		if (!ReadAt(m_fd, 0, h, sizeof(h)))
+		{
+			m_what = "cso header truncated";
 			return false;
+		}
 		m_lz4 = std::memcmp(h, "ZISO", 4) == 0;
 		if (!m_lz4 && std::memcmp(h, "CISO", 4) != 0)
+		{
+			m_what = "not a CISO or ZISO header";
 			return false;
+		}
+		const uint8_t ver = h[20];
+		if (ver > 1)
+		{
+			m_what = "unsupported CSO version";
+			return false;
+		}
 		m_total = Le32(h + 8) | (static_cast<uint64_t>(Le32(h + 12)) << 32);
 		m_frame = Le32(h + 16);
 		m_shift = h[21];
-		if (m_frame < 2048 || m_frame > (1u << 20) || (m_frame & (m_frame - 1)) != 0 || m_shift > 8 || m_total == 0)
+		if (m_frame < 2048 || m_frame > (1u << 20) || (m_frame & (m_frame - 1)) != 0)
+		{
+			m_what = "invalid CSO frame size";
 			return false;
-		m_frames = static_cast<uint32_t>((m_total + m_frame - 1) / m_frame);
+		}
+		if (m_shift > 8)
+		{
+			m_what = "invalid CSO index alignment";
+			return false;
+		}
+		if (m_total == 0)
+		{
+			m_what = "empty CSO disc";
+			return false;
+		}
+		const uint64_t frames64 = (m_total + m_frame - 1) / m_frame;
+		if (frames64 > 0x1fffffffULL || 24ULL + (frames64 + 1ULL) * 4ULL > file_bytes)
+		{
+			m_what = "cso index truncated";
+			return false;
+		}
+		m_frames = static_cast<uint32_t>(frames64);
 		m_out.resize(m_frame);
 		m_in.resize(static_cast<size_t>(m_frame) * 2 + 4096);
 		return true;
 	}
+
+	const std::string& What() const { return m_what; }
 
 	bool Read(uint32_t lba, void* buf, size_t len) override
 	{
@@ -397,6 +497,7 @@ private:
 	uint32_t m_cached = ~0u;
 	size_t m_out_len = 0;
 	std::vector<uint8_t> m_in, m_out;
+	std::string m_what;
 };
 
 // "SLUS-21351" from SYSTEM.CNF's BOOT2 line, found in the root directory of the ISO 9660 file system.
@@ -459,15 +560,33 @@ std::string SerialFromDisc(SectorReader& disc)
 	return serial;
 }
 
-// vk-285-108: a CHD's serial costs its map's decompression (tens of milliseconds for a DVD), so the ones
-// found are kept in a file, one "<path>\t<size>\t<mtime>\t<serial>" line each (a later line wins).
+// vk-285-108: a CHD's serial costs its map's decompression (tens of milliseconds for a DVD), so results
+// (including failed/empty reads and their reason) are kept in a file keyed by "<path>\t<size>\t<mtime>"
+// (a later line wins). 4-column lines (<path>\t<size>\t<mtime>\t<serial>) stay readable for compatibility;
+// 5-column lines add "\t<reason>" so failed/empty reads are cached and inspected in a single open.
+struct CachedSerial
+{
+	std::string serial;
+	std::string reason;
+};
+
 std::mutex s_serial_mutex;
 std::string s_serial_file;
 bool s_serial_loaded = false;
-std::unordered_map<std::string, std::string> s_serials; // "<path>\t<size>\t<mtime>" -> serial
+std::unordered_map<std::string, CachedSerial> s_serials; // "<path>\t<size>\t<mtime>" -> {serial, reason}
+
+std::string SanitizeCacheField(std::string s)
+{
+	for (char& c : s)
+		if (c == '\t' || c == '\r' || c == '\n')
+			c = ' ';
+	return s;
+}
 
 std::string SerialKey(const std::string& path)
 {
+	if (path.find('\t') != std::string::npos || path.find('\n') != std::string::npos || path.find('\r') != std::string::npos)
+		return {};
 	struct stat st = {};
 	if (stat(path.c_str(), &st) != 0)
 		return {};
@@ -489,14 +608,31 @@ void LoadSerialsLocked()
 		std::string l = line;
 		while (!l.empty() && (l.back() == '\n' || l.back() == '\r'))
 			l.pop_back();
-		const size_t tab = l.rfind('\t');
-		if (tab != std::string::npos && tab > 0 && tab + 1 < l.size())
-			s_serials[l.substr(0, tab)] = l.substr(tab + 1);
+		const size_t t1 = l.find('\t');
+		if (t1 == std::string::npos || t1 == 0)
+			continue;
+		const size_t t2 = l.find('\t', t1 + 1);
+		if (t2 == std::string::npos)
+			continue;
+		const size_t t3 = l.find('\t', t2 + 1);
+		if (t3 == std::string::npos)
+			continue;
+		const std::string key = l.substr(0, t3);
+		const size_t t4 = l.find('\t', t3 + 1);
+		if (t4 == std::string::npos)
+		{
+			if (t3 + 1 < l.size())
+				s_serials[key] = {l.substr(t3 + 1), {}};
+		}
+		else
+		{
+			s_serials[key] = {l.substr(t3 + 1, t4 - (t3 + 1)), l.substr(t4 + 1)};
+		}
 	}
 	std::fclose(f);
 }
 
-std::string ChdSerial(const std::string& path)
+std::string ChdSerial(const std::string& path, std::string* reason)
 {
 	const std::string key = SerialKey(path);
 	if (!key.empty())
@@ -505,23 +641,32 @@ std::string ChdSerial(const std::string& path)
 		LoadSerialsLocked();
 		const auto it = s_serials.find(key);
 		if (it != s_serials.end())
-			return it->second;
+		{
+			if (reason)
+				*reason = it->second.reason;
+			return it->second.serial;
+		}
 	}
 	std::string serial;
+	std::string detail;
 	if (HasExtension(path.c_str(), ".chd"))
 	{
 		ChdSectors disc;
-		serial = disc.Open(path) ? SerialFromDisc(disc) : std::string();
+		if (disc.Open(path))
+			serial = SerialFromDisc(disc);
+		detail = SanitizeCacheField(disc.What());
 	}
 	else
 	{
 		CsoSectors disc; // vk-285-113
-		serial = disc.Open(path) ? SerialFromDisc(disc) : std::string();
+		if (disc.Open(path))
+			serial = SerialFromDisc(disc);
+		detail = SanitizeCacheField(disc.What());
 	}
-	if (!serial.empty() && !key.empty())
+	if (!key.empty())
 	{
 		std::lock_guard<std::mutex> lock(s_serial_mutex);
-		s_serials[key] = serial;
+		s_serials[key] = {serial, detail};
 		if (!s_serial_file.empty())
 		{
 			const size_t slash = s_serial_file.rfind('/');
@@ -529,23 +674,110 @@ std::string ChdSerial(const std::string& path)
 				mkdir(s_serial_file.substr(0, slash).c_str(), 0777);
 			if (FILE* f = std::fopen(s_serial_file.c_str(), "ab"))
 			{
-				const std::string line = key + "\t" + serial + "\n";
+				const std::string line = (!serial.empty() && detail.empty())
+					? (key + "\t" + serial + "\n")
+					: (key + "\t" + serial + "\t" + detail + "\n");
 				std::fwrite(line.data(), 1, line.size(), f);
 				std::fclose(f);
 			}
 		}
 	}
+	if (reason)
+		*reason = detail;
 	return serial;
 }
 } // namespace
 
 std::string DescribeImage(const std::string& image_path)
 {
-	if (!HasExtension(image_path.c_str(), ".chd"))
+	if (HasExtension(image_path.c_str(), ".chd"))
+	{
+		ChdSectors disc;
+		disc.Open(image_path);
+		return disc.What();
+	}
+	if (HasExtension(image_path.c_str(), ".cso") || HasExtension(image_path.c_str(), ".zso"))
+	{
+		CsoSectors disc;
+		disc.Open(image_path);
+		return disc.What();
+	}
+	return {};
+}
+
+std::string FormatImageProblem(const std::string& reason, bool* can_launch)
+{
+	if (can_launch)
+		*can_launch = true;
+	if (reason.empty())
 		return {};
-	ChdSectors disc;
-	disc.Open(image_path);
-	return disc.What();
+	const std::string cant_open = "libchdr can't open it: ";
+	if (reason.rfind(cant_open, 0) == 0)
+	{
+		if (can_launch)
+			*can_launch = false;
+		const std::string detail = Lower(reason.substr(cant_open.size()));
+		if (detail.find("parent") != std::string::npos)
+			return "This CHD needs its parent file in the same folder.";
+		if (detail.find("unsupported format") != std::string::npos || detail.find("unsupported chd version") != std::string::npos)
+			return "This CHD uses a compression or version Caliza cannot read.";
+		if (detail.find("out of memory") != std::string::npos)
+			return "Not enough memory to open this CHD.";
+		if (detail.find("invalid data") != std::string::npos || detail.find("invalid file") != std::string::npos ||
+			detail.find("read error") != std::string::npos || detail.find("decompression error") != std::string::npos ||
+			detail.find("codec error") != std::string::npos)
+			return "This CHD is cut short or damaged.";
+		return "This CHD could not be opened (" + reason.substr(cant_open.size()) + ").";
+	}
+	if (reason == "no hunk or unit size in its header")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CHD is cut short or damaged.";
+	}
+	if (reason == "cso header truncated" || reason == "cso index truncated")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO file is cut short or damaged.";
+	}
+	if (reason == "not a CISO or ZISO header")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This file has a bad CSO/ZSO header.";
+	}
+	if (reason == "unsupported CSO version")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO uses an unsupported version (only v1 is supported).";
+	}
+	if (reason == "invalid CSO frame size")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header has an invalid frame size.";
+	}
+	if (reason == "invalid CSO index alignment")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header has an invalid index alignment.";
+	}
+	if (reason == "empty CSO disc")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This CSO/ZSO header reports an empty disc.";
+	}
+	if (reason == "can't open compressed image")
+	{
+		if (can_launch)
+			*can_launch = false;
+		return "This compressed image could not be opened.";
+	}
+	return {};
 }
 
 bool IsDiscImageName(const char* name)
@@ -570,10 +802,33 @@ void SetSerialCacheFile(const std::string& path)
 	s_serials.clear();
 }
 
-std::string ReadSerial(const std::string& image_path)
+bool LookupCachedSerial(const std::string& image_path, std::string& serial, std::string* reason)
 {
+	serial.clear();
+	if (reason)
+		reason->clear();
+	struct stat st = {};
+	if (stat(image_path.c_str(), &st) != 0)
+		return false;
+	const std::string key =
+		image_path + '\t' + std::to_string(static_cast<long long>(st.st_size)) + '\t' + std::to_string(static_cast<long long>(st.st_mtime));
+	std::lock_guard<std::mutex> lock(s_serial_mutex);
+	LoadSerialsLocked();
+	const auto it = s_serials.find(key);
+	if (it == s_serials.end())
+		return false;
+	serial = it->second.serial;
+	if (reason)
+		*reason = it->second.reason;
+	return true;
+}
+
+std::string ReadSerial(const std::string& image_path, std::string* reason)
+{
+	if (reason)
+		reason->clear();
 	if (HasExtension(image_path.c_str(), ".chd") || HasExtension(image_path.c_str(), ".cso") || HasExtension(image_path.c_str(), ".zso"))
-		return ChdSerial(image_path); // vk-285-113: the compressed formats keep their serials in the cache file
+		return ChdSerial(image_path, reason); // vk-285-113: the compressed formats keep their serials in the cache file
 	const int fd = open(image_path.c_str(), O_RDONLY);
 	if (fd < 0)
 		return {};
@@ -987,8 +1242,8 @@ namespace
 {
 // vk-285-115 (AI-assisted): the disc images one folder down too ("games/Ratchet & Clank (USA)/Ratchet & Clank.iso", a
 // USB drive's PS2/ or ISO/ folder). 1.50's logs: 29 consoles never found a game ("0 disc image(s), 0 on USB" on
-// every start), most with a USB drive that had files but no image at its root. PCSX2's own folders are skipped, and at
-// most 64 subfolders of a folder are opened (a backup drive's whole tree isn't walked).
+// every start), most with a USB drive that had files but no image at its root. PCSX2's own folders are skipped.
+// The walk continues 32 levels down, the same limit as the companion panel.
 bool SkipSubfolder(const char* name)
 {
 	if (name[0] == '.' || name[0] == '$')
@@ -1013,7 +1268,7 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 	{
 		if (!IsDiscImageName(e->d_name))
 		{
-			if (subdirs && subdirs->size() < 64 && !SkipSubfolder(e->d_name))
+			if (subdirs && !SkipSubfolder(e->d_name))
 			{
 				bool is_dir = e->d_type == DT_DIR;
 				if (e->d_type == DT_UNKNOWN)
@@ -1074,13 +1329,28 @@ void ScanDir(const std::string& dir, std::vector<GameInfo>& games, std::vector<s
 std::vector<GameInfo> ScanGames(const std::vector<std::string>& dirs)
 {
 	std::vector<GameInfo> games;
-	for (const std::string& dir : dirs)
+	std::unordered_set<std::string> visited_dirs;
+	// Root plus 32 levels of subfolders, matching StorageBackend.
+	constexpr int kMaxDepth = 32;
+	struct Pending
 	{
+		std::string path;
+		int depth;
+	};
+	std::vector<Pending> pending;
+	for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+		pending.push_back({*it, 0});
+	while (!pending.empty())
+	{
+		const Pending current = std::move(pending.back());
+		pending.pop_back();
+		if (!visited_dirs.insert(current.path).second)
+			continue;
 		std::vector<std::string> subdirs;
-		ScanDir(dir, games, &subdirs);
+		ScanDir(current.path, games, current.depth < kMaxDepth ? &subdirs : nullptr);
 		std::sort(subdirs.begin(), subdirs.end());
-		for (const std::string& sub : subdirs)
-			ScanDir(dir + "/" + sub, games, nullptr);
+		for (auto it = subdirs.rbegin(); it != subdirs.rend(); ++it)
+			pending.push_back({current.path + "/" + *it, current.depth + 1});
 	}
 	SortGames(games);
 	return games;
@@ -1135,10 +1405,43 @@ bool FileHas(const std::string& path, const char* text)
 }
 } // namespace
 
+std::string GameSettingsPath(const std::string& settings_dir, const std::string& serial, const std::string& stem)
+{
+	std::string safe_serial;
+	size_t begin = 0;
+	while (begin < serial.size() && std::isspace(static_cast<unsigned char>(serial[begin])))
+		++begin;
+	size_t end = serial.size();
+	while (end > begin && std::isspace(static_cast<unsigned char>(serial[end - 1])))
+		--end;
+	bool valid = (end > begin);
+	for (size_t i = begin; i < end && valid; ++i)
+	{
+		const unsigned char c = static_cast<unsigned char>(serial[i]);
+		if (std::isalnum(c) || c == '-' || c == '_')
+			safe_serial.push_back(static_cast<char>(std::toupper(c)));
+		else
+			valid = false;
+	}
+	if (!valid)
+		safe_serial.clear();
+
+	const std::string stem_path = settings_dir + "/" + stem + ".ini";
+	if (safe_serial.empty())
+		return stem_path;
+
+	const std::string serial_path = settings_dir + "/" + safe_serial + ".ini";
+	if (access(serial_path.c_str(), F_OK) == 0)
+		return serial_path;
+	if (!stem.empty() && access(stem_path.c_str(), F_OK) == 0)
+		return stem_path;
+	return serial_path;
+}
+
 void ReadBadges(GameInfo& g, const std::string& settings_dir, const std::string& gs_ini, const std::string& patches_dir)
 {
 	g.badges.clear();
-	const std::string ini = settings_dir + "/" + g.stem + ".ini";
+	const std::string ini = GameSettingsPath(settings_dir, g.serial, g.stem);
 	g.hidden = IniValue(ini, "Caliza/HideGame") == "true"; // vk-285-137: the game's own file only, never gs.ini
 	std::string scale = IniValue(ini, "upscale_multiplier");
 	if (scale.empty())

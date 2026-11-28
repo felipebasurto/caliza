@@ -65,8 +65,34 @@ echo '== migration =='
   -o "$out/test_migration"
 "$out/test_migration"
 
+echo '== serial cache =='
+"$cc" -O2 -c ps5/third_party/lz4/lz4.c -o "$out/lz4.o"
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function -I. -Ips5/frontend -I3rdparty/libchdr/include -Ips5/third_party/lz4 -pthread \
+  tests/caliza/test_serial_cache.cpp ps5/frontend/fe_games.cpp "$out/lz4.o" -lz -o "$out/test_serial_cache"
+"$out/test_serial_cache"
+
+echo '== cso/zso reader =='
+"$cxx" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
+  -I. -Ipcsx2 -I3rdparty/fmt/include -I3rdparty/fast_float/include -Ips5/third_party/lz4 -DFMT_HEADER_ONLY=1 \
+  tests/caliza/test_cso_reader.cpp pcsx2/CDVD/CsoFileReader.cpp "$out/lz4.o" -lz -o "$out/test_cso_reader"
+"$out/test_cso_reader"
+
+echo '== web panel non-blocking serials =='
+"$cxx" -std=c++17 -O2 -Wall -Wextra -Wno-unused-function \
+  -I. -Ips5/frontend -I3rdparty/libchdr/include -Ips5/third_party/lz4 -pthread \
+  tests/caliza/test_web_nonblocking.cpp ps5/frontend/fe_web.cpp ps5/frontend/fe_games.cpp \
+  ps5/frontend/fe_covers.cpp ps5/frontend/fe_text.cpp ps5/frontend/fe_i18n.cpp \
+  ps5/frontend/fe_modern_controls.cpp ps5/frontend/fe_settings.cpp "$out/lz4.o" -lz \
+  -o "$out/test_web_nonblocking"
+"$out/test_web_nonblocking"
+
 echo '== web panel smoke =='
 (cd caliza/web && node smoke-test.mjs)
+
+if command -v chdman >/dev/null 2>&1; then
+  echo '== real libchdr =='
+  bash ps5/frontend/host/test-chd-real.sh
+fi
 
 echo '== dead-brand audit =='
 python3 ps4/tools/audit_brand.py
