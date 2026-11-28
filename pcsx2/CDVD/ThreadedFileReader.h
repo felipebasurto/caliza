@@ -113,6 +113,14 @@ public:
 	u32 GetBlockSize() const { return m_blocksize; }
 	virtual std::string GetLastReadError() const { return {}; }
 
+	static constexpr u64 kPrecacheMemoryReserve = 2147483648ULL; // 2 GiB headroom
+	static constexpr bool CanPrecacheSize(u64 required_size, u64 available_memory, bool is_ps4)
+	{
+		if (is_ps4 || required_size == 0 || available_memory <= kPrecacheMemoryReserve)
+			return false;
+		return required_size <= (available_memory - kPrecacheMemoryReserve);
+	}
+
 	virtual u32 GetBlockCount() const = 0;
 
 

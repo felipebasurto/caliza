@@ -1687,7 +1687,13 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	close_state.Cancel();
 
 	if (EmuConfig.CdvdPrecache)
+	{
+#if defined(__ORBIS__) || defined(ORBIS_PS4)
+		Console.Warning("CdvdPrecache is disabled on PS4 to avoid pinning multi-GB disc images in console memory.");
+#else
 		PrecacheCDVDFile();
+#endif
+	}
 
 	hwReset();
 

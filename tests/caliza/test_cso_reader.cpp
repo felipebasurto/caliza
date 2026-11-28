@@ -282,6 +282,30 @@ void RunCorruptFrameErrorTest(const std::filesystem::path& tmpdir)
 	Check(!reader.GetLastReadError().empty(), "corrupt CISO: GetLastReadError populated on decompression failure");
 	reader.Close();
 }
+
+void RunPrecacheCapTest()
+{
+	constexpr u64 kMiB = 1024ULL * 1024ULL;
+	constexpr u64 kGiB = 1024ULL * kMiB;
+
+	// PS4 always refuses precache even if an inflated available-memory value is supplied.
+	Check(!ThreadedFileReader::CanPrecacheSize(1 * kMiB, 6 * kGiB, true),
+		"precache cap: PS4 refuses 1 MiB image");
+	Check(!ThreadedFileReader::CanPrecacheSize(4 * kGiB, 6 * kGiB, true),
+		"precache cap: PS4 refuses 4 GiB DVD image");
+
+	// Conservative 2 GiB Orbis available-memory value leaves 0 bytes above the 2 GiB reserve.
+	Check(!ThreadedFileReader::CanPrecacheSize(1, 2 * kGiB, false),
+		"precache cap: 2 GiB available leaves no precache headroom above 2 GiB reserve");
+	Check(!ThreadedFileReader::CanPrecacheSize(512 * kMiB, 1 * kGiB, false),
+		"precache cap: available < reserve does not underflow");
+
+	// Host/desktop with 8 GiB available allows a 4 GiB image and refuses a 7 GiB image.
+	Check(ThreadedFileReader::CanPrecacheSize(4 * kGiB, 8 * kGiB, false),
+		"precache cap: 8 GiB available allows 4 GiB image");
+	Check(!ThreadedFileReader::CanPrecacheSize(7 * kGiB, 8 * kGiB, false),
+		"precache cap: 8 GiB available refuses 7 GiB image");
+}
 } // namespace
 
 int main()
@@ -294,6 +318,7 @@ int main()
 	RunSequentialCoalesceTest(tmpdir, false);
 	RunSequentialCoalesceTest(tmpdir, true);
 	RunCorruptFrameErrorTest(tmpdir);
+	RunPrecacheCapTest();
 
 	std::filesystem::remove_all(tmpdir, ec);
 	if (g_failures != 0)
