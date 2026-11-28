@@ -32,6 +32,8 @@ private:
 	static bool ValidateHeader(const CsoHeader& hdr, Error* error);
 	bool ReadFileHeader(Error* error);
 	bool InitializeBuffers(Error* error);
+	bool SeekIfNeeded(u64 offset);
+	size_t ReadTracked(void* dst, size_t bytes);
 	int ReadFromFrame(u8* dest, u64 pos, int maxBytes);
 	bool DecompressFrame(Bytef* dst, u32 frame, u32 readBufferSize);
 	bool DecompressFrame(u32 frame, u32 readBufferSize);
@@ -41,11 +43,13 @@ private:
 	u8 m_indexShift = 0;
 	bool m_uselz4 = false; // flag to enable LZ4 decompression (ZSO files)
 	std::unique_ptr<u8[]> m_readBuffer;
+	size_t m_readBufferSize = 0;
 
 	std::unique_ptr<u32[]> m_index;
 	u64 m_totalSize = 0;
 	// The actual source cso file handle.
 	std::FILE* m_src = nullptr;
+	s64 m_filePos = -1;
 	std::unique_ptr<u8[]> m_file_cache;
 	size_t m_file_cache_size = 0;
 	z_stream m_z_stream = {};

@@ -71,6 +71,12 @@ echo '== serial cache =='
   tests/caliza/test_serial_cache.cpp ps5/frontend/fe_games.cpp "$out/lz4.o" -lz -o "$out/test_serial_cache"
 "$out/test_serial_cache"
 
+echo '== cso/zso reader =='
+"$cxx" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
+  -I. -Ipcsx2 -I3rdparty/fmt/include -I3rdparty/fast_float/include -Ips5/third_party/lz4 -DFMT_HEADER_ONLY=1 \
+  tests/caliza/test_cso_reader.cpp pcsx2/CDVD/CsoFileReader.cpp "$out/lz4.o" -lz -o "$out/test_cso_reader"
+"$out/test_cso_reader"
+
 echo '== web panel smoke =='
 (cd caliza/web && node smoke-test.mjs)
 
